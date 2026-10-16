@@ -1,0 +1,28 @@
+# 敏感憑證與私密金鑰 (絕對禁止推送到 GitHub)
+.env
+.env.*
+*.key
+*.pem
+
+# Python 編譯快取
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# 資料輸出與暫存報告
+data/
+evaluation_reports/
+student_submissions/
+raw_exams/
+scoring_standards/
+training_data/
+*.log
+
+# Jupyter Notebook 快取
+.ipynb_checkpoints/
+
+# 系統隱藏檔
+.DS_Store
+Thumbs.db
