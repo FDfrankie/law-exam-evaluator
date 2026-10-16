@@ -37,15 +37,17 @@ def get_base_data_dir() -> Path:
 DATA_DIR = get_base_data_dir()
 GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
 
-# Output directory structure
 RAW_DATA_DIR = DATA_DIR / "raw_exams"
 STANDARDS_DIR = DATA_DIR / "scoring_standards"
 STUDENT_PAPERS_DIR = DATA_DIR / "student_submissions"
 REPORTS_DIR = DATA_DIR / "evaluation_reports"
+CONSTITUTIONAL_DIR = DATA_DIR / "constitutional_cases"
+NATIONAL_LAWS_DIR = DATA_DIR / "national_laws"
+TRAINING_DATA_DIR = DATA_DIR / "training_data"
 
 def init_directories():
     """Ensure data directories exist"""
-    for folder in [RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR]:
+    for folder in [RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR, CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR]:
         try:
             folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:
