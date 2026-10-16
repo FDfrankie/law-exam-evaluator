@@ -59,9 +59,9 @@ class MoexCrawler:
                 for pt in reference_points:
                     f.write(f"- {pt}\n")
 
-        print(f"[已儲存試題至 Google Drive] {json_file}")
+        print(f"[SAVED] Exam record saved: {json_file}")
         return json_file
 
 if __name__ == "__main__":
     crawler = MoexCrawler()
-    print("MoexCrawler 模組就緒，儲存路徑為:", crawler.output_dir)
+    print("[READY] MoexCrawler ready, output dir:", crawler.output_dir)

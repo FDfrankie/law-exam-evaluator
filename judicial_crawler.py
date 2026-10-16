@@ -48,5 +48,5 @@ class JudicialJudgementCrawler:
                 for iss in issues:
                     f.write(f"- {iss}\n")
 
-        print(f"[已儲存裁判書至 Google Drive] {json_path}")
+        print(f"[SAVED JUDGEMENT] {json_path}")
         return json_path

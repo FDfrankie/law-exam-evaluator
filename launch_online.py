@@ -134,13 +134,13 @@ def update_shortcut_html(public_url: str):
 
 def main():
     print("=" * 70)
-    print("        司律 AI 評分系統 - 全球外網穿透服務 (Cloudflare Tunnel)")
+    print("      Law Exam AI - Online Tunnel Service (Cloudflare)")
     print("=" * 70)
 
     python_exe = sys.executable
     app_script = str(PROJECT_DIR / "app.py")
 
-    print("[1/3] 正在啟動 Streamlit 本地伺服器 (Port 8501)...")
+    print("[1/3] Starting local Streamlit server (Port 8501)...")
     st_proc = subprocess.Popen(
         [python_exe, "-m", "streamlit", "run", app_script, "--server.port", "8501", "--server.headless", "true"],
         stdout=subprocess.DEVNULL,
@@ -155,7 +155,7 @@ def main():
         except Exception:
             pass
 
-    print("[2/3] 正在建立 Cloudflare 全球穿透連線 (全球免設定路由器)...")
+    print("[2/3] Establishing Cloudflare Tunnel...")
     cf_cmd = [
         str(TOOLS_EXE),
         "tunnel",
@@ -182,32 +182,31 @@ def main():
             break
 
     if not tunnel_url:
-        print("[錯誤] 無法取得外網網址，請檢查網路連線。")
+        print("[ERROR] Failed to establish tunnel. Please check network connection.")
         st_proc.terminate()
         return
 
-    print("[3/3] 全球外網通道建立成功！")
+    print("[3/3] Online Tunnel Connected Successfully!")
     update_shortcut_html(tunnel_url)
 
     print("\n" + "=" * 70)
-    print("  [成功] 您的專屬全球公開網址（任何手機、任何網路皆可使用）：")
+    print("  [SUCCESS] Public HTTPS URL (Accessible on any mobile network):")
     print(f"     >>  {tunnel_url}")
     print("=" * 70)
-    print("  * 已自動同步更新手機捷徑頁面：")
-    print("    G:\\我的雲端硬碟\\手機點我開啟評分系統.html")
-    print("  * 手機打開 Google Drive 點擊該 HTML，或直接瀏覽上方網址即可！")
-    print("  * 保持本視窗開啟即可維持連線，按 Ctrl+C 可關閉服務。")
+    print("  * Shortcut HTML updated in Google Drive.")
+    print("  * Keep this window open to maintain online connectivity.")
+    print("  * Press Ctrl+C to stop.")
     print("=" * 70 + "\n")
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n正在關閉服務...")
+        print("\nStopping services...")
     finally:
         cf_proc.terminate()
         st_proc.terminate()
-        print("服務已停止。")
+        print("Service stopped.")
 
 if __name__ == "__main__":
     main()

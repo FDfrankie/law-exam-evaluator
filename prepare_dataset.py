@@ -57,13 +57,13 @@ class LawDatasetBuilder:
                 )
                 dataset.append(sample)
             except Exception as e:
-                print(f"解析評分報告失敗 {r_path}: {e}")
+                print(f"[ERROR] Failed parsing report {r_path}: {e}")
 
         target_file = self.output_dir / filename
         with open(target_file, "w", encoding="utf-8") as f:
             json.dump(dataset, f, ensure_ascii=False, indent=2)
 
-        print(f"[訓練資料集已匯出至 Google Drive]: {target_file} (共 {len(dataset)} 筆)")
+        print(f"[EXPORTED] {target_file} (count: {len(dataset)})")
         return target_file
 
 if __name__ == "__main__":

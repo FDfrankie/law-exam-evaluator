@@ -1,13 +1,14 @@
 @echo off
-chcp 65001 >nul
 echo ========================================================
-echo        司律 AI 評分系統 - 首次綁定 GitHub 倉庫
+echo        Law Exam AI Grader - Setup GitHub Repository
 echo ========================================================
 echo.
-echo 請先在 GitHub (https://github.com/new) 建立一個空白 Repository
-echo （不要勾選 Add README，也不要勾選 .gitignore）。
+echo 1. Open https://github.com/new in your browser.
+echo 2. Enter a repository name (e.g. law-exam-evaluator).
+echo    (DO NOT check "Add a README file" or ".gitignore")
+echo 3. Click "Create repository" and copy the URL.
 echo.
-set /p REPO_URL="請貼上您的 GitHub 倉庫網址 (例如 https://github.com/你的帳號/專案名稱.git): "
+set /p REPO_URL="Enter your GitHub Repository URL: "
 
 cd /d "%~dp0"
 git remote remove origin 2>nul
@@ -15,12 +16,13 @@ git remote add origin %REPO_URL%
 git branch -M main
 
 echo.
-echo 正在推送到 GitHub...
+echo Pushing codebase to GitHub main branch...
 git push -u origin main
 
 echo.
 echo ========================================================
-echo 綁定與首次推送完成！
-echo 以後程式碼有任何修改，只需點擊 git_push.bat 即可一鍵自動同步！
+echo GitHub repository linked and pushed successfully!
+echo You can now go to https://share.streamlit.io to deploy.
+echo For future updates, simply double-click git_push.bat.
 echo ========================================================
 pause

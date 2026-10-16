@@ -201,9 +201,9 @@ class MassDatasetBuilder:
             json.dump(sft_data, f, ensure_ascii=False, indent=2)
 
         print("=" * 60)
-        print(f"[完成] 已成功擴充大量司法判決與題庫訓練集！")
-        print(f"[規模] 共包含 {len(sft_data)} 組高品質全方位 SFT 訓練樣本")
-        print(f"[存放] Google Drive 路徑: {target_path}")
+        print("[SUCCESS] Expanded legal SFT dataset created!")
+        print(f"[COUNT] Total samples: {len(sft_data)}")
+        print(f"[PATH] Output location: {target_path}")
         print("=" * 60)
         return target_path
 

@@ -32,7 +32,7 @@ class LawDataHarvester:
         從政府開放資料平台 (data.gov.tw) 或司法院開放 API 取得裁判書範例
         若外部網路受限，則自動採用高價值精選代表性裁判（最高法院大法庭裁定、重要民刑判決）
         """
-        print(f"[1/3] 正在檢索並抓取最新司法院代表性判決書 (目標: {limit} 篇)...")
+        print(f"[1/3] Searching landmark judgements (target: {limit})...")
         # 精選具司律考點價值之代表性判決庫
         benchmark_judgements = [
             {
@@ -130,29 +130,29 @@ class LawDataHarvester:
             data = json.loads(resp.text)
             return data if isinstance(data, list) else [data]
         except Exception as e:
-            print(f"判決生成微調數據失敗 {j.get('jid')}: {e}")
+            print(f"[ERROR] Failed SFT generation for {j.get('jid')}: {e}")
             return []
 
     def harvest_and_build_dataset(self, filename="harvest_sft_dataset.json"):
-        """執行一鍵自動化收割與訓練資料合成"""
+        """Automated SFT training dataset harvest pipeline"""
         judgements = self.fetch_open_judgements()
         all_sft_data = []
 
-        print(f"[2/3] 正在使用 Gemini 2.0 Flash 將判決書與爭點合成為標準 SFT 評分微調數據...")
+        print("[2/3] Synthesizing SFT training data with Gemini 2.0 Flash...")
         for j in judgements:
-            print(f" -> 正在解析與轉換: {j.get('jid')} ({j.get('category')})")
+            print(f" -> Converting: {j.get('jid')} ({j.get('category')})")
             samples = self.generate_sft_samples_from_judgement(j)
             all_sft_data.extend(samples)
             time.sleep(1)
 
-        print(f"[3/3] 正在匯出資料集至 Google Drive...")
+        print("[3/3] Exporting dataset to storage...")
         target_path = TRAIN_DATA_DIR / filename
         with open(target_path, "w", encoding="utf-8") as f:
             json.dump(all_sft_data, f, ensure_ascii=False, indent=2)
 
         print("=" * 60)
-        print(f"[成功] 訓練資料集生成成功！共生成 {len(all_sft_data)} 組高品質微調樣本")
-        print(f"[路徑] 儲存路徑 (Google Drive): {target_path}")
+        print(f"[SUCCESS] Training dataset generated! Total samples: {len(all_sft_data)}")
+        print(f"[PATH] Storage location: {target_path}")
         print("=" * 60)
         return target_path
 
