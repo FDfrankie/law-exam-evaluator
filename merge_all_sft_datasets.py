@@ -27,7 +27,8 @@ VERIFIED_DATASET_FILES = [
     ("Statutory Rules Interpretation SFT", TRAINING_DIR / "law_exam_statutory_rules_sft.json", "verified_statutory_rule"),
     ("Master Jurists & Theories SFT", TRAINING_DIR / "law_exam_master_theories_sft.json", "verified_jurist_doctrine"),
     ("Academic Coursework & Teaching SFT", TRAINING_DIR / "law_exam_coursework_sft.jsonl", "verified_academic_coursework"),
-    ("Past Bar Exams & 300 MCQ SFT", TRAINING_DIR / "law_exam_exams_and_mcq_sft.jsonl", "verified_exam_bank")
+    ("Past Bar Exams & 300 MCQ SFT", TRAINING_DIR / "law_exam_exams_and_mcq_sft.jsonl", "verified_exam_bank"),
+    ("User Handwritten Notes & Outlines SFT", TRAINING_DIR / "law_exam_user_notes_sft.jsonl", "verified_user_handwritten_notes")
 ]
 
 SYNTHETIC_DATASET_FILES = [
