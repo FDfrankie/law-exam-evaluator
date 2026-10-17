@@ -33,15 +33,15 @@ echo [5/7] Harvesting Real Court Decisions across 26 Domains...
 "C:\Users\mis\miniconda3\python.exe" mass_crawler_pipeline.py
 
 echo.
-echo [6/7] Generating 100,000 Real Court Judgment Legal Reasoning Pairs...
-"C:\Users\mis\miniconda3\python.exe" generate_100k_judicial_reasoning.py
+echo [6/7] Generating 1,000,000 Real Court Judgment Legal Reasoning Pairs...
+"C:\Users\mis\miniconda3\python.exe" generate_1m_judicial_reasoning.py
 
 echo.
-echo [7/7] Merging 100,000+ Unified SFT Fine-Tuning Corpus...
+echo [7/7] Merging 1,000,000+ Unified SFT Fine-Tuning Corpus...
 "C:\Users\mis\miniconda3\python.exe" merge_all_sft_datasets.py
 
 echo.
 echo ========================================================
-echo   Master 100k+ Pipeline Complete! All datasets stored on Drive.
+echo   Master 1 Million+ Pipeline Complete! All datasets stored on Drive.
 echo ========================================================
 pause

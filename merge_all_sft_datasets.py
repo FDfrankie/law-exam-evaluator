@@ -18,7 +18,7 @@ from config import DATA_DIR
 TRAINING_DIR = Path(DATA_DIR) / "training_data"
 
 DATASET_FILES = [
-    ("100k Real Court Judgment Legal Reasoning SFT", TRAINING_DIR / "law_exam_100k_judicial_reasoning_sft.jsonl"),
+    ("1M Real Court Judgment Legal Reasoning SFT", TRAINING_DIR / "law_exam_1m_judicial_reasoning_sft.jsonl"),
     ("Live Court Decisions SFT", TRAINING_DIR / "law_exam_comprehensive_sft.json"),
     ("Statutory Rules Interpretation SFT", TRAINING_DIR / "law_exam_statutory_rules_sft.json"),
     ("Master Jurists & Theories SFT", TRAINING_DIR / "law_exam_master_theories_sft.json"),
