@@ -63,9 +63,14 @@ def merge_datasets():
                                 h = compute_hash(item)
                                 if h not in seen_hashes:
                                     seen_hashes.add(h)
-                                    if "source_type" not in item:
-                                        item["source_type"] = default_source
-                                    f_ver.write(json.dumps(item, ensure_ascii=False) + "\n")
+                                    clean_item = {
+                                        "id": str(item.get("id", f"sample_{h[:12]}")),
+                                        "source_type": str(item.get("source_type", default_source)),
+                                        "instruction": str(item.get("instruction", "")).strip(),
+                                        "input": str(item.get("input", "")).strip(),
+                                        "output": str(item.get("output", "")).strip()
+                                    }
+                                    f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
                                     count += 1
                 else:
                     with open(path, "r", encoding="utf-8") as f:
@@ -74,9 +79,14 @@ def merge_datasets():
                             h = compute_hash(item)
                             if h not in seen_hashes:
                                 seen_hashes.add(h)
-                                if "source_type" not in item:
-                                    item["source_type"] = default_source
-                                f_ver.write(json.dumps(item, ensure_ascii=False) + "\n")
+                                clean_item = {
+                                    "id": str(item.get("id", f"sample_{h[:12]}")),
+                                    "source_type": str(item.get("source_type", default_source)),
+                                    "instruction": str(item.get("instruction", "")).strip(),
+                                    "input": str(item.get("input", "")).strip(),
+                                    "output": str(item.get("output", "")).strip()
+                                }
+                                f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
                                 count += 1
                 verified_count += count
                 stats[name] = count

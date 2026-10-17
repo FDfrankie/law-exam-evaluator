@@ -457,11 +457,7 @@ def generate_million_dataset(total_target: int = 1000000):
 
             record = {
                 "id": f"sft_judicial_reasoning_{i:07d}",
-                "domain": domain_name,
-                "topic": topic_name,
-                "precedent": precedent,
                 "source_type": "synthesized_judicial_reasoning",
-                "task_type": sample_data["task_type"],
                 "instruction": sample_data["instruction"],
                 "input": sample_data["input"],
                 "output": sample_data["output"]
