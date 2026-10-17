@@ -230,50 +230,121 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
     if stage == "一試 (選擇題 / 單選題)":
-        st.markdown("#### ⚙️ 一試出題參數設定（比照 300 題模擬題庫規格）")
-        qcol1, qcol2 = st.columns(2)
-        with qcol1:
-            q_mode = st.selectbox(
-                "題型結構模式：",
-                ["標準單選題 (案例情境盲測)", "綜合案例實事實務題組題 (跨子題)", "全真綜合模考卷 (混合題型)"]
-            )
-        with qcol2:
-            q_count_option = st.selectbox(
-                "出題題數：",
-                ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "自訂題數"]
-            )
-            if q_count_option == "自訂題數":
-                q_count = st.number_input("請輸入自訂題數 (1~50 題)：", min_value=1, max_value=50, value=5)
-            else:
-                q_count = int(q_count_option.split(" ")[0])
+        stage1_tab_ai, stage1_tab_300 = st.tabs([
+            "🎲 AI 智慧命題模式（任意題數 & 支援手寫筆記 OCR 客製出題）",
+            "📖 司律一試 300 題全真模擬題庫實戰（自選題數 5~50 題即時測驗）"
+        ])
 
-        if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
-            target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
-            
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            status_text.text(f"正在以司律一試命題規格批次生成 {q_count} 題，每批 5 題穩定出題中...")
-
-            def update_progress(curr, tot):
-                progress_bar.progress(min(1.0, curr / tot))
-                status_text.text(f"已完成 {curr} / {tot} 題...")
-
-            try:
-                gen = LawExamGenerator()
-                exam_res = gen.generate_stage1_exam(
-                    subject=subject,
-                    topic=target_topic,
-                    count=q_count,
-                    question_mode=q_mode,
-                    notes_content=final_notes if final_notes else None,
-                    progress_callback=update_progress
+        with stage1_tab_ai:
+            st.markdown("#### ⚙️ AI 一試出題參數設定（比照 300 題模擬題庫規格）")
+            qcol1, qcol2 = st.columns(2)
+            with qcol1:
+                q_mode = st.selectbox(
+                    "題型結構模式：",
+                    ["標準單選題 (案例情境盲測)", "綜合案例實事實務題組題 (跨子題)", "全真綜合模考卷 (混合題型)"]
                 )
-                progress_bar.progress(1.0)
-                status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
-                st.session_state["stage1_exam_data"] = exam_res
+            with qcol2:
+                q_count_option = st.selectbox(
+                    "出題題數：",
+                    ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "自訂題數"],
+                    key="ai_q_count_select"
+                )
+                if q_count_option == "自訂題數":
+                    q_count = st.number_input("請輸入自訂題數 (1~50 題)：", min_value=1, max_value=50, value=5, key="ai_custom_q_count")
+                else:
+                    q_count = int(q_count_option.split(" ")[0])
 
-            except Exception as e:
-                st.error(f"出題失敗: {e}")
+            if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
+                target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
+                
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                status_text.text(f"正在以司律一試命題規格批次生成 {q_count} 題，每批 5 題穩定出題中...")
+
+                def update_progress(curr, tot):
+                    progress_bar.progress(min(1.0, curr / tot))
+                    status_text.text(f"已完成 {curr} / {tot} 題...")
+
+                try:
+                    gen = LawExamGenerator()
+                    exam_res = gen.generate_stage1_exam(
+                        subject=subject,
+                        topic=target_topic,
+                        count=q_count,
+                        question_mode=q_mode,
+                        notes_content=final_notes if final_notes else None,
+                        progress_callback=update_progress
+                    )
+                    progress_bar.progress(1.0)
+                    status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
+                    st.session_state["stage1_exam_data"] = exam_res
+
+                except Exception as e:
+                    st.error(f"出題失敗: {e}")
+
+        with stage1_tab_300:
+            st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
+            st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+
+            c300_col1, c300_col2 = st.columns(2)
+            with c300_col1:
+                part_choice = st.selectbox(
+                    "選擇題庫範圍：",
+                    [
+                        "全卷 300 題隨機抽考",
+                        "第一篇：核心法理、公私法性質、依法行政與裁量 (第 1~90 題)",
+                        "第二篇：具體行政行為定性分類、附款、效力與廢止 (第 91~240 題)",
+                        "第三篇：綜合案例實事實務題組題 (第 241~300 題)"
+                    ]
+                )
+            with c300_col2:
+                count_300_choice = st.selectbox(
+                    "抽題題數：",
+                    ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
+                    key="count_300_select"
+                )
+                if count_300_choice == "自訂題數":
+                    take_count = st.number_input("請輸入抽取題數 (1~100 題)：", min_value=1, max_value=100, value=10, key="custom_300_count")
+                else:
+                    take_count = int(count_300_choice.split(" ")[0])
+
+            if st.button("🚀 從 300 題庫抽取試題開始測驗", type="primary", use_container_width=True):
+                bank_file = Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json"
+                if not bank_file.exists():
+                    st.error("找不到 300 題庫檔案，請確認 raw_exams/admin_law_300_mcqs.json 是否存在。")
+                else:
+                    import random
+                    with open(bank_file, "r", encoding="utf-8") as f:
+                        bank_data = json.load(f)
+                    
+                    pool = bank_data.get("questions", [])
+                    if part_choice.startswith("第一篇"):
+                        pool = [q for q in pool if 1 <= q.get("question_no", 0) <= 90]
+                    elif part_choice.startswith("第二篇"):
+                        pool = [q for q in pool if 91 <= q.get("question_no", 0) <= 240]
+                    elif part_choice.startswith("第三篇"):
+                        pool = [q for q in pool if 241 <= q.get("question_no", 0) <= 300]
+
+                    selected_qs = random.sample(pool, min(take_count, len(pool)))
+                    # 重新編排題號
+                    reindexed_qs = []
+                    new_answer_key = {}
+                    for i, q in enumerate(selected_qs, 1):
+                        q_copy = dict(q)
+                        q_copy["original_no"] = q_copy.get("question_no")
+                        q_copy["question_no"] = i
+                        ans = q_copy.get("answer", "A")
+                        new_answer_key[str(i)] = ans
+                        reindexed_qs.append(q_copy)
+
+                    st.session_state["stage1_exam_data"] = {
+                        "subject": "行政法",
+                        "topic": f"300題模擬題庫精選（{part_choice[:10]}）",
+                        "total_count": len(reindexed_qs),
+                        "questions": reindexed_qs,
+                        "answer_key": new_answer_key
+                    }
+                    st.success(f"已成功從題庫中抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
