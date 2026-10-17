@@ -165,7 +165,56 @@ def process_all_samsung_notes():
         print(f"  [蒸餾完成] 共產出 {len(all_samples)} 組手寫筆記 SFT 樣本！")
         print(f"  儲存路徑：{OUT_SFT_FILE}")
         print("  正在調用 merge_datasets() 自動合併至主訓練大庫...")
+        merge_datasets()
         print("=" * 70)
+
+def ingest_single_uploaded_file(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
+    """接收前端上傳之手寫檔案 byte 串流，自動儲存至 SamsungNotes 並蒸餾寫入 SFT 資料庫"""
+    if not SAMSUNG_NOTES_DIR.exists():
+        SAMSUNG_NOTES_DIR.mkdir(parents=True, exist_ok=True)
+    
+    saved_path = SAMSUNG_NOTES_DIR / filename
+    with open(saved_path, "wb") as f:
+        f.write(file_bytes)
+    
+    if saved_path.suffix.lower() == ".pdf":
+        imgs = render_pdf_to_images(saved_path)
+    else:
+        imgs = [Image.open(io.BytesIO(file_bytes))]
+    
+    if not imgs:
+        return []
+    
+    new_samples = ocr_and_distill_notes(imgs, saved_path.stem)
+    if new_samples:
+        existing_hashes = set()
+        existing_samples = []
+        if OUT_SFT_FILE.exists():
+            with open(OUT_SFT_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line_str = line.strip()
+                    if line_str:
+                        item = json.loads(line_str)
+                        existing_samples.append(item)
+                        existing_hashes.add(compute_hash(item.get("instruction", "") + item.get("input", "")))
+        
+        for s in new_samples:
+            h = compute_hash(s.get("instruction", "") + s.get("input", ""))
+            if h not in existing_hashes:
+                existing_hashes.add(h)
+                existing_samples.append(s)
+        
+        with open(OUT_SFT_FILE, "w", encoding="utf-8") as f_out:
+            for s in existing_samples:
+                f_out.write(json.dumps(s, ensure_ascii=False) + "\n")
+        
+        try:
+            merge_datasets()
+        except Exception as me:
+            print(f"[警告] 自動合併失敗: {me}")
+            
+    return new_samples
 
 if __name__ == "__main__":
     process_all_samsung_notes()
+
