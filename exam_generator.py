@@ -20,7 +20,23 @@ class LawExamGenerator:
         if not self.api_key:
             raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
         genai.configure(api_key=self.api_key)
+        self.model_name = model_name
         self.model = genai.GenerativeModel(model_name=model_name)
+
+    def _call_model(self, prompt: Any, generation_config: genai.types.GenerationConfig) -> Any:
+        models_to_try = [self.model_name]
+        for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            if m not in models_to_try:
+                models_to_try.append(m)
+        last_err = None
+        for m_name in models_to_try:
+            try:
+                mod = genai.GenerativeModel(model_name=m_name)
+                return mod.generate_content(prompt, generation_config=generation_config)
+            except Exception as e:
+                last_err = e
+                continue
+        raise RuntimeError(f"所有 Gemini 模型呼叫均失敗: {last_err}")
 
     def _parse_json_safely(self, text: str) -> Any:
         """安全解析模型返回的 JSON，自動過濾 markdown code fence 與修補微小語法問題"""
@@ -122,7 +138,7 @@ class LawExamGenerator:
 ]
 只輸出純 JSON，勿添加其他多餘文字。
 """
-            resp = self.model.generate_content(
+            resp = self._call_model(
                 prompt,
                 generation_config=genai.types.GenerationConfig(
                     temperature=0.35,
@@ -134,7 +150,7 @@ class LawExamGenerator:
                 batch_items = self._parse_json_safely(resp.text)
             except Exception as pe:
                 # 容錯重試一次
-                resp_retry = self.model.generate_content(
+                resp_retry = self._call_model(
                     prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
                     generation_config=genai.types.GenerationConfig(temperature=0.2, response_mime_type="application/json")
                 )
@@ -203,7 +219,7 @@ class LawExamGenerator:
 }}
 只輸出純 JSON。
 """
-        response = self.model.generate_content(
+        response = self._call_model(
             prompt,
             generation_config=genai.types.GenerationConfig(
                 temperature=0.35,
@@ -232,7 +248,7 @@ class LawExamGenerator:
 
 請直接以排版工整之 Markdown 格式輸出擬答全文。
 """
-        response = self.model.generate_content(
+        response = self._call_model(
             prompt,
             generation_config=genai.types.GenerationConfig(
                 temperature=0.3

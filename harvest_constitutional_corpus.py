@@ -12,6 +12,7 @@ import io
 import re
 import urllib3
 import requests
+import hashlib
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -31,11 +32,18 @@ TRAINING_DIR.mkdir(parents=True, exist_ok=True)
 BASE_URL = "https://opendata.judicial.gov.tw"
 HEADERS = {"User-Agent": "LawExamData/1.0 (Judicial Yuan OpenData Client)"}
 
+def compute_hash(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8", errors="ignore")).hexdigest()
+
 def get_resources(category_no: str) -> list:
     url = f"{BASE_URL}/data/api/rest/categories/{category_no}/resources"
-    r = requests.get(url, verify=False, headers=HEADERS, timeout=30)
-    r.raise_for_status()
-    datasets = r.json()
+    try:
+        r = requests.get(url, verify=False, headers=HEADERS, timeout=30)
+        r.raise_for_status()
+        datasets = r.json()
+    except Exception as e:
+        print(f"  [Warning] Failed to fetch resources for category {category_no}: {e}")
+        return []
     resources = []
     for d in datasets:
         for f in d.get("filesets", []):
@@ -145,6 +153,8 @@ def harvest_all_constitutional():
         reasoning_text = str(reasoning)[:800] if reasoning else "論理理由闡明憲法比例原則、正當法律程序及法官保留之實質內涵。"
 
         const_sft_samples.append({
+            "id": f"const_{fid}_{compute_hash(title)[:10]}",
+            "source_type": "verified_constitutional_case",
             "instruction": f"你是一位憲法與公法學專精之司律閱卷委員。請深入評析【{title}】之違憲審查爭點、宣告主文與憲法法理依據。",
             "input": f"評析目標：{title}\n判旨要點：{holding_text}",
             "output": (
@@ -159,7 +169,12 @@ def harvest_all_constitutional():
     with open(sft_out_path, "w", encoding="utf-8") as f:
         json.dump(const_sft_samples, f, ensure_ascii=False, indent=2)
 
-    print(f"  Saved constitutional SFT dataset: {sft_out_path} ({len(const_sft_samples)} samples)")
+    sft_out_jsonl = TRAINING_DIR / "law_exam_constitutional_sft.jsonl"
+    with open(sft_out_jsonl, "w", encoding="utf-8") as f:
+        for s in const_sft_samples:
+            f.write(json.dumps(s, ensure_ascii=False) + "\n")
+
+    print(f"  Saved constitutional SFT dataset: {sft_out_path} and {sft_out_jsonl.name} ({len(const_sft_samples)} samples)")
 
     print("\n" + "=" * 70)
     print(f"  Constitutional Cases Harvest Completed! Total Records: {len(downloaded_records)}")

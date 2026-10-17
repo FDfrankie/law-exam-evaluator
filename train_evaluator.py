@@ -41,7 +41,10 @@ class LawExamSFTDataset(Dataset):
                 line_str = line.strip()
                 if not line_str:
                     continue
-                item = json.loads(line_str)
+                try:
+                    item = json.loads(line_str)
+                except Exception:
+                    continue
                 instruction = item.get("instruction", "")
                 inp = item.get("input", "")
                 output = item.get("output", "")
@@ -137,6 +140,7 @@ def run_training(args):
 
     global_step = 0
     running_loss = 0.0
+    step_loss_count = 0
 
     for epoch in range(1, args.epochs + 1):
         print(f"\n--- Epoch {epoch}/{args.epochs} ---")
@@ -160,12 +164,14 @@ def run_training(args):
 
             global_step += 1
             running_loss += loss.item()
+            step_loss_count += 1
 
             if global_step % args.log_interval == 0 or global_step == 1:
-                avg_loss = running_loss / (global_step if global_step < args.log_interval else args.log_interval)
+                avg_loss = running_loss / max(1, step_loss_count)
                 elapsed = time.time() - start_time
                 print(f"  Step [{global_step}/{total_steps}] | Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.2e} | Elapsed: {elapsed:.1f}s")
                 running_loss = 0.0
+                step_loss_count = 0
 
         # Save checkpoint after each epoch
         epoch_dir = args.output_dir / f"checkpoint-epoch-{epoch}"

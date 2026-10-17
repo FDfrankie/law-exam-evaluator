@@ -20,7 +20,7 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")
@@ -45,10 +45,16 @@ REPORTS_DIR = DATA_DIR / "evaluation_reports"
 CONSTITUTIONAL_DIR = DATA_DIR / "constitutional_cases"
 NATIONAL_LAWS_DIR = DATA_DIR / "national_laws"
 TRAINING_DATA_DIR = DATA_DIR / "training_data"
+SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
+MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
 
 def init_directories():
     """Ensure data directories exist"""
-    for folder in [RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR, CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR]:
+    for folder in [
+        RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR,
+        CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR,
+        SAMSUNG_NOTES_DIR, MODEL_WEIGHTS_DIR
+    ]:
         try:
             folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:

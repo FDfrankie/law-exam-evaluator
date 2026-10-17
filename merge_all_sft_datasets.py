@@ -36,7 +36,7 @@ SYNTHETIC_DATASET_FILES = [
 ]
 
 def compute_hash(sample: dict) -> str:
-    key = (sample.get("instruction", "") + sample.get("input", "")).strip()
+    key = (sample.get("instruction", "") + sample.get("input", "") + sample.get("output", "")[:200]).strip()
     return hashlib.sha256(key.encode("utf-8", errors="ignore")).hexdigest()
 
 def merge_datasets():
@@ -45,22 +45,37 @@ def merge_datasets():
     print("=" * 70)
 
     out_verified_jsonl = TRAINING_DIR / "law_exam_verified_sft.jsonl"
-    f_ver = open(out_verified_jsonl, "w", encoding="utf-8")
-
     seen_hashes = set()
     verified_count = 0
     stats = {}
 
-    for name, path, default_source in VERIFIED_DATASET_FILES:
-        if path.exists():
-            count = 0
-            try:
-                if path.suffix == ".jsonl":
-                    with open(path, "r", encoding="utf-8") as f:
-                        for line in f:
-                            line_str = line.strip()
-                            if line_str:
-                                item = json.loads(line_str)
+    with open(out_verified_jsonl, "w", encoding="utf-8") as f_ver:
+        for name, path, default_source in VERIFIED_DATASET_FILES:
+            if path.exists():
+                count = 0
+                try:
+                    if path.suffix == ".jsonl":
+                        with open(path, "r", encoding="utf-8") as f:
+                            for line in f:
+                                line_str = line.strip()
+                                if line_str:
+                                    item = json.loads(line_str)
+                                    h = compute_hash(item)
+                                    if h not in seen_hashes:
+                                        seen_hashes.add(h)
+                                        clean_item = {
+                                            "id": str(item.get("id", f"sample_{h[:12]}")),
+                                            "source_type": str(item.get("source_type", default_source)),
+                                            "instruction": str(item.get("instruction", "")).strip(),
+                                            "input": str(item.get("input", "")).strip(),
+                                            "output": str(item.get("output", "")).strip()
+                                        }
+                                        f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
+                                        count += 1
+                    else:
+                        with open(path, "r", encoding="utf-8") as f:
+                            items = json.load(f)
+                            for item in items:
                                 h = compute_hash(item)
                                 if h not in seen_hashes:
                                     seen_hashes.add(h)
@@ -73,31 +88,14 @@ def merge_datasets():
                                     }
                                     f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
                                     count += 1
-                else:
-                    with open(path, "r", encoding="utf-8") as f:
-                        items = json.load(f)
-                        for item in items:
-                            h = compute_hash(item)
-                            if h not in seen_hashes:
-                                seen_hashes.add(h)
-                                clean_item = {
-                                    "id": str(item.get("id", f"sample_{h[:12]}")),
-                                    "source_type": str(item.get("source_type", default_source)),
-                                    "instruction": str(item.get("instruction", "")).strip(),
-                                    "input": str(item.get("input", "")).strip(),
-                                    "output": str(item.get("output", "")).strip()
-                                }
-                                f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
-                                count += 1
-                verified_count += count
-                stats[name] = count
-                print(f"  [LOADED & DEDUPED] {name}: {count:,} samples from {path.name}")
-            except Exception as e:
-                print(f"  [WARN] Failed loading {path.name}: {e}")
-        else:
-            print(f"  [SKIPPED] {path.name} (not found)")
+                    verified_count += count
+                    stats[name] = count
+                    print(f"  [LOADED & DEDUPED] {name}: {count:,} samples from {path.name}")
+                except Exception as e:
+                    print(f"  [WARN] Failed loading {path.name}: {e}")
+            else:
+                print(f"  [SKIPPED] {path.name} (not found)")
 
-    f_ver.close()
     ver_size_mb = out_verified_jsonl.stat().st_size / (1024 * 1024)
 
     print("\n" + "=" * 70)
@@ -112,32 +110,30 @@ def merge_datasets():
     print("=" * 70)
 
     out_unified_jsonl = TRAINING_DIR / "law_exam_master_sft_unified.jsonl"
-    f_uni = open(out_unified_jsonl, "w", encoding="utf-8")
 
-    # First copy all verified samples
     unified_count = 0
-    with open(out_verified_jsonl, "r", encoding="utf-8") as f_ver_in:
-        for line in f_ver_in:
-            f_uni.write(line)
-            unified_count += 1
+    with open(out_unified_jsonl, "w", encoding="utf-8") as f_uni:
+        # First copy all verified samples
+        with open(out_verified_jsonl, "r", encoding="utf-8") as f_ver_in:
+            for line in f_ver_in:
+                f_uni.write(line)
+                unified_count += 1
 
-    # Then append synthetic 1M dataset directly via stream
-    for name, path, default_source in SYNTHETIC_DATASET_FILES:
-        if path.exists():
-            syn_count = 0
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line_str = line.strip()
-                        if line_str:
-                            f_uni.write(line_str + "\n")
-                            syn_count += 1
-                unified_count += syn_count
-                print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
-            except Exception as e:
-                print(f"  [WARN] Failed appending {path.name}: {e}")
-
-    f_uni.close()
+        # Then append synthetic 1M dataset directly via stream
+        for name, path, default_source in SYNTHETIC_DATASET_FILES:
+            if path.exists():
+                syn_count = 0
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line_str = line.strip()
+                            if line_str:
+                                f_uni.write(line_str + "\n")
+                                syn_count += 1
+                    unified_count += syn_count
+                    print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
+                except Exception as e:
+                    print(f"  [WARN] Failed appending {path.name}: {e}")
     uni_size_mb = out_unified_jsonl.stat().st_size / (1024 * 1024)
 
     print("\n" + "=" * 70)

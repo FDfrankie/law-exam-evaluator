@@ -79,13 +79,29 @@ class LawExamEvaluator:
             user_content.append("【以下為考生實際手寫作答圖片】：")
             user_content.extend(images)
 
-        response = self.model.generate_content(
-            user_content,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.2,
-                response_mime_type="application/json"
-            )
+        gen_config = genai.types.GenerationConfig(
+            temperature=0.2,
+            response_mime_type="application/json"
         )
+
+        response = None
+        models_to_try = [self.model_name]
+        for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
+        last_err = None
+        for m_name in models_to_try:
+            try:
+                cur_model = genai.GenerativeModel(model_name=m_name)
+                response = cur_model.generate_content(user_content, generation_config=gen_config)
+                break
+            except Exception as e:
+                last_err = e
+                continue
+
+        if response is None:
+            raise RuntimeError(f"所有 Gemini 模型呼叫均失敗，最後錯誤: {last_err}")
 
         try:
             result_json = json.loads(response.text)

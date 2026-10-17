@@ -785,7 +785,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         c2.metric("全量百萬微調大庫", f"{1005082:,} 筆" if mas_file.exists() else "建構中")
         c3.metric("欄位綱要驗證", "100% 5 欄位相容")
         
-        st.markdown(\"\"\"
+        st.markdown("""
         #### 🛡️ Hugging Face Arrow 綱要相容保證：
         每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕 Colab 第 4 格 `CastError`：
         - `id`: 樣本唯一識別碼
@@ -800,5 +800,5 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         3. 依序執行環境安裝與金鑰設定（第 2、3 格）。
         4. 執行第 4 格：已配置 `Features` 明確型別防護與容錯讀取，**可順暢完成載入與分詞**。
         5. 執行第 5 格：啟動 Unsloth 4-bit 顯存優化，開始訓練微調專屬司律法律大模型！
-        \"\"\")
+        """)
 

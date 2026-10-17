@@ -26,7 +26,10 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
         pass
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
-import google.generativeai as genai
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 
 RAW_EXAMS_DIR = Path(DATA_DIR) / "raw_exams"
 PDFS_DIR = RAW_EXAMS_DIR / "pdfs"
@@ -482,7 +485,7 @@ class LawExamBankCrawler:
 · 第三篇（第 241‒300 題）：綜合案例實事題組題（共 20 組實務案例題組）
 詳細題庫資料已結構化存放在 raw_exams/admin_law_300_mcqs.json，支援隨機或章節線上模擬測驗！
 """,
-                "pdf_url": "file:///G:/我的雲端硬碟/LawExamData/raw_exams/admin_law_300_mcqs.json",
+                "pdf_url": str(RAW_EXAMS_DIR / "admin_law_300_mcqs.json"),
                 "pdf_file": "admin_law_300_mcqs.json"
             }
         ]

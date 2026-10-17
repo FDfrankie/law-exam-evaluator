@@ -32,7 +32,13 @@ except ImportError:
 
 from config import DATA_DIR
 
-RESOURCES_DIR = Path(r"G:\我的雲端硬碟\資源")
+RESOURCES_DIR = Path(os.getenv("LEGAL_RESOURCES_DIR", r"G:\我的雲端硬碟\資源"))
+if not RESOURCES_DIR.exists():
+    for fallback_candidate in [DATA_DIR.parent / "資源", Path(r"G:\My Drive\資源"), Path(r"G:\我的雲端硬碟\資源")]:
+        if fallback_candidate.exists():
+            RESOURCES_DIR = fallback_candidate
+            break
+
 TRAINING_DIR = Path(DATA_DIR) / "training_data"
 RAW_EXAMS_DIR = Path(DATA_DIR) / "raw_exams"
 OUT_SFT_FILE = TRAINING_DIR / "law_exam_coursework_sft.jsonl"
@@ -66,13 +72,16 @@ def extract_text_from_pdf(pdf_path: Path) -> str:
     if pdfium:
         try:
             doc = pdfium.PdfDocument(str(pdf_path))
-            text_chunks = []
-            for page in doc:
-                textpage = page.get_textpage()
-                t = textpage.get_text_range()
-                if t and t.strip():
-                    text_chunks.append(t.strip())
-            return "\n\n".join(text_chunks)
+            try:
+                text_chunks = []
+                for page in doc:
+                    textpage = page.get_textpage()
+                    t = textpage.get_text_range()
+                    if t and t.strip():
+                        text_chunks.append(t.strip())
+                return "\n\n".join(text_chunks)
+            finally:
+                doc.close()
         except Exception:
             pass
 
@@ -132,9 +141,6 @@ def distill_sft_samples(raw_text: str, subject: str, doc_name: str) -> List[Dict
                         samples.append({
                             "id": f"cw_{subject}_{compute_hash(q_fact)[:12]}",
                             "source_type": "verified_academic_coursework",
-                            "subject": subject,
-                            "doc_name": doc_name,
-                            "type": "case_hypothetical_irac",
                             "instruction": f"你是一位具備多年命題閱卷經驗之台灣司法官律師考試閱卷委員。請針對以下【{subject}】名師課輔實例題，依據嚴謹三段論法（開標、大前提、實務學說見解對比、小前提涵攝）進行深度評析與提出高分示範擬答：",
                             "input": f"【案例事實與問題】：\n{q_fact[:3000]}",
                             "output": ans_text[:4000]
@@ -152,9 +158,6 @@ def distill_sft_samples(raw_text: str, subject: str, doc_name: str) -> List[Dict
             samples.append({
                 "id": f"cw_debate_{subject}_{compute_hash(p)[:12]}",
                 "source_type": "verified_academic_coursework",
-                "subject": subject,
-                "doc_name": doc_name,
-                "type": "doctrinal_controversy",
                 "instruction": f"請針對台灣法學界與實務就【{subject}】之重要法律爭點，深入對比「學說通說/有力說」與「實務判例/裁定判旨」之立論差異，並依據法益衡量提出嚴謹的評析結論：",
                 "input": f"【探討主題】：{title}\n【講義論述焦點】：\n{p[:2000]}",
                 "output": f"【爭點定位與論述架構】：\n本件涉及{subject}核心規範意旨。\n\n【論理深入剖析】：\n{p[:3500]}"
@@ -169,9 +172,6 @@ def distill_sft_samples(raw_text: str, subject: str, doc_name: str) -> List[Dict
             samples.append({
                 "id": f"cw_doctrine_{subject}_{compute_hash(chunk)[:12]}",
                 "source_type": "verified_academic_coursework",
-                "subject": subject,
-                "doc_name": doc_name,
-                "type": "statutory_elements",
                 "instruction": f"請闡述台灣【{subject}】中關於「{first_line}」之法律規範基礎、核心構成要件、權利義務效果與相關實務判解發展：",
                 "input": f"【主題研討】：{first_line}",
                 "output": f"【完整體系論述】：\n{chunk[:3500]}"

@@ -10,10 +10,13 @@ import os
 import sys
 import json
 import re
+import hashlib
 from pathlib import Path
 
-STANDARDS_DIR = Path(r"G:\我的雲端硬碟\LawExamData\scoring_standards")
-TRAINING_DIR = Path(r"G:\我的雲端硬碟\LawExamData\training_data")
+from config import STANDARDS_DIR, TRAINING_DATA_DIR as TRAINING_DIR
+
+def compute_hash(text: str) -> str:
+    return hashlib.sha256(text.strip().encode("utf-8", errors="ignore")).hexdigest()
 
 PROCEDURAL_PATTERNS = [
     r"按第三審上訴",
@@ -105,6 +108,8 @@ def clean_scoring_standards():
             
             # Sample 1: IRAC Legal Analysis & Scholarly Debate
             sample1 = {
+                "id": f"clean_jud_{compute_hash(jid + full_text)[:12]}",
+                "source_type": "verified_authentic_judgment",
                 "instruction": f"你是一位具備多年閱卷經驗之台灣司法官律師考試閱卷委員。請針對【{domain}】核心考點【{topic}】進行完整 IRAC 法理分析，開標列出大前提法規要件、權威實務裁判與學說見解，並予以對比評析。",
                 "input": f"【案件爭端事實摘要】：\n{full_text[:380]}...",
                 "output": (
@@ -113,15 +118,14 @@ def clean_scoring_standards():
                     f"【三、實務裁判見解與論理依據】：\n權威實務指標【{precedent}】及本案實務裁判【{jid}】要旨指出：\n"
                     f"『{full_text[100:450]}』\n\n"
                     f"【四、小前提案件事實涵攝與結論】：\n本件依前開多數說與權威實務見解，將客觀事實涵攝至構成要件，應認定當事人間權益關係符合法規規範意旨，以維護法律公平與交易安全。"
-                ),
-                "source_type": "verified_authentic_judgment",
-                "jid": jid,
-                "domain": domain
+                )
             }
             f.write(json.dumps(sample1, ensure_ascii=False) + "\n")
             
             # Sample 2: 4-Dimension Diagnostic Feedback
             sample2 = {
+                "id": f"clean_eval_{compute_hash(jid + topic)[:12]}",
+                "source_type": "verified_authentic_judgment",
                 "instruction": f"請依台灣司律國考四大評分維度（爭點意識、三段論法邏輯、學說實務對比、事實要件涵攝），批改評閱這份【{domain}】考生作答，並輸出標準結構化診斷 JSON。",
                 "input": f"題目涉及【{topic}】。\n考生作答摘要：『按相關法條規定，本案事實應依多數實務見解處理，主張權利之人有理由。』",
                 "output": json.dumps({
@@ -138,10 +142,7 @@ def clean_scoring_standards():
                     "strengths": ["作答態度積極，結論方向大致符合一般法感"],
                     "weaknesses": ["論述過於簡略，缺乏三段論法開標大前提", "完全未將具體客觀事實帶入要件進行實質涵攝"],
                     "actionable_feedback": f"建議於答題卷首行以【{topic}】精準開標，引述【{precedent}】判旨並對比各家學說，再逐項將題目細節帶入要件，即可躍升上位卷高分區。"
-                }, ensure_ascii=False, indent=2),
-                "source_type": "verified_authentic_judgment",
-                "jid": jid,
-                "domain": domain
+                }, ensure_ascii=False, indent=2)
             }
             f.write(json.dumps(sample2, ensure_ascii=False) + "\n")
             

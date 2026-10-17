@@ -79,8 +79,6 @@ def process_300_mcqs() -> List[Dict[str, Any]]:
         samples.append({
             "id": f"mcq_admin_law_{q_no}_{compute_hash(q_text)[:10]}",
             "source_type": "verified_bar_mcq_bank",
-            "subject": "行政法",
-            "category": cat,
             "instruction": "你是一位具備多年命題閱卷經驗之台灣司法官律師考試閱卷委員。請針對以下【行政法】一試選擇題進行深度法律解析，說明正確選項之法規與實務裁定依據，並逐項析述各選項之適法性與違法瑕疵：",
             "input": prompt_input,
             "output": output_text
@@ -157,9 +155,6 @@ def process_exam_catalog() -> List[Dict[str, Any]]:
             samples.append({
                 "id": f"past_exam_{compute_hash(exam_id + q_title)[:12]}",
                 "source_type": "verified_past_bar_exam",
-                "subject": subj,
-                "school": sch,
-                "year": yr,
                 "instruction": f"你是一位具備多年命題閱卷經驗之台灣司法官律師考試閱卷委員。請針對以下【{sch} {dept} {subj}】正式申論實例題，依據嚴謹三段論法（爭點開標、大前提法規要件、實務判解學說對比、小前提案例涵攝）提出標準上位卷高分答題架構與論理指引：",
                 "input": sample_input,
                 "output": sample_output

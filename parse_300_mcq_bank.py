@@ -15,10 +15,16 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     except Exception:
         pass
 
-from config import RAW_DATA_DIR
+from config import RAW_DATA_DIR, DATA_DIR
 
-USER_PDF_PATH = Path(r"C:\Users\mis\.gemini\antigravity\brain\7a4dfd47-e0dc-4156-b542-f11185a17887\.user_uploaded\media_1792215967898_02dabf0e.pdf")
-OUTPUT_JSON_PATH = RAW_DATA_DIR / "admin_law_300_mcqs.json"
+DEFAULT_PDF_CANDIDATES = [
+    RAW_DATA_DIR / "admin_law_300_mcqs.pdf",
+    Path(DATA_DIR) / "raw_exams" / "admin_law_300_mcqs.pdf",
+    Path(r"C:\Users\mis\.gemini\antigravity\brain\7a4dfd47-e0dc-4156-b542-f11185a17887\.user_uploaded\media_1792215967898_02dabf0e.pdf")
+]
+
+USER_PDF_PATH = next((p for p in DEFAULT_PDF_CANDIDATES if p.exists()), DEFAULT_PDF_CANDIDATES[0])
+OUTPUT_JSON_PATH = Path(DATA_DIR) / "raw_exams" / "admin_law_300_mcqs.json"
 
 def parse_300_mcqs():
     print("=" * 70)
@@ -26,8 +32,10 @@ def parse_300_mcqs():
     print("=" * 70)
 
     if not USER_PDF_PATH.exists():
-        print(f"[錯誤] 找不到 PDF: {USER_PDF_PATH}")
+        print(f"[錯誤] 找不到 PDF: {USER_PDF_PATH}，請確認檔案已放置於 raw_exams/ 目錄。")
         return
+
+    OUTPUT_JSON_PATH.parent.mkdir(parents=True, exist_ok=True)
 
     full_text = ""
     with pdfplumber.open(USER_PDF_PATH) as pdf:

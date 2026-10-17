@@ -793,6 +793,8 @@ class LawMassHarvester:
                 # Generate high-quality SFT samples
                 # Sample 1: IRAC Legal Analysis & Scholarly Debate
                 sample1 = {
+                    "id": f"live_jud_{hash_id}",
+                    "source_type": "verified_authentic_judgment",
                     "instruction": f"你是一位具備多年閱卷經驗之台灣司法官律師考試閱卷委員。請針對【{domain}】核心考點【{topic}】進行完整 IRAC 法理分析，開標列出大前提法規要件、權威實務裁判與學說見解，並予以對比評析。",
                     "input": f"【案件爭端事實摘要】：\n{c['full_text'][:380]}...",
                     "output": (
@@ -807,6 +809,8 @@ class LawMassHarvester:
 
                 # Sample 2: 4-Dimension Grading Rubric JSON
                 sample2 = {
+                    "id": f"live_eval_{hash_id}",
+                    "source_type": "verified_authentic_judgment",
                     "instruction": f"請依台灣司律國考四大評分維度（爭點意識、三段論法邏輯、學說實務對比、事實要件涵攝），批改評閱這份【{domain}】考生作答，並輸出標準結構化診斷 JSON。",
                     "input": f"題目涉及【{topic}】。\n考生作答摘要：『按相關法條規定，本案事實應依多數實務見解處理，主張權利之人有理由。』",
                     "output": json.dumps({
