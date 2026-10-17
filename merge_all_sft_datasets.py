@@ -22,10 +22,12 @@ TRAINING_DIR = Path(DATA_DIR) / "training_data"
 
 VERIFIED_DATASET_FILES = [
     ("Live Substantive Court Decisions SFT", TRAINING_DIR / "law_exam_live_cases_sft.jsonl", "verified_authentic_judgment"),
+    ("Comprehensive Judicial Cases SFT", TRAINING_DIR / "law_exam_comprehensive_sft.json", "verified_authentic_judgment"),
     ("Constitutional Court & Grand Justices SFT", TRAINING_DIR / "law_exam_constitutional_sft.json", "verified_constitutional"),
     ("Statutory Rules Interpretation SFT", TRAINING_DIR / "law_exam_statutory_rules_sft.json", "verified_statutory_rule"),
     ("Master Jurists & Theories SFT", TRAINING_DIR / "law_exam_master_theories_sft.json", "verified_jurist_doctrine"),
-    ("Academic Coursework & Teaching SFT", TRAINING_DIR / "law_exam_coursework_sft.jsonl", "verified_academic_coursework")
+    ("Academic Coursework & Teaching SFT", TRAINING_DIR / "law_exam_coursework_sft.jsonl", "verified_academic_coursework"),
+    ("Past Bar Exams & 300 MCQ SFT", TRAINING_DIR / "law_exam_exams_and_mcq_sft.jsonl", "verified_exam_bank")
 ]
 
 SYNTHETIC_DATASET_FILES = [

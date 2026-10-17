@@ -21,11 +21,23 @@ from pathlib import Path
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Ensure UTF-8 output if possible
-if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+elif sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
     except Exception:
         pass
+
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
+}
 
 from config import STANDARDS_DIR, DATA_DIR
 
@@ -632,7 +644,7 @@ class LawMassHarvester:
             eventval = soup.find("input", {"name": "__EVENTVALIDATION"})
             
             if not (viewstate and viewgen and eventval):
-                print(f"    [WARN] Failed to extract form tokens for keyword: {keyword.encode('ascii', errors='replace').decode('ascii')}")
+                print(f"    [WARN] Failed to extract form tokens for keyword: {keyword}")
                 return all_cases
 
             data = {
