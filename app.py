@@ -195,7 +195,11 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         topic = st.text_input("出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：", placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...")
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
-    note_tab1, note_tab2 = st.tabs(["📄 上傳筆記檔案 (手寫/打字 PDF、Word、圖片)", "✍️ 直接貼上/編輯筆記文字"])
+    note_tab1, note_tab2, note_tab3 = st.tabs([
+        "📄 上傳筆記檔案 (手寫/打字 PDF、Word、圖片)",
+        "✍️ 直接貼上/編輯筆記文字",
+        "🎓 從名師課輔講義庫挑選 (190+ 份講義與體系題解)"
+    ])
     
     notes_from_file = ""
     with note_tab1:
@@ -225,7 +229,33 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             placeholder="例如：貼上王澤鑑老師權益歸屬說論點、最高法院108台上大字1719號裁定重點摘要..."
         )
 
-    final_notes = (notes_from_text if notes_from_text else notes_from_file).strip()
+    notes_from_coursework = ""
+    with note_tab3:
+        cw_index_path = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
+        if cw_index_path.exists():
+            try:
+                with open(cw_index_path, "r", encoding="utf-8") as f_cw:
+                    cw_list = json.load(f_cw)
+                # 依當前選擇的科目篩選，若無符合則列出全部
+                cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
+                if not cw_sub_list:
+                    cw_sub_list = cw_list
+                
+                cw_options = [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
+                sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
+                if sel_cw:
+                    sel_idx = cw_options.index(sel_cw)
+                    chosen_item = cw_sub_list[sel_idx]
+                    st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
+                    st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
+                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
+                        notes_from_coursework = chosen_item.get("summary_preview", "")
+            except Exception as e:
+                st.error(f"讀取講義庫失敗: {e}")
+        else:
+            st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
+
+    final_notes = (notes_from_text if notes_from_text else (notes_from_file if notes_from_file else notes_from_coursework)).strip()
     if final_notes:
         st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
@@ -475,99 +505,173 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
 
 # ----------------- 模式 3: 歷年真題庫檢索 -----------------
 elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)":
-    st.header("📚 全台法學歷年真題庫檢索與模擬演練")
-    st.write("已收錄國立臺灣大學法研所碩士班、臺大轉學考、考選部司法官律師及司法特考等歷年真實試題，支援在線研讀、AI 擬答與變形出題！")
+    st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
+    
+    m3_tab1, m3_tab2 = st.tabs([
+        "🏛️ 考選部與臺大法研/轉學考歷年真題庫",
+        "🎓 大學名師講義與課輔爭點知識庫 (190+ 份各科講義與簡報)"
+    ])
 
-    crawler = LawExamBankCrawler()
-    catalog = crawler.catalog
+    with m3_tab1:
+        st.write("已收錄國立臺灣大學法研所碩士班、臺大轉學考、考選部司法官律師及司法特考等歷年真實試題，支援在線研讀、AI 擬答與變形出題！")
 
-    if not catalog:
-        st.warning("題庫中目前尚無試卷，點擊下方按鈕即可立即從臺大與考選部爬取試題！")
-        if st.button("🚀 立即爬取國立大學法研所與公職真題"):
-            with st.spinner("正在爬取並下載試卷中..."):
-                crawler.run_all(max_pages=2)
-                st.rerun()
-    else:
-        # 篩選列
-        scol1, scol2, scol3, scol4 = st.columns(4)
+        crawler = LawExamBankCrawler()
+        catalog = crawler.catalog
+
+        if not catalog:
+            st.warning("題庫中目前尚無試卷，點擊下方按鈕即可立即從臺大與考選部爬取試題！")
+            if st.button("🚀 立即爬取國立大學法研所與公職真題"):
+                with st.spinner("正在爬取並下載試卷中..."):
+                    crawler.run_all(max_pages=2)
+                    st.rerun()
+        else:
+            # 篩選列
+            scol1, scol2, scol3, scol4 = st.columns(4)
+            
+            all_categories = ["全部類別"] + sorted(list(set(x.get("category", "") for x in catalog if x.get("category"))))
+            all_schools = ["全部學校/機構"] + sorted(list(set(x.get("school", "") for x in catalog if x.get("school"))))
+            all_years = ["全部年度"] + sorted(list(set(str(x.get("year", "")) for x in catalog if x.get("year"))), reverse=True)
+
+            with scol1:
+                sel_cat = st.selectbox("考試類別：", all_categories)
+            with scol2:
+                sel_school = st.selectbox("學校 / 機構：", all_schools)
+            with scol3:
+                sel_year = st.selectbox("考試年度：", all_years)
+            with scol4:
+                search_kw = st.text_input("搜尋科目/關鍵字：", placeholder="例如：民法、刑法、憲法、行政法...")
+
+            # 篩選邏輯
+            filtered = catalog
+            if sel_cat != "全部類別":
+                filtered = [x for x in filtered if x.get("category") == sel_cat]
+            if sel_school != "全部學校/機構":
+                filtered = [x for x in filtered if x.get("school") == sel_school]
+            if sel_year != "全部年度":
+                filtered = [x for x in filtered if str(x.get("year")) == sel_year]
+            if search_kw.strip():
+                kw = search_kw.strip().lower()
+                filtered = [x for x in filtered if kw in x.get("subject", "").lower() or kw in x.get("department", "").lower() or kw in x.get("exam_text", "").lower()]
+
+            st.caption(f"共檢索到 **{len(filtered)}** 份試卷（題庫總計收錄 {len(catalog)} 份）：")
+
+            for idx, item in enumerate(filtered[:30], 1): # 每次顯示前 30 筆
+                e_id = item.get("exam_id", f"exam_{idx}")
+                yr = item.get("year", "")
+                sch = item.get("school", "")
+                cat = item.get("category", "")
+                dept = item.get("department", "")
+                subj = item.get("subject", "")
+                text = item.get("exam_text", "")
+                pdf_url = item.get("pdf_url", "")
+
+                with st.expander(f"📄 [{yr}年] {sch} - {dept} ｜ 【{subj}】 ({cat})"):
+                    st.markdown(f"**考試科目**：{subj} ｜ **系所組別**：{dept} ｜ **年度**：{yr} ｜ **官方連結**：[點此檢視原始試卷]({pdf_url})")
+                    st.divider()
+                    
+                    # 試題內容
+                    st.markdown("#### 試題內容：")
+                    st.write(text)
+
+                    # 若文字較短（如掃描影像），提供 OCR 按鈕
+                    if "[試題掃描檔" in text or len(text) < 100:
+                        if st.button(f"🔍 啟動 Gemini 視覺神經網路轉錄試題文字", key=f"ocr_btn_{e_id}"):
+                            with st.spinner("正在使用 Gemini 多模態模型進行試卷高精確辨識..."):
+                                ocr_res = crawler.ocr_exam_by_id(e_id)
+                                if ocr_res:
+                                    st.success("辨識謄錄成功！")
+                                    st.write(ocr_res)
+                                    text = ocr_res
+
+                    # 榜首擬答與題型演練按鈕
+                    bcol1, bcol2 = st.columns(2)
+                    with bcol1:
+                        if st.button(f"💡 針對本題生成榜首級高分示範擬答 (IRAC)", key=f"ans_btn_{e_id}"):
+                            with st.spinner("法學大模型正在為本真題撰寫上位卷完美擬答..."):
+                                gen = LawExamGenerator()
+                                model_ans = gen.generate_model_answer(question=text, subject=subj)
+                                st.markdown("### 🏆 示範擬答全文：")
+                                st.markdown(model_ans)
+
+                    with bcol2:
+                        if st.button(f"🎯 依此真題進行題型演繹與變形出題", key=f"remake_btn_{e_id}"):
+                            with st.spinner("正在將本題核心法理演繹為司律一試測驗題..."):
+                                gen = LawExamGenerator()
+                                remake_res = gen.generate_stage1_exam(
+                                    subject=subj,
+                                    topic=f"改編自{yr}年{sch}{dept}真題",
+                                    count=3,
+                                    notes_content=text
+                                )
+                                st.success("已成功由真題衍生出 3 題模擬選擇題！")
+                                st.json(remake_res.get("questions"))
+
+    with m3_tab2:
+        st.write("已收錄各名校法學教授與課輔名師之完整體系講義（民總、債總、債各、身分法、刑總、刑分、憲法、民事訴訟法、商事法、保險法、專利法、法理學、國民法官法等），支援全文關鍵字檢索、主題研讀與客製命題！")
         
-        all_categories = ["全部類別"] + sorted(list(set(x.get("category", "") for x in catalog if x.get("category"))))
-        all_schools = ["全部學校/機構"] + sorted(list(set(x.get("school", "") for x in catalog if x.get("school"))))
-        all_years = ["全部年度"] + sorted(list(set(str(x.get("year", "")) for x in catalog if x.get("year"))), reverse=True)
-
-        with scol1:
-            sel_cat = st.selectbox("考試類別：", all_categories)
-        with scol2:
-            sel_school = st.selectbox("學校 / 機構：", all_schools)
-        with scol3:
-            sel_year = st.selectbox("考試年度：", all_years)
-        with scol4:
-            search_kw = st.text_input("搜尋科目/關鍵字：", placeholder="例如：民法、刑法、憲法、行政法...")
-
-        # 篩選邏輯
-        filtered = catalog
-        if sel_cat != "全部類別":
-            filtered = [x for x in filtered if x.get("category") == sel_cat]
-        if sel_school != "全部學校/機構":
-            filtered = [x for x in filtered if x.get("school") == sel_school]
-        if sel_year != "全部年度":
-            filtered = [x for x in filtered if str(x.get("year")) == sel_year]
-        if search_kw.strip():
-            kw = search_kw.strip().lower()
-            filtered = [x for x in filtered if kw in x.get("subject", "").lower() or kw in x.get("department", "").lower() or kw in x.get("exam_text", "").lower()]
-
-        st.caption(f"共檢索到 **{len(filtered)}** 份試卷（題庫總計收錄 {len(catalog)} 份）：")
-
-        for idx, item in enumerate(filtered[:30], 1): # 每次顯示前 30 筆
-            e_id = item.get("exam_id", f"exam_{idx}")
-            yr = item.get("year", "")
-            sch = item.get("school", "")
-            cat = item.get("category", "")
-            dept = item.get("department", "")
-            subj = item.get("subject", "")
-            text = item.get("exam_text", "")
-            pdf_url = item.get("pdf_url", "")
-
-            with st.expander(f"📄 [{yr}年] {sch} - {dept} ｜ 【{subj}】 ({cat})"):
-                st.markdown(f"**考試科目**：{subj} ｜ **系所組別**：{dept} ｜ **年度**：{yr} ｜ **官方連結**：[點此檢視原始試卷]({pdf_url})")
-                st.divider()
+        cw_file = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
+        if not cw_file.exists():
+            st.info("💡 名師講義索引庫建置中，稍候即會自動呈現。")
+        else:
+            try:
+                with open(cw_file, "r", encoding="utf-8") as f_cw_idx:
+                    cw_items = json.load(f_cw_idx)
                 
-                # 試題內容
-                st.markdown("#### 試題內容：")
-                st.write(text)
-
-                # 若文字較短（如掃描影像），提供 OCR 按鈕
-                if "[試題掃描檔" in text or len(text) < 100:
-                    if st.button(f"🔍 啟動 Gemini 視覺神經網路轉錄試題文字", key=f"ocr_btn_{e_id}"):
-                        with st.spinner("正在使用 Gemini 多模態模型進行試卷高精確辨識..."):
-                            ocr_res = crawler.ocr_exam_by_id(e_id)
-                            if ocr_res:
-                                st.success("辨識謄錄成功！")
-                                st.write(ocr_res)
-                                text = ocr_res
-
-                # 榜首擬答與題型演練按鈕
-                bcol1, bcol2 = st.columns(2)
-                with bcol1:
-                    if st.button(f"💡 針對本題生成榜首級高分示範擬答 (IRAC)", key=f"ans_btn_{e_id}"):
-                        with st.spinner("法學大模型正在為本真題撰寫上位卷完美擬答..."):
-                            gen = LawExamGenerator()
-                            model_ans = gen.generate_model_answer(question=text, subject=subj)
-                            st.markdown("### 🏆 示範擬答全文：")
-                            st.markdown(model_ans)
-
-                with bcol2:
-                    if st.button(f"🎯 依此真題進行題型演繹與變形出題", key=f"remake_btn_{e_id}"):
-                        with st.spinner("正在將本題核心法理演繹為司律一試測驗題..."):
-                            gen = LawExamGenerator()
-                            remake_res = gen.generate_stage1_exam(
-                                subject=subj,
-                                topic=f"改編自{yr}年{sch}{dept}真題",
-                                count=3,
-                                notes_content=text
-                            )
-                            st.success("已成功由真題衍生出 3 題模擬選擇題！")
-                            st.json(remake_res.get("questions"))
+                cw_col1, cw_col2 = st.columns([1, 2])
+                with cw_col1:
+                    all_cw_subs = ["全部考科"] + sorted(list(set(c.get("subject", "") for c in cw_items if c.get("subject"))))
+                    sel_cw_sub = st.selectbox("學門考科：", all_cw_subs, key="m3_cw_sub")
+                with cw_col2:
+                    cw_kw = st.text_input("搜尋講義名稱或爭點關鍵字：", placeholder="例如：許恒達、意思表示、錯誤論、王皇玉、保險利益...", key="m3_cw_kw")
+                
+                filtered_cw = cw_items
+                if sel_cw_sub != "全部考科":
+                    filtered_cw = [c for c in filtered_cw if c.get("subject") == sel_cw_sub]
+                if cw_kw.strip():
+                    kw_lower = cw_kw.strip().lower()
+                    filtered_cw = [c for c in filtered_cw if kw_lower in c.get("filename", "").lower() or kw_lower in c.get("summary_preview", "").lower()]
+                
+                st.caption(f"共檢索到 **{len(filtered_cw)}** 份名師講義（講義庫收錄總計 {len(cw_items)} 份）：")
+                
+                for c_idx, cw in enumerate(filtered_cw[:30], 1):
+                    fname = cw.get("filename", "")
+                    fsub = cw.get("subject", "")
+                    fchars = cw.get("char_count", 0)
+                    fprev = cw.get("summary_preview", "")
+                    frel = cw.get("relative_path", "")
+                    
+                    with st.expander(f"📖 【{fsub}】{fname} ｜ (收錄 {fchars:,} 字)"):
+                        st.markdown(f"**考科領域**：{fsub} ｜ **相對路徑**：`{frel}` ｜ **字元數**：{fchars:,}")
+                        st.divider()
+                        st.markdown("#### 講義核心重點與爭點摘要：")
+                        st.write(fprev)
+                        
+                        cwb1, cwb2 = st.columns(2)
+                        with cwb1:
+                            if st.button(f"🎲 依此講義爭點生成司律一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
+                                with st.spinner("正在基於名師講義核心爭點出題中..."):
+                                    gen = LawExamGenerator()
+                                    mcq_res = gen.generate_stage1_exam(
+                                        subject=fsub,
+                                        topic=f"名師講義演練：{fname[:30]}",
+                                        count=3,
+                                        notes_content=fprev
+                                    )
+                                    st.session_state["stage1_exam_data"] = mcq_res
+                                    st.success("一試測驗題生成成功！可至「🎯 司律模擬出題」模式開始作答。")
+                        with cwb2:
+                            if st.button(f"✍️ 依此講義核心爭點命題二試實例題", key=f"cw_btn_essay_{c_idx}"):
+                                with st.spinner("正在基於名師講義爭點設計實例題..."):
+                                    gen = LawExamGenerator()
+                                    essay_res = gen.generate_stage2_exam(
+                                        subject=fsub,
+                                        topic=f"名師講義案例：{fname[:30]}",
+                                        notes_content=fprev
+                                    )
+                                    st.session_state["stage2_exam_data"] = essay_res
+                                    st.success("二試實例題生成成功！可至「🎯 司律模擬出題」模式查看或生成擬答。")
+            except Exception as cwe:
+                st.error(f"講義庫讀取異常: {cwe}")
 
 # ----------------- 模式 4: 擬答生成 -----------------
 elif app_mode == "📖 高分權威擬答生成":

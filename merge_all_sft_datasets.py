@@ -24,7 +24,8 @@ VERIFIED_DATASET_FILES = [
     ("Live Substantive Court Decisions SFT", TRAINING_DIR / "law_exam_live_cases_sft.jsonl", "verified_authentic_judgment"),
     ("Constitutional Court & Grand Justices SFT", TRAINING_DIR / "law_exam_constitutional_sft.json", "verified_constitutional"),
     ("Statutory Rules Interpretation SFT", TRAINING_DIR / "law_exam_statutory_rules_sft.json", "verified_statutory_rule"),
-    ("Master Jurists & Theories SFT", TRAINING_DIR / "law_exam_master_theories_sft.json", "verified_jurist_doctrine")
+    ("Master Jurists & Theories SFT", TRAINING_DIR / "law_exam_master_theories_sft.json", "verified_jurist_doctrine"),
+    ("Academic Coursework & Teaching SFT", TRAINING_DIR / "law_exam_coursework_sft.jsonl", "verified_academic_coursework")
 ]
 
 SYNTHETIC_DATASET_FILES = [
