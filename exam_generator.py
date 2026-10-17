@@ -14,14 +14,24 @@ class LawExamGenerator:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel(model_name=model_name)
 
-    def generate_stage1_exam(self, subject: str, topic: str, count: int = 3) -> List[Dict[str, Any]]:
+    def generate_stage1_exam(self, subject: str, topic: str, count: int = 3, notes_content: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        生成一試選擇題（單選題，4個選項，含詳解與法條依據）
+        生成一試選擇題（單選題，4個選項，含詳解與法條依據，支援筆記客製化出題）
         """
+        notes_instruction = ""
+        if notes_content and notes_content.strip():
+            notes_instruction = f"""
+【考生個人學習筆記 / 爭點講義內容重點】：
+\"\"\"
+{notes_content.strip()[:4000]}
+\"\"\"
+【特別命題指示】：請務必緊密依據上述考生筆記所載之法理爭議、實務裁判字號或法條要件，設計出具備深度之司律一試題目！
+"""
+
         prompt = f"""
 你是一位台灣「律師司法官高等考試一試」命題委員。
 請針對科目【{subject}】，主題【{topic}】，出 {count} 題具備司律難度的四選一選擇題。
-
+{notes_instruction}
 每題必須包含：
 1. 題幹（情境案例或法理判斷）
 2. 四個選項 (A, B, C, D)
@@ -57,14 +67,24 @@ class LawExamGenerator:
             clean = response.text.strip().replace("```json", "").replace("```", "")
             return json.loads(clean)
 
-    def generate_stage2_exam(self, subject: str, topic: str) -> Dict[str, Any]:
+    def generate_stage2_exam(self, subject: str, topic: str, notes_content: Optional[str] = None) -> Dict[str, Any]:
         """
-        生成二試申論實例題（含配分、事實關係、核心爭點與閱卷標準）
+        生成二試申論實例題（含配分、事實關係、核心爭點與閱卷標準，支援筆記客製化出題）
         """
+        notes_instruction = ""
+        if notes_content and notes_content.strip():
+            notes_instruction = f"""
+【考生個人學習筆記 / 爭點講義內容重點】：
+\"\"\"
+{notes_content.strip()[:4000]}
+\"\"\"
+【特別命題指示】：請深入融合上述考生筆記中的核心法條、權威裁判判旨與學者爭點，編織進本題實例案件事實中！
+"""
+
         prompt = f"""
 你是一位台灣「律師司法官高等考試二試」命題召集人。
 請針對科目【{subject}】，主題【{topic}】，設計一題標準的司律二試綜合實例申論題（配分通常為 50~75 分或 100 分題型）。
-
+{notes_instruction}
 題目必須具有深度，融合甲乙丙丁等複雜事實關係、多角法律爭議、最新憲判字或大法庭重要爭點。
 
 請輸出嚴格的 JSON 格式：

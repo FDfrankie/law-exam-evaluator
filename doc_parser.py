@@ -24,6 +24,12 @@ def parse_document(file_bytes: bytes, filename: str) -> Tuple[str, List[Image.Im
         img = Image.open(io.BytesIO(file_bytes))
         images.append(img)
         
+    elif ext in [".txt", ".md"]:
+        try:
+            extracted_text = file_bytes.decode('utf-8')
+        except UnicodeDecodeError:
+            extracted_text = file_bytes.decode('cp950', errors='ignore')
+
     elif ext == ".docx":
         doc = docx.Document(io.BytesIO(file_bytes))
         extracted_text = "\n".join([p.text for p in doc.paragraphs if p.text.strip()])

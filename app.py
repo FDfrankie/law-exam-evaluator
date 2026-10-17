@@ -144,61 +144,135 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
 # ----------------- 模式 2: 司律出題 -----------------
 elif app_mode == "🎯 司律模擬出題 (一試/二試)":
-    st.header("🎯 司律考試模擬命題系統")
-    st.write("利用法學大模型出具符合國家考試考點、結合重大實務裁判的模擬試題。")
+    st.header("🎯 司律考試模擬命題系統（支援個人筆記出題）")
+    st.write("可放入個人讀書筆記、指定考科與考點，由法學大模型為您量身打造司律一試選擇題或二試實例申論題。")
 
     stage = st.radio("選擇考試階段：", ["一試 (選擇題 / 單選題)", "二試 (申論實例題)"], horizontal=True)
 
     col_sub1, col_sub2 = st.columns(2)
     with col_sub1:
-        subject = st.selectbox("考試科目：", ["民法", "民事訴訟法", "刑法", "刑事訴訟法", "行政法", "憲法", "公司法", "證券交易法", "保險法"])
+        subjects_list = [
+            "民法 (總則/債編/物權/身分)",
+            "民事訴訟法 (含家事/強制執行)",
+            "刑法 (總則/分則)",
+            "刑事訴訟法",
+            "憲法與人權保障",
+            "行政法 (程序/行政罰/執行/爭訟)",
+            "公司法與證券交易法",
+            "保險法與票據法",
+            "智慧財產權法與營業秘密",
+            "勞動法與社會保障法",
+            "稅法與納稅者權利",
+            "公平交易法",
+            "金融消費者保護法與銀行法",
+            "海商法",
+            "國際私法與國際公法",
+            "國民法官法與實務專題",
+            "其他自訂學門"
+        ]
+        subject_choice = st.selectbox("考試科目：", subjects_list)
+        if subject_choice == "其他自訂學門":
+            subject = st.text_input("請輸入自訂科目名稱：", value="民事法學")
+        else:
+            subject = subject_choice.split(" ")[0]
+
     with col_sub2:
-        topic = st.text_input("出題核心主題/爭點：", placeholder="例如：借名登記、無權處分、原因自由行為、沒收新制...")
+        topic = st.text_input("出題核心主題/考點（若有筆記亦可留空或輸入重點關鍵字）：", placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...")
+
+    st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（選填）")
+    note_tab1, note_tab2 = st.tabs(["📄 上傳筆記檔案 (PDF / Word / TXT / MD)", "✍️ 直接貼上筆記文字"])
+    
+    notes_from_file = ""
+    with note_tab1:
+        uploaded_note_file = st.file_uploader("上傳個人筆記檔案：", type=["pdf", "docx", "txt", "md"], key="note_uploader")
+        if uploaded_note_file is not None:
+            try:
+                from doc_parser import parse_document
+                parsed_text, _ = parse_document(uploaded_note_file.read(), uploaded_note_file.name)
+                notes_from_file = parsed_text
+                st.success(f"已讀取筆記《{uploaded_note_file.name}》，擷取到 {len(parsed_text):,} 字元！")
+            except Exception as pe:
+                st.error(f"檔案解析失敗: {pe}")
+
+    notes_from_text = ""
+    with note_tab2:
+        notes_from_text = st.text_area("直接貼上法學筆記、實務見解或考點爭議重點：", height=120, placeholder="例如：貼上王澤鑑老師權益歸屬說論點、最高法院108台上大字1719號裁定重點摘要...")
+
+    final_notes = (notes_from_file + "\n" + notes_from_text).strip()
+    if final_notes:
+        st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
     if stage == "一試 (選擇題 / 單選題)":
         q_count = st.slider("出題數量：", min_value=1, max_value=5, value=2)
         if st.button("🎲 生成一試測驗題", type="primary"):
-            if not topic.strip():
-                st.warning("請輸入出題核心主題！")
-            else:
-                with st.spinner("正在設計考題與選項..."):
-                    try:
-                        gen = LawExamGenerator()
-                        questions = gen.generate_stage1_exam(subject=subject, topic=topic, count=q_count)
-                        for i, q in enumerate(questions, 1):
-                            st.markdown(f"### 第 {i} 題")
-                            st.write(q.get("question"))
-                            opts = q.get("options", {})
-                            for opt_key, opt_val in opts.items():
-                                st.write(f"**({opt_key})** {opt_val}")
-                            with st.expander("查看解答與解析"):
-                                st.success(f"**正確答案：({q.get('answer')})**")
-                                st.markdown(q.get("explanation"))
-                            st.divider()
-                    except Exception as e:
-                        st.error(f"出題失敗: {e}")
+            target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
+            with st.spinner("正在依據考科與筆記設計司律一試題目與選項..."):
+                try:
+                    gen = LawExamGenerator()
+                    questions = gen.generate_stage1_exam(
+                        subject=subject,
+                        topic=target_topic,
+                        count=q_count,
+                        notes_content=final_notes if final_notes else None
+                    )
+                    
+                    exam_export_md = f"# 【{subject}】司律一試模擬測驗卷\n\n主題考點：{target_topic}\n\n"
+                    for i, q in enumerate(questions, 1):
+                        st.markdown(f"### 第 {i} 題")
+                        st.write(q.get("question"))
+                        exam_export_md += f"### 第 {i} 題\n{q.get('question')}\n\n"
+                        
+                        opts = q.get("options", {})
+                        for opt_key, opt_val in opts.items():
+                            st.write(f"**({opt_key})** {opt_val}")
+                            exam_export_md += f"- ({opt_key}) {opt_val}\n"
+                            
+                        with st.expander("查看解答與解析"):
+                            st.success(f"**正確答案：({q.get('answer')})**")
+                            st.markdown(q.get("explanation"))
+                            exam_export_md += f"\n**【正確答案】**：({q.get('answer')})\n**【解析】**：{q.get('explanation')}\n\n---\n\n"
+                        st.divider()
+
+                    st.download_button(
+                        label="💾 下載本回一試模擬測驗卷 (Markdown)",
+                        data=exam_export_md,
+                        file_name=f"司律一試_{subject}_{target_topic[:10]}.md",
+                        mime="text/markdown"
+                    )
+                except Exception as e:
+                    st.error(f"出題失敗: {e}")
 
     else:
         if st.button("🎲 生成二試申論題", type="primary"):
-            if not topic.strip():
-                st.warning("請輸入出題核心主題！")
-            else:
-                with st.spinner("正在擬定二試實例案例事實與子題..."):
-                    try:
-                        gen = LawExamGenerator()
-                        res = gen.generate_stage2_exam(subject=subject, topic=topic)
-                        st.subheader(f"【{res.get('subject')}】實例申論題 (總分：{res.get('total_points')} 分)")
-                        st.markdown("#### 案例事實：")
-                        st.write(res.get("question_facts"))
-                        st.markdown("#### 請回答下列問題：")
-                        for sub in res.get("sub_questions", []):
-                            st.write(f"- **{sub}**")
-                        with st.expander("查看核心爭點與評分指標"):
-                            for cr in res.get("core_issues", []):
-                                st.write(f"- {cr}")
-                            st.info(f"**評分關鍵：**\n{res.get('scoring_criteria')}")
-                    except Exception as e:
-                        st.error(f"出題失敗: {e}")
+            target_topic = topic.strip() if topic.strip() else "年度重大爭議實例與實務大法庭爭點"
+            with st.spinner("正在擬定二試實例案例事實與子題..."):
+                try:
+                    gen = LawExamGenerator()
+                    res = gen.generate_stage2_exam(
+                        subject=subject,
+                        topic=target_topic,
+                        notes_content=final_notes if final_notes else None
+                    )
+                    st.subheader(f"【{res.get('subject', subject)}】實例申論題 (總分：{res.get('total_points', 50)} 分)")
+                    st.markdown("#### 案例事實：")
+                    st.write(res.get("question_facts", ""))
+                    st.markdown("#### 請回答下列問題：")
+                    for sub in res.get("sub_questions", []):
+                        st.write(f"- **{sub}**")
+                    with st.expander("查看核心爭點與評分指標"):
+                        for cr in res.get("core_issues", []):
+                            st.write(f"- {cr}")
+                        st.info(f"**評分關鍵：**\n{res.get('scoring_criteria', '')}")
+
+                    # 一鍵生成擬答按鈕
+                    full_q_text = f"【案例事實】：\n{res.get('question_facts', '')}\n\n【問題】：\n" + "\n".join(res.get("sub_questions", []))
+                    if st.button("💡 針對本題生成榜首級示範擬答 (IRAC)"):
+                        with st.spinner("榜首法學名師正在撰寫嚴謹三段論法擬答..."):
+                            ans = gen.generate_model_answer(question=full_q_text, subject=subject)
+                            st.markdown("### 🏆 閱卷高分示範擬答：")
+                            st.markdown(ans)
+                except Exception as e:
+                    st.error(f"出題失敗: {e}")
 
 # ----------------- 模式 3: 擬答生成 -----------------
 elif app_mode == "📖 高分權威擬答生成":
