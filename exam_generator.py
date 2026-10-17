@@ -25,7 +25,7 @@ class LawExamGenerator:
 
     def _call_model(self, prompt: Any, generation_config: genai.types.GenerationConfig) -> Any:
         models_to_try = [self.model_name]
-        for m in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]:
+        for m in ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]:
             if m not in models_to_try:
                 models_to_try.append(m)
         last_err = None
@@ -34,6 +34,9 @@ class LawExamGenerator:
                 mod = genai.GenerativeModel(model_name=m_name)
                 return mod.generate_content(prompt, generation_config=generation_config)
             except Exception as e:
+                err_str = str(e).lower()
+                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
+                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
                 last_err = e
                 continue
         raise RuntimeError(f"所有 Gemini 模型呼叫均失敗: {last_err}")

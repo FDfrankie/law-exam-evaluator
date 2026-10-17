@@ -595,7 +595,7 @@ LEGAL_TOPICS_DATABASE = [
 class LawMassHarvester:
     def __init__(self):
         self.session = requests.Session()
-        self.session.verify = False
+        self.session.verify = os.getenv("LEGAL_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
         self.session.headers.update(HEADERS)
         self.existing_hashes = set()
         self.purge_procedural_dismissals()

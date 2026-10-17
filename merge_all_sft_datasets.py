@@ -110,9 +110,10 @@ def merge_datasets():
     print("=" * 70)
 
     out_unified_jsonl = TRAINING_DIR / "law_exam_master_sft_unified.jsonl"
+    temp_unified_jsonl = TRAINING_DIR / "law_exam_master_sft_unified.tmp"
 
     unified_count = 0
-    with open(out_unified_jsonl, "w", encoding="utf-8") as f_uni:
+    with open(temp_unified_jsonl, "w", encoding="utf-8", buffering=1024*1024*8) as f_uni:
         # First copy all verified samples
         with open(out_verified_jsonl, "r", encoding="utf-8") as f_ver_in:
             for line in f_ver_in:
@@ -124,7 +125,7 @@ def merge_datasets():
             if path.exists():
                 syn_count = 0
                 try:
-                    with open(path, "r", encoding="utf-8") as f:
+                    with open(path, "r", encoding="utf-8", buffering=1024*1024*8) as f:
                         for line in f:
                             line_str = line.strip()
                             if line_str:
@@ -134,12 +135,17 @@ def merge_datasets():
                     print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
                 except Exception as e:
                     print(f"  [WARN] Failed appending {path.name}: {e}")
+
+    if out_unified_jsonl.exists():
+        out_unified_jsonl.unlink()
+    temp_unified_jsonl.replace(out_unified_jsonl)
+
     uni_size_mb = out_unified_jsonl.stat().st_size / (1024 * 1024)
 
     print("\n" + "=" * 70)
     print("  [STAGE 2 COMPLETE: MASTER UNIFIED CORPUS]")
     print(f"  Total Unified Samples: {unified_count:,}")
-    print(f"  Master Dataset File Size: {uni_size_mb:.2f} MB")
+    print(f"  Master Dataset File Size: {uni_size_mb:.2f} MB ({uni_size_mb / 1024:.2f} GB)")
     print(f"  Target File: {out_unified_jsonl}")
     print("=" * 70)
 

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from config import DATA_DIR, STANDARDS_DIR
+from config import DATA_DIR, STANDARDS_DIR, safe_requests_get
 
 CONST_DIR = Path(DATA_DIR) / "constitutional_cases"
 CONST_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,7 +38,7 @@ def compute_hash(text: str) -> str:
 def get_resources(category_no: str) -> list:
     url = f"{BASE_URL}/data/api/rest/categories/{category_no}/resources"
     try:
-        r = requests.get(url, verify=False, headers=HEADERS, timeout=30)
+        r = safe_requests_get(url, headers=HEADERS, timeout=30)
         r.raise_for_status()
         datasets = r.json()
     except Exception as e:
@@ -61,7 +61,7 @@ def download_and_extract_item(res: dict, session: requests.Session) -> dict:
     url = res["url"]
     fid = res["file_set_id"]
     try:
-        r = session.get(url, verify=False, timeout=30)
+        r = safe_requests_get(url, session=session, timeout=30)
         if r.status_code != 200 or len(r.content) < 100:
             return None
         
@@ -114,7 +114,6 @@ def harvest_all_constitutional():
     print(f"\n[STEP 2/3] Downloading & extracting using ThreadPoolExecutor (8 workers)...")
     downloaded_records = []
     session = requests.Session()
-    session.verify = False
     session.headers.update(HEADERS)
 
     with ThreadPoolExecutor(max_workers=8) as executor:

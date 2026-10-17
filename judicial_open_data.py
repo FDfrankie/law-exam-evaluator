@@ -256,7 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("--delay-seconds cannot be negative")
 
     session = requests.Session()
-    session.verify = False
+    session.verify = os.getenv("LEGAL_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
     session.headers.update({"User-Agent": USER_AGENT, "Accept": "application/json"})
     connection = open_manifest()
 

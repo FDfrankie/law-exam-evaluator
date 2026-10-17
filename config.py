@@ -60,6 +60,28 @@ def init_directories():
         except Exception as e:
             print(f"[DIR ERROR] Failed creating {folder}: {e}")
 
+def safe_requests_get(url: str, session=None, **kwargs):
+    """
+    發送 HTTP GET：優先嚴格遵循標準 TLS/SSL 憑證驗證；
+    若因本機作業系統未預載台灣政府 (GRCA) 根憑證而導致 SSLError，
+    發出明確日誌警示後以相容模式降級重試，避免無條件靜默關閉安全性驗證。
+    """
+    import requests
+    req = session.get if session else requests.get
+    
+    # 讀取環境變數強制設定 (預設優先驗證)
+    enforce_ssl = os.getenv("LEGAL_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
+    if not enforce_ssl:
+        return req(url, verify=False, **kwargs)
+
+    try:
+        return req(url, verify=True, **kwargs)
+    except requests.exceptions.SSLError as e:
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        print(f"  [SSL 憑證警告] 本機缺少台灣政府 (GRCA) 憑證鏈，切換相容模式重試: {url}")
+        return req(url, verify=False, **kwargs)
+
 if __name__ == "__main__":
     init_directories()
     print("API Key Status:", "Configured" if GEMINI_API_KEY else "Not configured")

@@ -14,7 +14,7 @@ from pathlib import Path
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-from config import DATA_DIR
+from config import DATA_DIR, safe_requests_get
 
 OUTPUT_DIR = Path(DATA_DIR) / "national_laws"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,8 +26,8 @@ def download_and_extract(url: str, name: str) -> Path:
     print(f"[DOWNLOADING] {name} from {url}...")
     zip_path = OUTPUT_DIR / f"{name}.zip"
     
-    # Download with progress
-    r = requests.get(url, verify=False, stream=True, timeout=60)
+    # Download with safe TLS verification and fallback
+    r = safe_requests_get(url, stream=True, timeout=60)
     r.raise_for_status()
     total_bytes = 0
     with open(zip_path, "wb") as f:
