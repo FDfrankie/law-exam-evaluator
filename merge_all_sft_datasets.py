@@ -110,7 +110,7 @@ def merge_datasets():
             f_uni.write(line)
             unified_count += 1
 
-    # Then append synthetic template dataset (marked as synthetic_template)
+    # Then append synthetic 1M dataset directly via stream
     for name, path, default_source in SYNTHETIC_DATASET_FILES:
         if path.exists():
             syn_count = 0
@@ -119,10 +119,7 @@ def merge_datasets():
                     for line in f:
                         line_str = line.strip()
                         if line_str:
-                            item = json.loads(line_str)
-                            if "source_type" not in item:
-                                item["source_type"] = default_source
-                            f_uni.write(json.dumps(item, ensure_ascii=False) + "\n")
+                            f_uni.write(line_str + "\n")
                             syn_count += 1
                 unified_count += syn_count
                 print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")

@@ -1,15 +1,20 @@
 """
-One-Million-Scale Real Court Judgment Legal Reasoning & SFT Dataset Generator
-Synthesizes 1,000,000 diverse, structured, high-yield judicial reasoning and IRAC training triples
+One-Million-Scale Real Court Judgment Legal Reasoning & SFT Dataset Generator (Version 2.0)
+Synthesizes 1,000,000 diverse, highly structured, multi-task judicial reasoning and training triples
 spanning all 26 Taiwan legal disciplines, drawing from:
 - Real court precedents and Grand Chamber decisions (大法庭裁定、判例、決議)
-- 723 Constitutional Court decisions & Grand Justices Interpretations (釋字第 1~813 號)
-- 236,949 National Laws & Regulations articles (MOJ ChLaw & ChOrder)
+- Constitutional Court decisions & Grand Justices Interpretations (憲判字與經典釋字)
+- National Laws & Regulations articles (MOJ ChLaw & ChOrder)
 - Authoritative scholarly opinions (通說、有力說、王澤鑑、林山田、黃榮堅、林鈺雄、陳敏、陳聰富等)
+- 5 Diverse Exam Tasks:
+  1. IRAC Substantive Exam Reasoning (司律二試上位卷推導)
+  2. First-Stage Multiple Choice Question with Exhaustive Distractor Analysis (司律一試單選題與選項詳解)
+  3. Four-Dimension Professional Grading Diagnostics JSON (四維度國考評分與上位卷引導)
+  4. Statutory Article Elements & Legal Effect Deduction (法條構成要件與法律效果三段論法)
+  5. Constitutional Court Judicial Review & Rights Proportionality (憲法法庭審查與比例原則)
 
 Target Output:
 G:\\我的雲端硬碟\\LawExamData\\training_data\\law_exam_1m_judicial_reasoning_sft.jsonl
-All console outputs in pure ASCII/English to prevent Windows CMD/cp950 errors.
 """
 import os
 import sys
@@ -17,6 +22,14 @@ import json
 import random
 import time
 from pathlib import Path
+
+# Windows console encoding safeguard
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from config import DATA_DIR
 
@@ -167,7 +180,7 @@ DOMAINS_TAXONOMY = {
         ]
     },
     "公法憲法行政法": {
-        "articles": ["中華民國憲法第8條", "中華民國憲法第11條", "中華民國憲法第23條", "憲法法庭111年憲判字第8號", "行政程序法第128條", "行政程序法第117條", "國家賠償法第2條"],
+        "articles": ["中華民國憲法第8條", "中華民國憲法第11條", "中華民國憲法第23條", "憲法法庭111年憲判字第8號", "行政程序法第128條", "行政程序法第117條", "行政訴訟法第4條", "國家賠償法第2條"],
         "issues": [
             ("侮辱公署罪違憲失效與侮辱公務員罪合憲限縮", "憲法法庭111年憲判字第8號判決", "刑法第140條侮辱公署違憲失效 vs 侮辱公務員限縮於客觀妨礙公務執行", "許宗力大法官、黃昭元大法官"),
             ("人身自由正當法律程序與絕對法官保留之落實", "司法院釋字第708號、第710號解釋", "行政收容司法審查密度 vs 提審法全面適用保障人身自由", "李震山教授、林明昕教授"),
@@ -223,17 +236,198 @@ DOMAINS_TAXONOMY = {
     }
 }
 
-INSTRUCTION_PROMPTS = [
-    "你是一位具備多年國家考試命題閱卷經驗之權威法學專家。請針對【{domain}】核心考點【{topic}】進行完整 IRAC 法理推導，開標列出大前提法規要件、權威實務裁判字號與學說見解，並涵攝客觀案件事實做成結論。",
-    "請依台灣司法官律師考試閱卷四大維度（爭點意識、三段論法邏輯、學說實務對比、事實涵攝），評核這份【{domain}】考生作答，輸出標準評分診斷 JSON 與上位卷升級引導。",
-    "身為最高法院大法庭研究法官，請針對【{domain}】之【{topic}】實務重大法律爭議，深入剖析【{precedent}】判旨理由，並對比【{scholars}】等權威學說論理之異同。",
-    "請以嚴謹法律三段論法，檢驗以下【{domain}】真實案件爭端是否該當【{article}】之構成要件，並引用實務指標裁判【{precedent}】推導小前提涵攝結論。",
-    "在台灣司律二試【{domain}】考卷評分中，請針對以下【{topic}】爭議案情，撰寫一份融合通說有力說與司法權威指標裁定之榜首級上位卷參考答案。"
+FACT_VARIATIONS = [
+    "【爭端特別攻防情事】：原告於第一審審理程序終結前，追加請求損害賠償法定利息，被告抗辯已罹於消滅時效，並於言詞辯論期日正式行使抗辯權。",
+    "【爭端特別攻防情事】：第三人於訴訟繫屬中具狀聲請輔助參加，主張系爭行政處分或私法法律行為之法律效果將實質波及並直接侵害其法律上利害關係。",
+    "【爭端特別攻防情事】：當事人間於起訴前曾於區公所調解委員會作成民事調解書，後經法院核定生效，其調解既判力與執行力客觀範疇引發激烈攻防。",
+    "【爭端特別攻防情事】：被告於第二審言詞辯論期日始行提出抵銷抗辯與抵充順序主張，原告抗辯違反民事訴訟法第447條適時提出主義應予失權裁定。",
+    "【爭端特別攻防情事】：公訴檢察官於第一審言詞辯論終結前，當庭向法院擴張犯罪事實並變更起訴法條，被告辯護人抗辯突襲裁判並嚴重妨害訴訟防禦權。"
+]
+
+def make_sample_task1_irac(domain, topic, precedent, doctrine, scholars, article, scenario, variation):
+    """Task 1: 司律二試上位卷 IRAC 實例推導"""
+    full_fact = f"{scenario}\n{variation}"
+    instruction = (
+        f"你是一位具備多年國家考試命題閱卷經驗之權威法學專家。請針對【{domain}】核心考點【{topic}】進行完整 IRAC 法理推導，"
+        f"開標列出大前提法規要件、權威實務裁判字號與學說見解，並涵攝客觀案件事實做成結論。"
+    )
+    prompt_input = f"【案例爭端事實】：\n{full_fact}"
+    output = (
+        f"【一、核心法律爭點精準開標】：\n"
+        f"本件爭端關鍵在於涉及【{domain}】領域中之【{topic}】。核心審查重點在於行為事實是否符合【{article}】法定構成要件，以及如何妥適調和法規範目的與實質權益保障。\n\n"
+        f"【二、大前提：權威實務裁判與學說深入對比】：\n"
+        f"1. 實務權威指標【{precedent}】確立裁判基準：本案涉及之權利爭端，實務向來著重於法規保護目的之探求、公示外觀信賴保護以及交易安全之維護。\n"
+        f"2. 權威法學理論對比：【{scholars}】深入闡釋【{doctrine}】。\n"
+        f"   - 通說見解：著重於整體法體系之融通性與法律安定性，避免責任過度泛濫。\n"
+        f"   - 有力說見解：則強調個別正義之衡平、實質舉證困難之緩解與受害人法益之充分救濟。\n\n"
+        f"【三、小前提：具體案件事實細節實質涵攝】：\n"
+        f"將本案客觀事實『{scenario[:180]}...』帶入前揭【{article}】法定要件逐一審查：\n"
+        f"  (1) 主觀要件：行為人主觀上具備法律所明定之故意、過失或重大注意義務違反；\n"
+        f"  (2) 客觀要件：損害發生、行為客體侵害及相當因果關係均具備，法益侵害狀態明確該當；\n"
+        f"  (3) 阻卻抗辯事由：審酌全案攻防細節，核無合法阻卻違法事由或權利失效抗辯之適用餘地。\n\n"
+        f"【四、結論與答題獲分指引】：\n"
+        f"綜上所陳，本件依前揭權威實務【{precedent}】判旨及通說論理，應認定權利主張為有理由，落實三段論法推導。"
+    )
+    return {
+        "instruction": instruction,
+        "input": prompt_input,
+        "output": output,
+        "task_type": "irac_reasoning"
+    }
+
+def make_sample_task2_mcq(domain, topic, precedent, doctrine, scholars, article, scenario, variation):
+    """Task 2: 司律一試四選一選擇題與逐項詳解"""
+    instruction = (
+        f"你是一位台灣司法官律師考試第一試命題委員。請根據以下【{domain}】之案例情境與法律爭議【{topic}】，"
+        f"設計一題具備高鑑別度之一試單選測驗題（四選一），並提供標準答案、爭點定位與四個選項之深入適法性法理解析："
+    )
+    
+    q_text = f"【案例情境】：\n{scenario}\n問：依現行法律規定、權威實務判決（如：{precedent}）與通說學理見解，下列敘述何者最為正確？"
+    
+    correct_opt = "A"
+    options_text = (
+        f"(A) 本案事實該當{article}規範意旨，應依{precedent}所確立之裁判意旨處理，以符法規範目的\n"
+        f"(B) 依通說見解，當事人得逕行主張絕對無效，不受任何法律行為效力未定或善意取得之保護\n"
+        f"(C) 本案事實屬純粹法律上無意義之自然事件，當事人雙方均不得向法院起訴請求實質審判\n"
+        f"(D) 法院於審理時得毋庸審查構成要件，逕依自由心證駁回原告之訴，無須具備三段論法理由"
+    )
+    
+    prompt_input = f"{q_text}\n\n【選項】：\n{options_text}"
+    
+    output = (
+        f"【正確解答】：(A)\n\n"
+        f"【核心考點與爭點定位】：\n"
+        f"本題考查【{domain}】之【{topic}】。考點在於如何精準適用【{article}】及掌握指標裁判【{precedent}】的核心法理。\n\n"
+        f"【選項逐項深度法理解析】：\n"
+        f"• (A) 選項正確：按權威實務【{precedent}】及學者【{scholars}】之通說見解，本件客觀情狀完全符合【{article}】之構成要件與規範保護目的，自應依法確立相應之法律效果。\n"
+        f"• (B) 選項錯誤：通說與實務強調外部法律關係交易安全與善意信賴保護，非屬當然絕對無效。\n"
+        f"• (C) 選項錯誤：本案涉及重大實體法與訴訟法權利爭端，具有實質權益保護必要性，當事人得依法循司法途徑救濟。\n"
+        f"• (D) 選項錯誤：憲法保障人民訴訟權及法院裁判應備理由原則，法院審理必須依循三段論法嚴謹涵攝，不得恣意裁判。"
+    )
+    return {
+        "instruction": instruction,
+        "input": prompt_input,
+        "output": output,
+        "task_type": "stage1_mcq"
+    }
+
+def make_sample_task3_grading(domain, topic, precedent, doctrine, scholars, article, scenario, variation):
+    """Task 3: 四維度國考評分與專業診斷 JSON"""
+    instruction = (
+        f"請依台灣司律國考四大評分維度（爭點意識、三段論法邏輯、學說實務對比、事實要件涵攝），"
+        f"評閱這份【{domain}】考生作答，並輸出標準結構化診斷 JSON 與具體上位卷升級引導。"
+    )
+    prompt_input = (
+        f"【題目爭點】：涉及【{domain}】之【{topic}】。\n"
+        f"【案件事實】：{scenario[:160]}...\n"
+        f"【考生作答摘要】：『按相關法條規定，本件原告主張應有理由，蓋依多數實務見解，被告行為已構成侵權或違約，應賠償損害。』"
+    )
+    
+    total_score = random.randint(58, 88)
+    grade = "上位卷優等 (75分以上)" if total_score >= 75 else "中等卷 (及格邊緣)"
+    
+    output_dict = {
+        "exam_domain": domain,
+        "core_topic": topic,
+        "total_score": total_score,
+        "grade_level": grade,
+        "dimension_scores": {
+            "issue_spotting_score": int(total_score * 0.27),
+            "legal_reasoning_score": int(total_score * 0.25),
+            "precedent_scholarship_score": int(total_score * 0.24),
+            "subsumption_score": int(total_score * 0.24)
+        },
+        "identified_issues": [f"觸及{topic}之基本法律範疇", f"具備適用{article}之初步概念"],
+        "missed_issues": [
+            f"未精確開標點出指標裁判字號【{precedent}】",
+            f"未明確對比【{scholars}】通說與有力說之分歧立論"
+        ],
+        "strengths": ["作答態度積極，結論方向大致符合一般法理體系"],
+        "weaknesses": [
+            "論述過於簡略，缺乏三段論法之大前提法規要件拆解",
+            "未能將題幹具體人事物事實細節帶入構成要件進行實質涵攝"
+        ],
+        "actionable_feedback": (
+            f"建議於答題卷首行以【{topic}】精準破題開標，完整引述【{precedent}】判旨並對照【{scholars}】見解，"
+            f"再將案件事實逐項套入【{article}】構成要件，即可穩健晉身國考上位卷榜首群！"
+        )
+    }
+    
+    return {
+        "instruction": instruction,
+        "input": prompt_input,
+        "output": json.dumps(output_dict, ensure_ascii=False, indent=2),
+        "task_type": "diagnostic_eval"
+    }
+
+def make_sample_task4_statute(domain, topic, precedent, doctrine, scholars, article, scenario, variation):
+    """Task 4: 法規構成要件與實體法律效果深度論理"""
+    instruction = (
+        f"身為法律系權威講座教授，請針對【{domain}】中之【{article}】，結合爭議考點【{topic}】，"
+        f"進行嚴謹之法律構成要件解析與法律效果三段論法論證："
+    )
+    prompt_input = f"【探討法規】：{article}\n【核心爭端】：{topic}\n【案例事實】：{scenario}"
+    output = (
+        f"【一、法條規範目的與保護法益】：\n"
+        f"【{article}】之規範意旨，在於落實法安定性、衡平當事人間利益分配並維護交易安全。\n\n"
+        f"【二、構成要件體系拆解】：\n"
+        f"1. 主體要件：行為人或請求權人須具備法定適格資格與權能。\n"
+        f"2. 主觀要件：須檢視行為時是否存在故意、過失或法令特別要求之特定犯意/歸責意圖。\n"
+        f"3. 客觀要件：\n"
+        f"   - 行為該當法定構成行為範疇；\n"
+        f"   - 具備損害結果或法益侵害之客觀實現；\n"
+        f"   - 行為與損害間具有不可欠缺之相當因果關係。\n\n"
+        f"【三、權威裁判【{precedent}】之適用指引】：\n"
+        f"最高法院指標判旨再三申明：適用【{article}】時，不可僵化於法條字面文義，應探求立法者客觀規範目的，"
+        f"並參酌學者【{scholars}】之體系建構，將爭端事實妥適涵攝於規範範疇內。\n\n"
+        f"【四、法定法律效果】：\n"
+        f"要件該當者，發生法定權利行使、無效、撤銷或損害賠償義務之法律效果，以維護法律公平與正義。"
+    )
+    return {
+        "instruction": instruction,
+        "input": prompt_input,
+        "output": output,
+        "task_type": "statute_application"
+    }
+
+def make_sample_task5_constitutional(domain, topic, precedent, doctrine, scholars, article, scenario, variation):
+    """Task 5: 憲法法庭裁判審查與比例原則階層推導"""
+    instruction = (
+        f"身為憲法法庭研究法官，請針對【{domain}】領域中涉及基本權利侵害之重大爭議【{topic}】，"
+        f"參酌憲法法庭權威判決或司法院大法官解釋意旨，進行完整之違憲審查三階層推導："
+    )
+    prompt_input = f"【基本權利衝突事實】：\n{scenario}\n【涉案法規範】：{article}\n【爭端關注重點】：{topic}"
+    output = (
+        f"【一、系爭規範所限制之憲法基本權利】：\n"
+        f"本案涉及人民受憲法所保障之財產權、人身自由、言論自由或工作權之實質限制，應受嚴格之正當法律程序與實質合憲性審查。\n\n"
+        f"【二、合憲性審查三階層標準】：\n"
+        f"1. 目的正當性：系爭規範所欲追求者，是否為維護重要或特別重大之公共利益。\n"
+        f"2. 手段適當性：採取之限制手段與所欲達成之公共利益目標之間，是否具備實質關聯性。\n"
+        f"3. 比例原則與狹義衡平性：\n"
+        f"   - 侵害最小性：是否存在其他相同有效但對人民權益侵害較小之替代手段；\n"
+        f"   - 法益衡平性：所維護之公共利益與受侵害之人民權益相較，是否顯失均衡。\n\n"
+        f"【三、權威司法見解對比】：\n"
+        f"參照權威指標【{precedent}】及學者【{scholars}】之立論，系爭規範若未設立適當之程序保障與緩衝救濟機制，"
+        f"即難認符合憲法第23條比例原則與法律明確性原則之嚴格要求。"
+    )
+    return {
+        "instruction": instruction,
+        "input": prompt_input,
+        "output": output,
+        "task_type": "constitutional_review"
+    }
+
+TASK_GENERATORS = [
+    (make_sample_task1_irac, 0.30),
+    (make_sample_task2_mcq, 0.25),
+    (make_sample_task3_grading, 0.20),
+    (make_sample_task4_statute, 0.15),
+    (make_sample_task5_constitutional, 0.10)
 ]
 
 def generate_million_dataset(total_target: int = 1000000):
     print("=" * 70)
-    print("  Starting 1,000,000 Real Court Judgment Legal Reasoning Generator")
+    print("  Starting 1,000,000 Real Judicial Reasoning SFT Dataset Generator v2.0")
     print(f"  Target Scale: {total_target:,} Samples")
     print(f"  Target File: {OUTPUT_FILE_1M_JSONL}")
     print("=" * 70)
@@ -242,95 +436,35 @@ def generate_million_dataset(total_target: int = 1000000):
     batch_size = 50000
     domain_keys = list(DOMAINS_TAXONOMY.keys())
 
-    variations = [
-        "【訴訟攻防特別情事】：原告於第一審審理程序終結前，追加請求損害賠償利息，被告抗辯已罹於消滅時效並提出時效抗辯。",
-        "【訴訟攻防特別情事】：第三人於訴訟繫屬中聲請輔助參加，主張原處分或法律行為涉及其法律上實質利害關係。",
-        "【訴訟攻防特別情事】：當事人間於起訴前曾於鄉鎮市調解委員會作成調解書，後調解書經法院核定生效，其執行力效力範圍引發爭論。",
-        "【訴訟攻防特別情事】：被告於第二審言詞辯論終結後始行提出抵銷抗辯與抵充順序主張，涉及民事訴訟法第447條失權效審查。",
-        "【訴訟攻防特別情事】：公訴檢察官於辯論終結前，當庭向法院擴張犯罪事實並變更起訴法條，辯護人抗辯妨害被告訴訟防禦權。"
-    ]
+    generators, weights = zip(*TASK_GENERATORS)
 
     with open(OUTPUT_FILE_1M_JSONL, "w", encoding="utf-8") as f_out:
         for i in range(1, total_target + 1):
             domain_name = random.choice(domain_keys)
             domain_info = DOMAINS_TAXONOMY[domain_name]
 
-            issue_tuple = random.choice(domain_info["issues"])
-            topic_name, precedent, doctrine, scholars = issue_tuple
+            topic_name, precedent, doctrine, scholars = random.choice(domain_info["issues"])
             article = random.choice(domain_info["articles"])
             base_scenario = random.choice(domain_info["scenarios"])
-            prompt_template = random.choice(INSTRUCTION_PROMPTS)
-            variation_note = random.choice(variations)
+            variation_note = random.choice(FACT_VARIATIONS)
 
-            full_fact = f"{base_scenario}\n{variation_note}"
-
-            instruction = prompt_template.format(
-                domain=domain_name,
-                topic=topic_name,
-                precedent=precedent,
-                article=article,
-                scholars=scholars
+            # Pick generator according to distribution
+            gen_func = random.choices(generators, weights=weights, k=1)[0]
+            sample_data = gen_func(
+                domain_name, topic_name, precedent, doctrine, scholars,
+                article, base_scenario, variation_note
             )
-
-            # Alternate between IRAC deep legal reasoning vs 4-Dimension Rubric Grading
-            if i % 2 == 0:
-                output = (
-                    f"【一、核心爭點精準開標】：\n"
-                    f"本件主要法律爭端在於涉及【{domain_name}】之【{topic_name}】，亦即爭端事實是否符合【{article}】法定構成要件並發生相應法律效果。\n\n"
-                    f"【二、大前提：實務指標判旨與權威學說深入對比】：\n"
-                    f"1. 實務權威指標【{precedent}】確立明確裁判基準：裁判一貫著眼於法秩序之客觀規範目的、交易安全與實質公平衡平。\n"
-                    f"2. 權威名師學說見解：【{scholars}】深入闡釋【{doctrine}】。通說著重體系解釋與規範防洪效能，有力說則強調個案實質正義之實現。\n\n"
-                    f"【三、小前提：具體案件事實細節實質涵攝】：\n"
-                    f"本案中，審查客觀爭議事實：『{full_fact[:200]}...』\n"
-                    f"依前開【{article}】及權威裁判要件逐一涵攝：\n"
-                    f"  (1) 主觀要件：行為人具備故意、過失或法令所要求之歸責事由；\n"
-                    f"  (2) 客觀要件：侵害行為客體、法益損害之客觀實現與相當因果關係均已明確該當；\n"
-                    f"  (3) 阻卻抗辯事由：核無阻卻違法、正當防衛或消滅時效抗辯之合法阻卻事由。\n\n"
-                    f"【四、結論與答題獲分指引】：\n"
-                    f"綜上所述，本件應依【{precedent}】之權威裁判意旨與通說法理，認定權利主張為有理由，落實三段論法推導。"
-                )
-            else:
-                output = json.dumps({
-                    "exam_domain": domain_name,
-                    "target_topic": topic_name,
-                    "statutory_basis": article,
-                    "precedent_citation": precedent,
-                    "authoritative_scholars": scholars,
-                    "four_dimensions_rubric": {
-                        "issue_spotting": {
-                            "score": random.randint(18, 25),
-                            "full_score": 25,
-                            "evaluation": f"精準命中『{topic_name}』核心爭點，破題開標分明。"
-                        },
-                        "legal_reasoning": {
-                            "score": random.randint(18, 25),
-                            "full_score": 25,
-                            "evaluation": f"三段論法層次清晰，完整援引『{article}』構成要件推導。"
-                        },
-                        "precedent_scholarship": {
-                            "score": random.randint(17, 25),
-                            "full_score": 25,
-                            "evaluation": f"精確引用『{precedent}』判旨，並呈現『{scholars}』通說與有力說之學理對照。"
-                        },
-                        "fact_subsumption": {
-                            "score": random.randint(18, 25),
-                            "full_score": 25,
-                            "evaluation": "緊扣題幹具體事實，逐要件深入涵攝，論理綿密嚴謹。"
-                        }
-                    },
-                    "total_score": random.randint(75, 96),
-                    "grade_rank": "上位卷優等 (榜首群)",
-                    "feedback_instruction": f"答題首行宜開標【{topic_name}】，引述【{precedent}】字號及【{scholars}】見解，將案件事實逐項涵攝，即可穩獲國考高分。"
-                }, ensure_ascii=False, indent=2)
 
             record = {
                 "id": f"sft_judicial_reasoning_{i:07d}",
                 "domain": domain_name,
                 "topic": topic_name,
                 "precedent": precedent,
-                "instruction": instruction,
-                "input": f"【爭端案件事實摘要】：\n{full_fact}",
-                "output": output
+                "source_type": "synthesized_judicial_reasoning",
+                "task_type": sample_data["task_type"],
+                "instruction": sample_data["instruction"],
+                "input": sample_data["input"],
+                "output": sample_data["output"]
             }
 
             f_out.write(json.dumps(record, ensure_ascii=False) + "\n")
