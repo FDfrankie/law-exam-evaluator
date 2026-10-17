@@ -12,10 +12,10 @@ from typing import Optional, Dict, Any, List, Union
 import google.generativeai as genai
 from PIL import Image
 
-from config import get_gemini_api_key, REPORTS_DIR
+from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL
 
 class LawExamEvaluator:
-    def __init__(self, model_name="gemini-2.0-flash"):
+    def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
         self.api_key = get_gemini_api_key()
         if not self.api_key:
             raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
