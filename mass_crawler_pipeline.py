@@ -35,10 +35,39 @@ OUTPUT_JUDGMENTS_DIR.mkdir(parents=True, exist_ok=True)
 TRAINING_DIR = Path(DATA_DIR) / "training_data"
 TRAINING_DIR.mkdir(parents=True, exist_ok=True)
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
-}
+PROCEDURAL_PATTERNS = [
+    r"按第三審上訴",
+    r"按對於第三審",
+    r"上訴不合法",
+    r"上訴為不合法",
+    r"未具體指摘原判決",
+    r"未具體指明原判決",
+    r"未委任律師為訴訟代理人",
+    r"未補正委任律師",
+    r"未繳納(第一審|第二審|第三審)?裁判費",
+    r"未繳納訴訟費用",
+    r"程式不合",
+    r"程式顯有不符",
+    r"逾期提起上訴",
+    r"本件上訴難認合法",
+    r"抗告為不合法",
+    r"聲請為不合法",
+    r"再抗告為不合法",
+]
+
+def is_procedural_dismissal(text: str) -> bool:
+    """Detects and filters out purely procedural dismissal rulings lacking substantive reasoning."""
+    if not text:
+        return True
+    for pat in PROCEDURAL_PATTERNS:
+        if re.search(pat, text):
+            if re.search(r"(上訴|抗告|聲請|再抗告)(為不合法|不合法)?(，|\s*)(應予|即應|爰予|逕予)?駁回", text):
+                return True
+            if "應予駁回" in text or "予以駁回" in text or "駁回其上訴" in text or "上訴駁回" in text:
+                return True
+    if len(text) < 400 and ("駁回" in text or "不合法" in text):
+        return True
+    return False
 
 # 26 Legal Examination Disciplines & Landmark Controversy Database
 LEGAL_TOPICS_DATABASE = [
@@ -557,7 +586,26 @@ class LawMassHarvester:
         self.session.verify = False
         self.session.headers.update(HEADERS)
         self.existing_hashes = set()
+        self.purge_procedural_dismissals()
         self._load_existing_hashes()
+
+    def purge_procedural_dismissals(self):
+        """Scan and purge any procedural dismissals from scoring_standards to preserve high data quality."""
+        purged = 0
+        archive_dir = OUTPUT_JUDGMENTS_DIR.parent / "archive_procedural_dismissals"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        for f in OUTPUT_JUDGMENTS_DIR.glob("jud_*.json"):
+            try:
+                with open(f, "r", encoding="utf-8") as jf:
+                    data = json.load(jf)
+                if is_procedural_dismissal(data.get("judgment_text", "")):
+                    dest = archive_dir / f.name
+                    f.replace(dest)
+                    purged += 1
+            except Exception:
+                pass
+        if purged > 0:
+            print(f"  [PURGE] Archived {purged} procedural dismissal orders to {archive_dir.name}.")
 
     def _load_existing_hashes(self):
         """Index existing judgment files to avoid duplicate downloads."""
@@ -569,7 +617,7 @@ class LawMassHarvester:
                     self.existing_hashes.add(parts[-1])
         except Exception:
             pass
-        print(f"  [INIT] Indexed {len(self.existing_hashes)} existing judgments on Google Drive.")
+        print(f"  [INIT] Indexed {len(self.existing_hashes)} substantive judgments on Google Drive.")
 
     def search_fjud_cases(self, keyword: str, domain_code: str, max_pages: int = 3, max_cases_per_page: int = 10) -> list:
         """Query FJUD with multi-page pagination and session token handshake."""
@@ -650,6 +698,9 @@ class LawMassHarvester:
                             text_content = t
                     
                     if len(text_content) > 120 and "查無資料" not in text_content[:50]:
+                        if is_procedural_dismissal(text_content):
+                            # Skip purely procedural dismissals lacking substantive legal reasoning
+                            continue
                         first_line = text_content.splitlines()[0] if text_content.splitlines() else f"Case_{hash_id}"
                         clean_title = re.sub(r'[\r\n\t]+', ' ', first_line).strip()[:80]
                         all_cases.append({
@@ -692,8 +743,10 @@ class LawMassHarvester:
             scholarly_rubric = item["scholarly_rubric"]
             precedent = item["precedent"]
 
-            safe_topic = topic[:30].encode('ascii', errors='replace').decode('ascii')
-            print(f"\n[{i}/{total_topics}] Domain: {domain_code} | Topic: {safe_topic}")
+            try:
+                print(f"\n[{i}/{total_topics}] Domain: {domain} ({domain_code}) | Topic: {topic}")
+            except Exception:
+                print(f"\n[{i}/{total_topics}] Domain: {domain_code} | Keyword: {keyword}")
 
             cases = self.search_fjud_cases(
                 keyword=keyword,
