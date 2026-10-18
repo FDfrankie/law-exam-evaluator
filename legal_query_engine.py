@@ -8,7 +8,7 @@
 3. 嚴格依權威位階列出司法裁判（憲判字/釋字 > 大法庭裁定 > 最高法院精選裁判/判例）
 4. 全面深入對照通說與學者有力說（肯否兩說）
 5. 生成國考二試上位卷 IRAC 開標與作答涵攝指引
-"""
+"
 import os
 import sys
 import json
@@ -52,19 +52,20 @@ def get_precedents_catalog() -> List[Dict[str, Any]]:
     return []
 
 def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, str]:
-    """生成通往司法院 30 年全台全審級法院判決資料庫的即時直連查詢連結"""
+    """生成通往七法、法源、月旦與司法院 30 年法院判決資料庫的即時直連查詢連結（七法/法源多庫矩陣）"""
     import urllib.parse
     clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
     tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
-    search_keyword = " ".join(tokens[:4]) if tokens else clean_q[:25]
+    search_keyword = " ".join(tokens[:3]) if tokens else clean_q[:20]
     encoded_k = urllib.parse.quote(search_keyword)
 
     return {
+        "⚖️ 七法 Lawsnote 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
         "🏛️ 司法院 30 年裁判書全文檢索 (全台地院/高院/最高院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
+        "📚 法源法律網 LawBank 裁判與法規檢索": f"https://www.lawbank.com.tw/treatise/pl_search.aspx?keyword={encoded_k}",
         "📜 憲法法庭裁判與司法院大法官解釋系統": f"https://cons.judicial.gov.tw/jcc/zh-tw/jep01?q={encoded_k}",
-        "⚖️ 最高法院大法庭裁定專區": "https://tps.judicial.gov.tw/tw/lp-1153-011.html",
-        "🏢 智慧財產及商業法院裁判全文檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html",
-        "🏛️ 最高行政法院大法庭裁定專區": "https://tpa.judicial.gov.tw/tw/lp-2099-021.html"
+        "🎓 月旦知識庫 法學論文與期刊論著索引": f"http://lawdata.com.tw/anglelaw/lawdata_search.aspx?keyword={encoded_k}",
+        "🏢 智慧財產及商業法院裁判全文檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
 
 def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> List[Dict[str, Any]]:
@@ -99,7 +100,7 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
         issue = item.get("issue", "")
         holding = item.get("holding", "")
         laws_cited = item.get("laws_cited", [])
-        
+
         text_pool = f"{case_id} {title} {sub_cat} {issue} {holding} {' '.join(laws_cited)}"
 
         # 大法庭與憲法裁判權重加成
@@ -146,11 +147,11 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
             scored_items.append((score, item))
 
     scored_items.sort(key=lambda x: -x[0])
-    
+
     # 智慧保底機制：若特殊冷僻爭點未直接命中，優先篩選同科目最高權威的大法庭/憲法裁判，絕不讓結果留空
     if not scored_items and subject and "全部" not in subject:
         sub_fallback = [
-            it for it in catalog 
+            it for it in catalog
             if any(k in it.get("subject", "") for k in re.split(r'[\s（）()【】/・、,，]+', subject) if len(k) >= 2)
         ]
         if sub_fallback:
@@ -253,6 +254,16 @@ class LegalIssueQueryEngine:
 - **俐落開標示範**：（例如：（一）乙移轉A屋所有權予丙，屬有權處分，丙取得所有權：）
 - **大前提確立示範**：如何融合法條、大法庭裁定字號與學說見解
 - **事實涵攝與結論**：如何將具體事實嚴密代入構成要件
+
+### 六、⚠️ 裁判效力狀態與違憲警示（七法 Lawsnote 特色功能）
+- 標註本爭點涉及裁判之有效性狀態，提醒考生與實務嚴格防禦：
+  - 🟢 **【現行有效主流】**：最高法院現行穩健見解或大法庭裁定
+  - 🟡 **【見解歧異/變更中】**：各庭間尚有爭議、大法庭提案中
+  - 🔴 **【已廢止/違憲停止適用】**：經大法庭裁定廢止、停止適用或經憲法法庭宣告違憲失效（絕對禁止在國考或訴訟中援用！）
+
+### 七、📈 爭點實務見解演進時間軸（七法歷程脈絡樹）
+- 以清晰時間箭頭流程呈現本爭點之實務演進軌跡：
+  `【早期傳統舊判例】➔ 【實務紛歧與學說反思】➔ 【最高法院大法庭裁定定錨】➔ 【憲法法庭最新人權審查趨勢】`
 
 請直接以格式清晰之 Markdown 文本輸出，內容必須專業、精準、足堪作為司律榜首等級之法學寶典！
 """

@@ -1627,11 +1627,11 @@ elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
         st.divider()
         st.subheader("📚 AI 權威爭點與法條判解檢索分析報告")
 
-        # 司法院歷年全台裁判全宗直連檢索（地院 / 高院 / 智財 / 高行 / 最高院 30 年資料庫）
+        # 【七法 / 法源 / 月旦 / 司法院】30 年全台裁判與法學文獻即時跨庫直連
         ext_urls = res.get("external_search_urls", {})
         if ext_urls:
-            with st.expander("🌐 司法院歷年全台裁判全宗即時直連檢索（涵蓋地院、高院、智財、高行、最高院 30 年資料庫）", expanded=True):
-                st.markdown(f"💡 針對查詢爭點 **`{res.get('query', '')}`**，您可直接點擊以下官方直連入口，即時調閱司法院官方 30 年完整裁判全文：")
+            with st.expander("🌐 【七法 / 法源 / 月旦 / 司法院】30 年全台裁判與法學文獻即時跨庫直連", expanded=True):
+                st.markdown(f"💡 針對查詢爭點 **`{res.get('query', '')}`**，您可直接點擊以下權威法學資料庫直連入口，即時調閱完整裁判全文與專書論文：")
                 ext_col1, ext_col2, ext_col3 = st.columns(3)
                 url_items = list(ext_urls.items())
                 with ext_col1:
