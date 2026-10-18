@@ -23,7 +23,7 @@ except ImportError:
         types = None
         NEW_SDK = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str] = None) -> str:
     """
@@ -68,24 +68,33 @@ def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str]
     for i in range(0, len(images), batch_size):
         chunk = images[i:i + batch_size]
         contents = [prompt] + chunk
-        try:
-            if NEW_SDK:
-                resp = client.models.generate_content(
-                    model=DEFAULT_GEMINI_MODEL,
-                    contents=contents,
-                    config=config
-                )
-            else:
-                resp = model.generate_content(
-                    contents,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.2,
+        models_to_try = get_gemini_models_to_try()
+        last_e = None
+        for m_name in models_to_try:
+            try:
+                if NEW_SDK:
+                    resp = client.models.generate_content(
+                        model=m_name,
+                        contents=contents,
+                        config=config
                     )
-                )
-            if resp and resp.text:
-                results.append(resp.text.strip())
-        except Exception as e:
-            results.append(f"[第 {i+1}~{min(i+batch_size, len(images))} 頁辨識異常: {e}]")
+                else:
+                    cur_model = genai.GenerativeModel(model_name=m_name)
+                    resp = cur_model.generate_content(
+                        contents,
+                        generation_config=genai.types.GenerationConfig(
+                            temperature=0.2,
+                        )
+                    )
+                if resp and resp.text:
+                    results.append(resp.text.strip())
+                    last_e = None
+                    break
+            except Exception as e:
+                last_e = e
+                continue
+        if last_e:
+            results.append(f"[第 {i+1}~{min(i+batch_size, len(images))} 頁辨識異常: {last_e}]")
 
     return "\n\n---\n\n".join(results)
 

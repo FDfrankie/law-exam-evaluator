@@ -19,7 +19,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL
+from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 class LawExamEvaluator:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
@@ -100,11 +100,7 @@ class LawExamEvaluator:
             user_content.extend(images)
 
         response_text = None
-        models_to_try = [self.model_name]
-        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
-            if m not in models_to_try:
-                models_to_try.append(m)
-
+        models_to_try = get_gemini_models_to_try(self.model_name)
         last_err = None
         for m_name in models_to_try:
             try:

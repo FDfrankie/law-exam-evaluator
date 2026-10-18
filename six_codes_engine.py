@@ -24,7 +24,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
+from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 # 八大法學門類體系分類
 SIX_CODES_TAXONOMY: Dict[str, List[str]] = {
@@ -238,10 +238,7 @@ class SixCodesDeepAnnotator:
 ### 五、✍️ 國考申論作答開標與涵攝示範 (IRAC)
 - 示範一段漂亮俐落之二試答題開標與三段論法涵攝
 """
-        models_to_try = [self.model_name]
-        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
-            if m not in models_to_try:
-                models_to_try.append(m)
+        models_to_try = get_gemini_models_to_try(self.model_name)
         last_err = None
         for m_name in models_to_try:
             try:

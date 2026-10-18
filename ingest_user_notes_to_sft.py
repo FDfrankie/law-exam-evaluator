@@ -49,7 +49,7 @@ except ImportError:
         types = None
         NEW_SDK = False
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
+from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 from merge_all_sft_datasets import merge_datasets
 
 SAMSUNG_NOTES_DIR = Path(DATA_DIR) / "SamsungNotes"
@@ -469,15 +469,26 @@ def ocr_and_distill_notes(images: List[Image.Image], doc_title: str) -> List[Dic
         chunk = images[i:i+batch_size]
         print(f"  正在辨識與蒸餾手寫筆記第 {i+1} ~ {min(i+batch_size, len(images))} 頁...")
         try:
-            if NEW_SDK:
-                response = client.models.generate_content(
-                    model=DEFAULT_GEMINI_MODEL,
-                    contents=[prompt] + chunk,
-                    config=config
-                )
-            else:
-                response = model.generate_content([prompt] + chunk)
-            resp_text = response.text.strip()
+            resp_text = None
+            for m_name in get_gemini_models_to_try():
+                try:
+                    if NEW_SDK:
+                        response = client.models.generate_content(
+                            model=m_name,
+                            contents=[prompt] + chunk,
+                            config=config
+                        )
+                    else:
+                        cur_model = genai.GenerativeModel(model_name=m_name)
+                        response = cur_model.generate_content([prompt] + chunk)
+                    if response and response.text:
+                        resp_text = response.text.strip()
+                        break
+                except Exception:
+                    continue
+
+            if not resp_text:
+                continue
             
             if "```json" in resp_text:
                 json_str = resp_text.split("```json")[1].split("```")[0].strip()
@@ -549,16 +560,27 @@ def distill_notes_from_text(text: str, doc_title: str) -> List[Dict[str, Any]]:
 
 請輸出至少 5~8 組極具法學深度與高鑑別度的 SFT 訓練對象（請僅輸出標準 JSON 陣列，用 ```json ... ``` 包裹）。
 """
+    resp_text = None
+    for m_name in get_gemini_models_to_try():
+        try:
+            if NEW_SDK:
+                response = client.models.generate_content(
+                    model=m_name,
+                    contents=[prompt],
+                    config=config
+                )
+            else:
+                response = model.generate_content([prompt])
+            if response and response.text:
+                resp_text = response.text.strip()
+                break
+        except Exception:
+            continue
+
+    if not resp_text:
+        return []
+
     try:
-        if NEW_SDK:
-            response = client.models.generate_content(
-                model=DEFAULT_GEMINI_MODEL,
-                contents=[prompt],
-                config=config
-            )
-        else:
-            response = model.generate_content([prompt])
-        resp_text = response.text.strip()
         
         if "```json" in resp_text:
             json_str = resp_text.split("```json")[1].split("```")[0].strip()

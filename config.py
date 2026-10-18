@@ -20,7 +20,27 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+def get_gemini_models_to_try(primary_model: str = None) -> list:
+    """Return prioritized list of Gemini model candidates for resilient fallback."""
+    models = []
+    if primary_model:
+        models.append(primary_model)
+    if DEFAULT_GEMINI_MODEL not in models:
+        models.append(DEFAULT_GEMINI_MODEL)
+    for m in [
+        "gemini-3.8-flash",
+        "gemini-3.8-pro",
+        "gemini-3.1-pro-preview",
+        "gemini-2.5-flash",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-2.0-flash-lite",
+    ]:
+        if m not in models:
+            models.append(m)
+    return models
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")

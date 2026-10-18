@@ -24,7 +24,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
 
 CATALOG_PATHS = [
     Path(RAW_DATA_DIR) / "precedents_catalog.json",
@@ -120,10 +120,7 @@ class LegalIssueQueryEngine:
             self.model = legacy_genai.GenerativeModel(model_name=model_name)
 
     def _call_model(self, prompt: str) -> str:
-        models_to_try = [self.model_name]
-        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
-            if m not in models_to_try:
-                models_to_try.append(m)
+        models_to_try = get_gemini_models_to_try(self.model_name)
         last_err = None
         for m_name in models_to_try:
             try:

@@ -1298,11 +1298,22 @@ elif app_mode == "📖 高分權威擬答生成":
                             ev = LawExamEvaluator()
                             if hasattr(ev, "client") and ev.client:
                                 prompt = "請將此張試卷照片或截圖中的完整題目文字逐字謄錄為繁體中文，保持原本標號、事實情境與子題配分。直接輸出題目文字，勿加入額外寒暄。"
-                                r = ev.client.models.generate_content(
-                                    model="gemini-2.0-flash",
-                                    contents=[img, prompt]
-                                )
-                                transcribed = r.text.strip()
+                                from config import get_gemini_models_to_try
+                                r = None
+                                for m_ocr in get_gemini_models_to_try():
+                                    try:
+                                        r = ev.client.models.generate_content(
+                                            model=m_ocr,
+                                            contents=[img, prompt]
+                                        )
+                                        if r and r.text:
+                                            break
+                                    except Exception:
+                                        continue
+                                if r and r.text:
+                                    transcribed = r.text.strip()
+                                else:
+                                    transcribed = "[無法調用視覺模型辨識圖片，請確認 API Key 與模型設定]"
                             else:
                                 transcribed = "[無法調用視覺模型，請確認 API Key]"
                         elif ext == "pdf":
