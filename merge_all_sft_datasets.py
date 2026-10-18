@@ -54,7 +54,7 @@ def compute_hash(sample: dict) -> str:
     key = (sample.get("instruction", "") + sample.get("input", "") + sample.get("output", "")[:200]).strip()
     return hashlib.sha256(key.encode("utf-8", errors="ignore")).hexdigest()
 
-def merge_datasets():
+def merge_datasets(include_synthetic: bool = True):
     print("=" * 70)
     print("  Stage 1: Building 100% Verified Authentic SFT Dataset")
     print("=" * 70)
@@ -127,6 +127,9 @@ def merge_datasets():
     print(f"  Verified Dataset File Size: {ver_size_mb:.2f} MB")
     print(f"  Target File: {out_verified_jsonl}")
     print("=" * 70)
+
+    if not include_synthetic:
+        return
 
     print("\n" + "=" * 70)
     print("  Stage 2: Building Unified Master Corpus (Verified + Synthetic)")

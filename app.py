@@ -249,14 +249,93 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         topic = st.text_input("出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：", placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...")
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
-    note_tab1, note_tab2, note_tab3 = st.tabs([
-        "📄 上傳筆記檔案 (手寫/打字 PDF、Word、圖片)",
+    note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
+        "📂 從 Google Drive 個人筆記庫挑選 (免上傳，直接載入 68 份筆記)",
+        "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
         "✍️ 直接貼上/編輯筆記文字",
-        "🎓 從名師課輔講義庫挑選 (190+ 份講義與體系題解)"
+        "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
     ])
     
+    notes_from_drive = ""
+    with note_tab_drive:
+        try:
+            from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
+            drive_notes = get_google_drive_notes_list()
+            if drive_notes:
+                st.caption(f"⚡ 已自您的 Google Drive 自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
+                
+                # 科目篩選清單
+                subjects_in_notes = sorted(list(set(n["subject"] for n in drive_notes)))
+                default_sub_idx = 0
+                for i, sub in enumerate(["全部科目"] + subjects_in_notes):
+                    if subject and (sub in subject or subject in sub):
+                        default_sub_idx = i
+                        break
+                        
+                col_sel1, col_sel2 = st.columns([1, 2])
+                with col_sel1:
+                    sel_note_sub = st.selectbox(
+                        "筆記分類篩選：",
+                        ["全部科目"] + subjects_in_notes,
+                        index=default_sub_idx,
+                        key="sel_note_subject_filter"
+                    )
+                
+                if sel_note_sub == "全部科目":
+                    filtered_notes = drive_notes
+                else:
+                    filtered_notes = [n for n in drive_notes if n["subject"] == sel_note_sub]
+                
+                with col_sel2:
+                    note_labels = [f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "") for n in filtered_notes]
+                    sel_note_label = st.selectbox(
+                        "選擇 Google Drive 筆記檔案：",
+                        note_labels,
+                        key="sel_drive_note_file"
+                    )
+                
+                if sel_note_label:
+                    sel_idx = note_labels.index(sel_note_label)
+                    chosen_note = filtered_notes[sel_idx]
+                    
+                    c_btn1, c_btn2 = st.columns([2, 1])
+                    with c_btn1:
+                        load_btn = st.button("🚀 載入此份雲端筆記 (自動進行文字提取 / 手寫多模態 OCR)", type="primary", key="btn_load_drive_note")
+                    with c_btn2:
+                        sync_btn = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes")
+                        if sync_btn:
+                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                st.success(f"同步完成！新增/更新了 {c} 份筆記。")
+                                st.rerun()
+
+                    session_key = f"cached_note_text_{chosen_note['filename']}"
+                    if load_btn or (session_key in st.session_state):
+                        if load_btn:
+                            with st.spinner(f"正在讀取《{chosen_note['filename']}》；手寫或掃描檔案自動調用 Gemini 多模態神經網路辨識..."):
+                                text_content = read_note_text(chosen_note["path"], max_pages=15, auto_ocr=True)
+                                st.session_state[session_key] = text_content
+                        
+                        text_content = st.session_state.get(session_key, "")
+                        if text_content and not text_content.startswith("["):
+                            notes_from_drive = text_content
+                            st.success(f"🎉 成功讀取筆記《{chosen_note['filename']}》，共取得 {len(text_content):,} 字元！")
+                            with st.expander("🔍 檢視已解析之筆記重點與爭點摘要", expanded=True):
+                                st.text_area("筆記內容預覽（可用於客製命題）：", value=text_content, height=180, key="preview_drive_note")
+                        elif text_content:
+                            st.warning(text_content)
+            else:
+                st.info("💡 目前 Google Drive SamsungNotes 尚未收錄筆記檔案，請點擊下方按鈕自動同步。")
+                if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
+                    with st.spinner("正在同步..."):
+                        c = sync_all_drive_notes_to_samsung_notes()
+                        st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
+                        st.rerun()
+        except Exception as e_drive:
+            st.error(f"讀取 Google Drive 筆記失敗: {e_drive}")
+
     notes_from_file = ""
-    with note_tab1:
+    with note_tab_upload:
         uploaded_note_file = st.file_uploader(
             "上傳個人筆記檔案（支援手寫掃描 PDF、Word、TXT、JPG、PNG、WEBP）：",
             type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
@@ -274,8 +353,8 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 st.error(f"檔案解析失敗: {pe}")
 
     notes_from_text = ""
-    with note_tab2:
-        default_val = notes_from_file if notes_from_file else ""
+    with note_tab_text:
+        default_val = notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else "")
         notes_from_text = st.text_area(
             "直接貼上或補充法學筆記、實務見解或考點爭議重點：",
             value=default_val,
@@ -284,13 +363,12 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         )
 
     notes_from_coursework = ""
-    with note_tab3:
+    with note_tab_cw:
         cw_index_path = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
         if cw_index_path.exists():
             try:
                 with open(cw_index_path, "r", encoding="utf-8") as f_cw:
                     cw_list = json.load(f_cw)
-                # 依當前選擇的科目篩選，若無符合則列出全部
                 cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
                 if not cw_sub_list:
                     cw_sub_list = cw_list
@@ -309,7 +387,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         else:
             st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
 
-    final_notes = (notes_from_text if notes_from_text else (notes_from_file if notes_from_file else notes_from_coursework)).strip()
+    final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
     if final_notes:
         st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
@@ -762,48 +840,121 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
     ])
 
     with sft_tab1:
-        st.subheader("1. 匯入手寫筆記 (PDF / 圖片)")
-        st.write("上傳個人手寫筆記（例如各科爭點體系筆記、判解摘要等），系統將自動儲存於 Google Drive 之 `SamsungNotes` 目錄並啟動多模態蒸餾：")
+        st.subheader("1. 匯入個人法學筆記並啟動多模態蒸餾入庫")
+        st.write("本系統直接支援將考生個人手寫/打字讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
         
-        up_file = st.file_uploader(
-            "選擇手寫筆記檔案：",
-            type=["pdf", "png", "jpg", "jpeg", "webp"],
-            key="sft_note_uploader"
+        distill_mode = st.radio(
+            "請選擇匯入方式：",
+            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，已收錄 68 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
+            horizontal=True,
+            key="distill_import_mode"
         )
         
-        if up_file is not None:
-            st.info(f"📄 已選擇檔案：`{up_file.name}` ({len(up_file.getvalue()) / (1024*1024):.2f} MB)")
-            if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
-                with st.spinner("⚖️ 正在運用 Gemini 2.0 Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
-                    try:
-                        from ingest_user_notes_to_sft import ingest_single_uploaded_file
-                        new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
-                        if new_samples:
-                            st.balloons()
-                            st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
-                            with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
-                                for s_idx, s in enumerate(new_samples, 1):
-                                    st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
-                                    st.caption(f"指令 (Instruction): {s.get('instruction')}")
-                                    st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
-                                    st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
-                                    st.divider()
-                        else:
-                            st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。")
-                    except Exception as de:
-                        st.error(f"蒸餾處理失敗: {de}")
+        if "方案 A" in distill_mode:
+            from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
+            drive_notes = get_google_drive_notes_list()
+            if drive_notes:
+                st.caption(f"⚡ 目前 Google Drive 已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋身分法 26 份、民總 21 份、憲法 12 份、專利法 5 份、民訴 2 份、刑法各論 1 份、雜項 1 份）：")
+                
+                sub_list = sorted(list(set(n["subject"] for n in drive_notes)))
+                col_d1, col_d2 = st.columns([1, 2])
+                with col_d1:
+                    filter_sub = st.selectbox("筆記科目篩選：", ["全部科目"] + sub_list, key="sft_filter_sub")
+                
+                if filter_sub == "全部科目":
+                    sub_notes = drive_notes
+                else:
+                    sub_notes = [n for n in drive_notes if n["subject"] == filter_sub]
+                    
+                with col_d2:
+                    note_opts = [f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (f" 🎯已提煉 {n['distilled_count']} 筆" if n['distilled_count'] > 0 else "") for n in sub_notes]
+                    sel_sft_note = st.selectbox("選擇欲蒸餾之雲端筆記：", note_opts, key="sft_sel_note")
+                
+                if sel_sft_note:
+                    sel_note_idx = note_opts.index(sel_sft_note)
+                    target_note = sub_notes[sel_note_idx]
+                    
+                    c_btn_a1, c_btn_a2 = st.columns([2, 1])
+                    with c_btn_a1:
+                        if st.button("🚀 啟動此份雲端筆記多模態 OCR 蒸餾並寫入 SFT 微調庫", type="primary", key="btn_distill_drive_sft"):
+                            with st.spinner(f"⚖️ 正在運用 Gemini 2.0 Flash 解析《{target_note['filename']}》手寫法條、爭點肯否二說與實務判例..."):
+                                try:
+                                    new_samples = distill_single_note_file(target_note["path"], max_pages=15)
+                                    if new_samples:
+                                        st.balloons()
+                                        st.success(f"🎉 蒸餾成功！自《{target_note['filename']}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
+                                        with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                            for s_idx, s in enumerate(new_samples, 1):
+                                                st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
+                                                st.caption(f"指令 (Instruction): {s.get('instruction')}")
+                                                st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
+                                                st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
+                                                st.divider()
+                                    else:
+                                        st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案內容或稍後重試。")
+                                except Exception as de:
+                                    st.error(f"蒸餾處理失敗: {de}")
+                    with c_btn_a2:
+                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
+                            with st.spinner("正在同步..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                st.success(f"同步完成！新增/更新 {c} 份筆記。")
+                                st.rerun()
+            else:
+                st.info("💡 目前 Google Drive 尚無筆記檔案。")
+                if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
+                    with st.spinner("正在同步..."):
+                        c = sync_all_drive_notes_to_samsung_notes()
+                        st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
+                        st.rerun()
+                        
+        else:
+            up_file = st.file_uploader(
+                "選擇手寫/打字筆記檔案（支援 PDF, PNG, JPG, WEBP, Word docx）：",
+                type=["pdf", "png", "jpg", "jpeg", "webp", "docx"],
+                key="sft_note_uploader"
+            )
+            
+            if up_file is not None:
+                st.info(f"📄 已選擇檔案：`{up_file.name}` ({len(up_file.getvalue()) / (1024*1024):.2f} MB)")
+                if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
+                    with st.spinner("⚖️ 正在運用 Gemini 2.0 Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
+                        try:
+                            from ingest_user_notes_to_sft import ingest_single_uploaded_file
+                            new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
+                            if new_samples:
+                                st.balloons()
+                                st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
+                                with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                    for s_idx, s in enumerate(new_samples, 1):
+                                        st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
+                                        st.caption(f"指令 (Instruction): {s.get('instruction')}")
+                                        st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
+                                        st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
+                                        st.divider()
+                            else:
+                                st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。")
+                        except Exception as de:
+                            st.error(f"蒸餾處理失敗: {de}")
 
     with sft_tab2:
-        st.subheader("📂 SamsungNotes 已永久歸檔之手寫筆記")
-        notes_dir = Path(DATA_DIR) / "SamsungNotes"
-        if notes_dir.exists():
-            existing_note_files = [f for f in notes_dir.glob("*") if f.suffix.lower() in [".pdf", ".png", ".jpg", ".jpeg"]]
-            if existing_note_files:
-                st.caption(f"目前已於雲端硬碟歸檔 **{len(existing_note_files)} 份** 手寫筆記檔案：")
-                for nf in existing_note_files:
-                    st.write(f"- 📁 **《{nf.name}》** ｜ 檔案大小：`{nf.stat().st_size / (1024*1024):.2f} MB`")
-            else:
-                st.info("目前尚未有手寫筆記檔案。")
+        st.subheader("📂 SamsungNotes 已永久歸檔之個人法學筆記 (68 份)")
+        from ingest_user_notes_to_sft import get_google_drive_notes_list
+        all_dn = get_google_drive_notes_list()
+        if all_dn:
+            st.caption(f"目前已於雲端硬碟永久歸檔 **{len(all_dn)} 份** 手寫與打字法學筆記：")
+            sub_dict = {}
+            for n in all_dn:
+                sub_dict.setdefault(n["subject"], []).append(n)
+            
+            for s_name, n_list in sub_dict.items():
+                with st.expander(f"📁 【{s_name}】共 {len(n_list)} 份筆記檔案", expanded=False):
+                    for nf in n_list:
+                        status_str = " | ⚡ 已快取" if nf["is_cached"] else ""
+                        dist_str = f" | 🎯 已提煉 {nf['distilled_count']} 組 SFT" if nf["distilled_count"] > 0 else ""
+                        st.write(f"- 📄 **《{nf['filename']}》** ｜ 大小：`{nf['size_mb']:.2f} MB`{status_str}{dist_str}")
+        else:
+            st.info("目前尚未有手寫筆記檔案。")
         
         st.divider()
         st.subheader("📝 目前個人筆記 SFT 庫提煉精華 (law_exam_user_notes_sft.jsonl)")
