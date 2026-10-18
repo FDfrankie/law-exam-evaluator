@@ -801,6 +801,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
           - **78,650 筆 (66.3%)**：真實高價值核心資料科學過採樣（手寫筆記 500x、真題 50x、名師學說 20x、裁判憲法 10x）。
           - **40,000 筆 (33.7%)**：司法論證結構模板 (`synthesized_judicial_reasoning`)，作為三段論法語法底模以避免顯存過擬合。
         - **全量百萬統一大庫 (1,005,082 筆)**：5,082 筆核實真跡 + 1,000,000 筆完整司法推理模板基準庫。
+        - **標籤語意說明**：`source_type` 欄位以 `verified_` 前綴標記，係指資料來自非合成之真實政府裁判或考題採集管道（相對於模板生成資料），非代表每筆法學論述經由國家考試閱卷委員逐字人工法學公證。
 
         #### 🔄 兩種「續訓」技術模式之嚴謹區別：
         1. **同環境 Checkpoint 斷點續訓 (In-Session Resumption)**：
@@ -817,7 +818,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
 
         #### 🚀 Google Colab / Kaggle 雲端微調執行指南：
         1. **Colab 訓練**：開啟專案目錄下 `train_colab.ipynb`，直接掛載 Google Drive 讀取資料集；
-        2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，內建預設 Google Drive 分享連結極速自動調用；
+        2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，支援以 Google Drive 分享連結（具備 SHA-256 與 118,650 筆嚴格驗證）或推薦使用 Private Dataset 本地掛載；
         3. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
         """)
 
