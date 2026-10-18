@@ -67,18 +67,44 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
         "🏢 智慧財產及商業法院裁判全文檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
 
-def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> List[Dict[str, Any]]:
-    """從 824+ 份權威判解庫中高速篩選最相關之判決/大法庭裁定（支援多維雙向語義匹配與科目保底）"""
+def search_local_precedents(
+    query: str,
+    subject: str = "",
+    top_k: int = 6,
+    court_categories: Optional[List[str]] = None,
+    cause_of_action: str = "",
+    opinion: str = "",
+    argument: str = "",
+    statute_target: str = "",
+    case_year: str = "",
+    case_word: str = "",
+    case_num: str = ""
+) -> List[Dict[str, Any]]:
+    """
+    從 1,256 筆權威判解庫中高速篩選最相關之判決/大法庭裁定
+    支援法源 (LawBank) 專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
+    """
     catalog = get_precedents_catalog()
     if not catalog:
         return []
 
-    # 1. 拆分原始 tokens
-    raw_tokens = [t.strip() for t in re.split(r'[\s,，、。！？]+', query) if len(t.strip()) >= 2]
-    if not raw_tokens:
-        raw_tokens = [query.strip()]
+    # 1. 組合綜合查詢字串
+    query_parts = [query.strip()]
+    if cause_of_action.strip():
+        query_parts.append(cause_of_action.strip())
+    if opinion.strip():
+        query_parts.append(opinion.strip())
+    if argument.strip():
+        query_parts.append(argument.strip())
+    if statute_target.strip():
+        query_parts.append(statute_target.strip())
+    full_query = " ".join([p for p in query_parts if p])
 
-    # 2. 提取 2-gram / 3-gram 關鍵字，提升自然語言長句查詢命中率
+    # 2. 拆分原始 tokens 與 n-gram
+    raw_tokens = [t.strip() for t in re.split(r'[\s,，、。！？]+', full_query) if len(t.strip()) >= 2]
+    if not raw_tokens:
+        raw_tokens = [full_query.strip()] if full_query.strip() else [""]
+
     ngram_tokens = set(raw_tokens)
     for raw in raw_tokens:
         if len(raw) > 2:
@@ -86,24 +112,72 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
                 for i in range(len(raw) - n + 1):
                     ngram_tokens.add(raw[i:i+n])
     tokens = list(ngram_tokens)
-
-    # 3. 提取法條條號與數字
-    numbers = re.findall(r'\d+', query)
+    numbers = re.findall(r'\d+', full_query)
 
     scored_items = []
     for item in catalog:
-        score = 0
         case_id = item.get("case_id", "")
+        level = item.get("level", "")
+        court = item.get("court", "")
         title = item.get("title", "")
         sub_cat = item.get("sub_category", "")
         issue = item.get("issue", "")
         holding = item.get("holding", "")
+        scholarly = item.get("scholarly_views", "")
         laws_cited = item.get("laws_cited", [])
 
-        text_pool = f"{case_id} {title} {sub_cat} {issue} {holding} {' '.join(laws_cited)}"
+        # 法源審級分類篩選 (court_categories)
+        if court_categories:
+            cat_match = False
+            for cat in court_categories:
+                if cat in level or cat in court or cat in case_id:
+                    cat_match = True
+                    break
+                if cat == "憲法位階" and any(k in level for k in ["憲法", "大法官"]):
+                    cat_match = True
+                    break
+                if cat == "大法庭" and "大法庭" in level:
+                    cat_match = True
+                    break
+            if not cat_match:
+                continue
+
+        score = 0
+        text_pool = f"{case_id} {title} {sub_cat} {issue} {holding} {scholarly} {' '.join(laws_cited)}"
+
+        # 法源進階錨點 1: 年度 + 常用字別 + 案號 精準命中
+        if case_year.strip() and case_year.strip() in case_id:
+            score += 30
+        if case_word.strip() and case_word.strip() in case_id:
+            score += 45
+        if case_num.strip() and case_num.strip() in case_id:
+            score += 60
+
+        # 法源進階錨點 2: 裁判案由 (cause_of_action)
+        if cause_of_action.strip():
+            for c_tok in re.split(r'[\s,，、]+', cause_of_action.strip()):
+                if len(c_tok) >= 2 and (c_tok in title or c_tok in sub_cat or c_tok in issue):
+                    score += 40
+
+        # 法源進階錨點 3: 法院心證 (opinion)
+        if opinion.strip():
+            for o_tok in re.split(r'[\s,，、]+', opinion.strip()):
+                if len(o_tok) >= 2 and (o_tok in holding or o_tok in scholarly):
+                    score += 40
+
+        # 法源進階錨點 4: 案件爭點 (argument)
+        if argument.strip():
+            for a_tok in re.split(r'[\s,，、]+', argument.strip()):
+                if len(a_tok) >= 2 and (a_tok in issue or a_tok in title or a_tok in sub_cat):
+                    score += 40
+
+        # 法源進階錨點 5: 相關法條 (statute_target)
+        if statute_target.strip():
+            for s_tok in re.split(r'[\s,，、]+', statute_target.strip()):
+                if len(s_tok) >= 2 and any(s_tok in law for law in laws_cited):
+                    score += 45
 
         # 大法庭與憲法裁判權重加成
-        level = item.get("level", "")
         if "大法庭" in level:
             score += 15
         elif "憲法" in level or "大法官" in level:
@@ -116,24 +190,24 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
             if any(k in item_sub or k in title for k in sub_keywords):
                 score += 15
 
-        # 雙向匹配 A：查詢 token 是否出現在判決文字池
+        # 雙向匹配 A：查詢 token 是否出現在文字池
         for tok in tokens:
-            if tok in text_pool:
+            if tok and tok in text_pool:
                 score += 8
                 if tok in title or tok in sub_cat:
                     score += 16
                 if tok in case_id:
                     score += 25
 
-        # 雙向匹配 B：判決的關鍵爭點/次分類名稱是否出現在使用者的查詢句子中 (逆向命中)
-        if sub_cat and len(sub_cat) >= 2 and sub_cat in query:
+        # 雙向匹配 B：判決的關鍵爭點/次分類名稱是否出現在使用者的查詢句子中
+        if sub_cat and len(sub_cat) >= 2 and sub_cat in full_query:
             score += 35
-        if title and len(title) >= 4 and any(title[i:i+4] in query for i in range(len(title)-3)):
+        if title and len(title) >= 4 and any(title[i:i+4] in full_query for i in range(len(title)-3)):
             score += 25
 
         # 法條完全命中計分
         for law in laws_cited:
-            if any(tok in law for tok in raw_tokens):
+            if any(tok in law for tok in raw_tokens if tok):
                 score += 25
             if any(num in law for num in numbers if len(num) >= 2):
                 score += 15
@@ -147,7 +221,7 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
 
     scored_items.sort(key=lambda x: -x[0])
 
-    # 智慧保底機制：若特殊冷僻爭點未直接命中，優先篩選同科目最高權威的大法庭/憲法裁判，絕不讓結果留空
+    # 智慧保底機制：若未直接命中且指定了考科
     if not scored_items and subject and "全部" not in subject:
         sub_fallback = [
             it for it in catalog
@@ -494,7 +568,19 @@ class LegalIssueQueryEngine:
             }
         }
 
-    def unified_legal_search(self, query: str, subject: str = "全部科目") -> Dict[str, Any]:
+    def unified_legal_search(
+        self,
+        query: str,
+        subject: str = "全部科目",
+        court_categories: Optional[List[str]] = None,
+        cause_of_action: str = "",
+        opinion: str = "",
+        argument: str = "",
+        statute_target: str = "",
+        case_year: str = "",
+        case_word: str = "",
+        case_num: str = ""
+    ) -> Dict[str, Any]:
         """
         全方位法學統一檢索樞紐：
         多維度即時查詢：
@@ -503,17 +589,32 @@ class LegalIssueQueryEngine:
         3. 外部七法 / 法源 / 司法院 30 年判決跨庫直連
         """
         clean_q = query.strip()
-        precedents = search_local_precedents(clean_q, subject=subject, top_k=8)
+        precedents = search_local_precedents(
+            query=clean_q,
+            subject=subject,
+            top_k=8,
+            court_categories=court_categories,
+            cause_of_action=cause_of_action,
+            opinion=opinion,
+            argument=argument,
+            statute_target=statute_target,
+            case_year=case_year,
+            case_word=case_word,
+            case_num=case_num
+        )
         
+        statute_query = statute_target.strip() or clean_q
         matched_articles = []
         try:
             from six_codes_engine import search_articles
-            all_arts = search_articles(clean_q)
+            all_arts = search_articles(statute_query)
             matched_articles = all_arts[:6]
         except Exception:
             pass
 
-        ext_urls = generate_judicial_search_urls(clean_q, subject)
+        full_terms = [t for t in [clean_q, cause_of_action, opinion, argument, statute_target] if t.strip()]
+        search_terms = " ".join(full_terms) if full_terms else clean_q
+        ext_urls = generate_judicial_search_urls(search_terms, subject)
 
         return {
             "query": clean_q,

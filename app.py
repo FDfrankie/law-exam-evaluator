@@ -1755,12 +1755,55 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (爭點速查
 
         current_query_val = st.session_state.get("ai_query_input_text", "")
         query_text = st.text_area(
-            "請輸入欲查詢之爭點問題、裁判字號、法條或案件事實：",
+            "請輸入欲查詢之爭點問題、裁判字號、法條或案件事實（支援自然語言長句）：",
             value=current_query_val,
-            height=110,
+            height=100,
             placeholder="例如：借名登記出名人擅自處分、108台上大1719、民法184純經濟損失、106亡40、111憲判16...",
             key="ai_query_text_area"
         )
+
+        with st.expander("🏛️ 法源專業進階檢索面板 (常用字別・裁判案由・法院心證・案件爭點・相關法條複合)", expanded=False):
+            st.caption("全面引進「法源法律網 (LawBank)」專業審級矩陣與多維法學錨點過濾：")
+            
+            # 審級分類多選
+            st.markdown("**1. 審級與裁判性質分類（多選篩選）：**")
+            cat_c1, cat_c2, cat_c3, cat_c4 = st.columns(4)
+            with cat_c1:
+                chk_cat_cons = st.checkbox("憲法法庭裁判 / 大法官解釋", value=True, key="lb_chk_cons")
+                chk_cat_grand = st.checkbox("最高法院民刑大法庭專區", value=True, key="lb_chk_grand")
+            with cat_c2:
+                chk_cat_sup = st.checkbox("最高法院具參考價值 / 判例", value=True, key="lb_chk_sup")
+                chk_cat_high = st.checkbox("高等法院事實審主流裁判", value=True, key="lb_chk_high")
+            with cat_c3:
+                chk_cat_admin = st.checkbox("高等/最高行政法院裁判", value=True, key="lb_chk_admin")
+                chk_cat_ip = st.checkbox("智慧財產及商業法院裁判", value=True, key="lb_chk_ip")
+            with cat_c4:
+                chk_cat_dist = st.checkbox("筆記引述地方法院判決", value=True, key="lb_chk_dist")
+                chk_cat_res = st.checkbox("最高院民刑決議/法律問題", value=True, key="lb_chk_res")
+
+            # 年度與常用字別組合
+            st.markdown("**2. 年度字號組合器（支援法源 20 組常用字別快選）：**")
+            w_c1, w_c2, w_c3, w_c4 = st.columns([1, 1.5, 1.5, 1.5])
+            with w_c1:
+                lb_year = st.text_input("民國年：", placeholder="例：108", key="lb_input_year")
+            with w_c2:
+                common_jwords = ["-- 常用字別 --", "台上大", "台上", "台抗", "憲判", "上", "重上", "上易", "保險上", "勞上", "勞上易", "金上", "上更（一）", "上更（二）", "重上更（一）", "重上更（二）", "家上", "訴", "重訴", "金訴", "抗", "再", "交上訴", "聲"]
+                sel_jword_choice = st.selectbox("常用字別下拉：", common_jwords, key="lb_sel_jword")
+            with w_c3:
+                default_w = sel_jword_choice if sel_jword_choice != "-- 常用字別 --" else ""
+                lb_word = st.text_input("字別文字：", value=default_w, placeholder="例：台上大", key="lb_input_word")
+            with w_c4:
+                lb_num = st.text_input("號數：", placeholder="例：1719", key="lb_input_num")
+
+            # 案由、心證、爭點、法條錨點
+            st.markdown("**3. 法源四大法學檢索錨點：**")
+            m_c1, m_c2 = st.columns(2)
+            with m_c1:
+                lb_cause = st.text_input("📌 裁判案由 (kt)：", placeholder="例如：侵權行為損害賠償、確認借名登記關係存在...", key="lb_input_cause")
+                lb_opinion = st.text_input("⚖️ 法院心證 (opinion)：", placeholder="例如：權利外觀理論、誠信原則、衡平考量、注意義務...", key="lb_input_opinion")
+            with m_c2:
+                lb_argument = st.text_input("🎯 案件爭點 (argument)：", placeholder="例如：無權處分或有權處分、特別災難失蹤期間、純經濟損失...", key="lb_input_arg")
+                lb_statute = st.text_input("📜 相關法條 (lc)：", placeholder="例如：民法第184條、保險法第64條、公司法第173條...", key="lb_input_statute")
 
         col_btn_search, col_btn_clear = st.columns([3, 1])
         with col_btn_search:
@@ -1773,16 +1816,47 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (爭點速查
                 st.rerun()
 
         if btn_do_query:
-            if not query_text.strip():
-                st.warning("請先輸入欲查詢之爭點、判決字號或關鍵字！")
+            active_cats = []
+            if chk_cat_cons: active_cats.append("憲法位階")
+            if chk_cat_grand: active_cats.append("大法庭")
+            if chk_cat_sup: active_cats.append("最高法院")
+            if chk_cat_high: active_cats.append("高等法院")
+            if chk_cat_admin: active_cats.append("行政")
+            if chk_cat_ip: active_cats.append("智慧財產")
+            if chk_cat_dist: active_cats.append("地方法院")
+            if chk_cat_res: active_cats.append("決議")
+
+            has_inputs = any([
+                query_text.strip(), lb_year.strip(), lb_word.strip(), lb_num.strip(),
+                lb_cause.strip(), lb_opinion.strip(), lb_argument.strip(), lb_statute.strip()
+            ])
+
+            if not has_inputs:
+                st.warning("請先輸入欲查詢之爭點、判決字號、案由或關鍵字！")
             else:
+                combined_q = query_text.strip()
+                if not combined_q:
+                    parts = [lb_cause, lb_opinion, lb_argument, lb_statute, f"{lb_year}{lb_word}{lb_num}"]
+                    combined_q = " ".join([p for p in parts if p.strip()])
+
                 with st.spinner("正在跨庫比對本機 1,256 筆權威裁判、司律法條庫並提煉 IRAC 深度法理分析..."):
                     try:
                         engine = LegalIssueQueryEngine()
-                        res = engine.query_legal_issue(query=query_text.strip(), subject=q_subject)
+                        res = engine.query_legal_issue(query=combined_q, subject=q_subject)
                         st.session_state["ai_query_result"] = res
                         st.session_state["ai_query_input_text"] = query_text.strip()
-                        hits = engine.unified_legal_search(query=query_text.strip(), subject=q_subject)
+                        hits = engine.unified_legal_search(
+                            query=combined_q,
+                            subject=q_subject,
+                            court_categories=active_cats,
+                            cause_of_action=lb_cause,
+                            opinion=lb_opinion,
+                            argument=lb_argument,
+                            statute_target=lb_statute,
+                            case_year=lb_year,
+                            case_word=lb_word,
+                            case_num=lb_num
+                        )
                         st.session_state["unified_search_hits"] = hits
                     except Exception as qe:
                         st.error(f"檢索失敗: {qe}")
