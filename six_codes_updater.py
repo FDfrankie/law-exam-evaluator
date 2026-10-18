@@ -136,13 +136,13 @@ def update_law_amendments(law_name: str, force_ai_crawl: bool = False) -> Dict[s
     4. 記錄更新日誌並返回結構化報告
     """
     api_key = get_gemini_api_key()
-    
+
     amendment_data = None
-    
+
     # 1. 優先調用精確驗證之定錨修法
     if not force_ai_crawl and law_name in LANDMARK_RECENT_AMENDMENTS:
         amendment_data = LANDMARK_RECENT_AMENDMENTS[law_name]
-    
+
     # 2. 調用 Gemini 聯網獲取最新修正公報
     if not amendment_data and api_key:
         prompt = f"""
@@ -181,7 +181,7 @@ def update_law_amendments(law_name: str, force_ai_crawl: bool = False) -> Dict[s
                     mod = legacy_genai.GenerativeModel(model_name=m)
                     resp = mod.generate_content(prompt, generation_config=legacy_genai.types.GenerationConfig(temperature=0.1))
                     text = resp.text.strip()
-                    
+
                 if "```" in text:
                     text = re.sub(r"^```(?:json)?", "", text, flags=re.MULTILINE)
                     text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
@@ -207,7 +207,7 @@ def update_law_amendments(law_name: str, force_ai_crawl: bool = False) -> Dict[s
         try:
             with open(ARTICLES_PATH, "r", encoding="utf-8") as f:
                 articles = json.load(f)
-            
+
             art_map = {}
             for a in articles:
                 lname = a.get("law_name")
@@ -217,7 +217,7 @@ def update_law_amendments(law_name: str, force_ai_crawl: bool = False) -> Dict[s
             for amd in amendment_data.get("amended_articles", []):
                 ano_clean = amd.get("article_no_clean") or re.sub(r'[第條\s]', '', amd.get("article_no", "")).replace('之', '-')
                 key = (law_name, ano_clean)
-                
+
                 if key in art_map:
                     art_map[key]["content"] = amd.get("new_content")
                     art_map[key]["modified_date"] = amendment_data.get("latest_amendment_date")

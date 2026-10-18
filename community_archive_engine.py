@@ -28,11 +28,11 @@ def init_community_archives():
     """初始化社群典藏庫目錄與清單檔案"""
     QUESTIONS_DIR.mkdir(parents=True, exist_ok=True)
     NOTES_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     if not QUESTIONS_CATALOG_FILE.exists():
         with open(QUESTIONS_CATALOG_FILE, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
-            
+
     if not NOTES_CATALOG_FILE.exists():
         with open(NOTES_CATALOG_FILE, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=2)
@@ -79,7 +79,7 @@ def archive_uploaded_question(
     now = datetime.now()
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
     q_id = f"q_{uuid.uuid4().hex[:8]}_{timestamp_str}"
-    
+
     clean_title = title.strip() if title else ""
     if not clean_title or clean_title == "未命名題目":
         first_line = content.strip().splitlines()[0]
@@ -135,12 +135,12 @@ def archive_uploaded_note(
     now = datetime.now()
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
     note_id = f"n_{uuid.uuid4().hex[:8]}_{timestamp_str}"
-    
+
     safe_name = re.sub(r'[\\/*?:"<>|]', '_', filename)
     archive_filename = f"{subject}_{safe_name}_{timestamp_str}.pdf" if not safe_name.lower().endswith(".pdf") else f"{subject}_{safe_name[:-4]}_{timestamp_str}.pdf"
-    
+
     target_path = NOTES_DIR / archive_filename
-    
+
     # 1. 保存獨立二進位筆記檔案
     try:
         with open(target_path, "wb") as f:
@@ -178,11 +178,11 @@ def archive_uploaded_note(
         try:
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
-            
+
             nc = meta.get("notes_catalog", {})
             if subject not in nc:
                 nc[subject] = []
-            
+
             # 加入前排
             nc[subject].insert(0, {
                 "filename": archive_filename,
@@ -191,7 +191,7 @@ def archive_uploaded_note(
                 "is_community_upload": True
             })
             meta["notes_catalog"] = nc
-            
+
             with open(meta_path, "w", encoding="utf-8") as f:
                 json.dump(meta, f, ensure_ascii=False, indent=2)
         except Exception as e:

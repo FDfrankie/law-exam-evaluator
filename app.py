@@ -26,7 +26,17 @@ from six_codes_engine import (
     SixCodesDeepAnnotator,
     get_law_legislative_history,
     get_article_legislative_details,
-    synthesize_article_legislative_details
+    synthesize_article_legislative_details,
+    clear_six_codes_cache
+)
+from six_codes_updater import update_law_amendments, load_amendments_history
+from community_archive_engine import (
+    archive_uploaded_question,
+    archive_uploaded_note,
+    load_community_questions,
+    load_community_notes,
+    search_community_questions,
+    search_community_notes
 )
 from admin_rulings_engine import (
     get_law_key_regulations,
@@ -354,11 +364,14 @@ with st.sidebar:
     if "app_mode" not in st.session_state or st.session_state["app_mode"] not in mode_options:
         st.session_state["app_mode"] = mode_options[0]
 
+    cur_idx = mode_options.index(st.session_state["app_mode"])
     app_mode = st.radio(
         "選擇功能模式：",
         mode_options,
-        key="app_mode"
+        index=cur_idx,
+        key=f"nav_radio_widget_{st.session_state['app_mode']}"
     )
+    st.session_state["app_mode"] = app_mode
     api_key = get_gemini_api_key()
     if not api_key:
         st.warning("⚠️ 尚未偵測到 API Key！請在 Streamlit Cloud 的 Secrets 設定 `GEMINI_API_KEY`，或在下方直接輸入：")
@@ -398,12 +411,25 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
         q_input_mode = st.radio(
             "題目提供方式：",
-            ["✍️ 手動輸入題目文字", "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)"],
+            ["✍️ 手動輸入題目文字", "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)", "👥 從社群考生共享題庫挑選題目"],
             horizontal=True
         )
 
         new_extracted_q = None
-        if q_input_mode == "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)":
+        if q_input_mode == "👥 從社群考生共享題庫挑選題目":
+            comm_questions = load_community_questions()
+            if comm_questions:
+                q_titles = [f"【{q.get('subject', '綜合')}】{q.get('title', '題目')} ({q.get('created_at', '')[:10]})" for q in comm_questions]
+                sel_comm_q_idx = st.selectbox("選擇社群考生共享試題：", range(len(comm_questions)), format_func=lambda i: q_titles[i], key="sel_comm_q_m1")
+                if st.button("📥 帶入此題進行評分", key="btn_apply_comm_q"):
+                    chosen_q = comm_questions[sel_comm_q_idx]
+                    st.session_state.question_text_content = chosen_q.get("content", "")
+                    st.session_state.rubric_text_content = chosen_q.get("rubric", "")
+                    st.rerun()
+            else:
+                st.info("💡 目前社群共享庫中暫無試題，您所輸入或上傳之試題評分後將自動典藏共享！")
+
+        elif q_input_mode == "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)":
             q_tab_cam, q_tab_file = st.tabs(["📸 即時拍照", "📁 上傳照片 / PDF"])
             with q_tab_cam:
                 cam_pic = st.camera_input("使用相機拍攝試題：", key="camera_question_input")
@@ -491,6 +517,17 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
         elif not all_images and not all_texts:
             st.error("請至少上傳一張手寫試卷圖、PDF 或 Word 檔案！")
         else:
+            # 自動新建獨立檔案典藏使用者上傳試卷題目至社群共享庫
+            try:
+                archive_uploaded_question(
+                    title=st.session_state.get("imported_from_bank_label", "") or "二試實例實戰題",
+                    content=question_text,
+                    subject="司律二試申論題",
+                    rubric=rubric_text
+                )
+            except Exception:
+                pass
+
             with st.spinner("⚖️ 正在運用 Gemini 視覺多模態神經網路進行手寫辨識、三段論法邏輯檢驗與爭點比對..."):
                 try:
                     evaluator = LawExamEvaluator()
@@ -1708,16 +1745,25 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
     col_b, col_l, col_q = st.columns([1, 1, 2])
     with col_b:
         branch_options = list(SIX_CODES_TAXONOMY.keys())
-        selected_branch = st.selectbox("1. 選擇法學門類：", branch_options, key="six_codes_branch")
+        default_br = st.session_state.get("six_codes_branch", branch_options[0])
+        br_idx = branch_options.index(default_br) if default_br in branch_options else 0
+        selected_branch = st.selectbox("1. 選擇法學門類：", branch_options, index=br_idx, key=f"sel_br_widget_{default_br}")
+        st.session_state["six_codes_branch"] = selected_branch
     with col_l:
         available_laws = get_laws_in_branch(selected_branch)
-        selected_law = st.selectbox("2. 選擇法典名稱：", available_laws, key="six_codes_law")
+        default_law = st.session_state.get("six_codes_law", available_laws[0] if available_laws else "")
+        law_idx = available_laws.index(default_law) if default_law in available_laws else 0
+        selected_law = st.selectbox("2. 選擇法典名稱：", available_laws, index=law_idx, key=f"sel_law_widget_{default_law}")
+        st.session_state["six_codes_law"] = selected_law
     with col_q:
+        default_kw = st.session_state.get("six_codes_search_kw", "")
         search_kw = st.text_input(
             "3. 搜尋條號（如 184、19、64、759-1）或條文關鍵字：",
+            value=default_kw,
             placeholder="輸入條號或法理關鍵字（如：純粹經濟、借名登記、原因自由行為）...",
-            key="six_codes_search_kw"
+            key=f"search_kw_widget_{st.session_state.get('six_codes_kw_rev', 0)}"
         )
+        st.session_state["six_codes_search_kw"] = search_kw
 
     # 若當前選擇者為法規命令或細則，提示授權母法並提供快速返回母法按鈕
     if any(s in selected_law for s in ["辦法", "細則", "準則", "規則", "規程", "標準"]):
@@ -1742,6 +1788,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                 if st.button(f"🔙 返回母法【{parent_candidate}】", use_container_width=True):
                     st.session_state["six_codes_law"] = parent_candidate
                     st.session_state["six_codes_search_kw"] = ""
+                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
                     st.rerun()
 
     # 完整法律/法規命令立法沿革與歷次修正紀錄 (共 XX 次修正公報)
@@ -1958,6 +2005,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                                 st.session_state["six_codes_branch"] = br_name
                                                 break
                                         st.session_state["six_codes_search_kw"] = ""
+                                        st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
                                         st.rerun()
                                 with btn_col2:
                                     if reg_details and reg_details.get("url"):

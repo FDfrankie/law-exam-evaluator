@@ -157,13 +157,22 @@ def load_six_codes_data() -> tuple:
     _CACHED_LAW_MAP = law_map
     return _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP
 
+def clear_six_codes_cache():
+    """清除六法條文與標註快取，強制重新載入最新資料庫"""
+    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE
+    _CACHED_ARTICLES = None
+    _CACHED_META = None
+    _CACHED_LAW_MAP = None
+    _CACHED_HISTORIES = None
+    _CACHED_LEGISLATIVE = None
+
 def get_laws_in_branch(branch_name: str) -> List[str]:
-    """獲取指定法學門類下的所有法規名稱（核心主法優先，法規命令隨後）"""
+    """獲取指定法學門類下的所有法規名稱（核心主法優先，法規命令隨後，涵蓋全部典藏庫）"""
     articles, meta, law_map = load_six_codes_data()
     expected_laws = list(SIX_CODES_TAXONOMY.get(branch_name, []))
     available = [l for l in expected_laws if l in law_map]
     
-    # 結合 metadata 中的全量分類
+    # 1. 結合 metadata 中的全量分類
     meta_tax = meta.get("taxonomy", {})
     matched_meta_laws = []
     for br_k, br_list in meta_tax.items():
@@ -178,11 +187,55 @@ def get_laws_in_branch(branch_name: str) -> List[str]:
         if l in law_map and l not in available:
             available.append(l)
 
+    # 2. 結合使用者 300+ 部法規典藏庫 (user_uploaded_laws_catalog)
+    user_laws = meta.get("user_uploaded_laws_catalog", {})
+    branch_clean = branch_name.replace("🏛️", "").replace("📜", "").replace("⚖️", "").replace("⚔️", "").replace("🛡️", "").replace("🏢", "").replace("💼", "").replace("💡", "").strip()
+    branch_keywords = []
+    if "憲法" in branch_clean or "公法" in branch_clean:
+        branch_keywords = ["憲法", "公法"]
+    elif "民事實體" in branch_clean or "民法" in branch_clean:
+        branch_keywords = ["民法", "民事"]
+    elif "民事程序" in branch_clean or "訴訟" in branch_clean:
+        branch_keywords = ["民事程序", "民事訴訟", "非訟"]
+    elif "刑事實體" in branch_clean or "刑法" in branch_clean:
+        branch_keywords = ["刑事實體", "刑法"]
+    elif "刑事程序" in branch_clean:
+        branch_keywords = ["刑事程序", "刑事訴訟", "偵審"]
+    elif "行政" in branch_clean:
+        branch_keywords = ["行政法", "行政", "公法"]
+    elif "商事" in branch_clean or "財經" in branch_clean:
+        branch_keywords = ["商事", "公司", "證交", "保險", "票據", "銀行", "金融"]
+    elif "智慧財產" in branch_clean or "勞動" in branch_clean:
+        branch_keywords = ["智財", "智慧財產", "專利", "商標", "著作", "勞動", "社會法"]
+
+    for u_law_name, u_info in user_laws.items():
+        u_branch = u_info.get("branch", "")
+        if any(kw in u_branch for kw in branch_keywords):
+            if u_law_name in law_map and u_law_name not in available:
+                available.append(u_law_name)
+
+    # 3. 掃描 law_map 中的所有條文，若其 branch 屬性符合本門類
+    for l_name, l_arts in law_map.items():
+        if l_name not in available and l_arts:
+            art_br = l_arts[0].get("branch", "")
+            if any(kw in art_br for kw in branch_keywords):
+                available.append(l_name)
+
+    # 4. 補充 regulations_map
+    reg_map = meta.get("regulations_map", {})
+    for parent_l, ords in reg_map.items():
+        if parent_l in available:
+            for ord_item in ords:
+                ord_name = ord_item.get("name")
+                if ord_name and ord_name not in available:
+                    available.append(ord_name)
+
     if not available:
         for l in law_map.keys():
-            if any(k in l for k in branch_name.replace("🏛️", "").replace("📜", "").replace("⚖️", "").replace("⚔️", "").replace("🛡️", "").replace("🏢", "").replace("💼", "").replace("💡", "").split("與")[0].split("及")[0]):
+            if any(k in l for k in branch_clean.split("與")[0].split("及")[0]):
                 if l not in available:
                     available.append(l)
+
     return available or list(law_map.keys())[:10]
 
 def get_law_articles(law_name: str) -> List[Dict[str, Any]]:

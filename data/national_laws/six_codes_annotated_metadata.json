@@ -558961,5 +558961,1749 @@
         "source": "經濟部商工行政法規檢索系統"
       }
     ]
-  }
+  },
+  "user_uploaded_laws_catalog": {
+    "立法委員行為法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 31,
+      "modified_date": "民國 91 年 01 月 25 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\立法委員行為法_260202_111642.pdf"
+    },
+    "行政法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 62,
+      "modified_date": "民國 111 年 06 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政法院組織法_251103_021856.pdf"
+    },
+    "行政院大陸委員會組織條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 24,
+      "modified_date": "民國 86 年 01 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院大陸委員會組織條例_260202_180827.pdf"
+    },
+    "政黨法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 46,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\政黨法_260202_111536.pdf"
+    },
+    "中華民國憲法增修條文": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 12,
+      "modified_date": "民國 94 年 06 月 10 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中華民國憲法增修條文_251103_021904.pdf"
+    },
+    "國家安全會議組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 16,
+      "modified_date": "民國 92 年 06 月 25 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\國家安全會議組織法_260202_180931.pdf"
+    },
+    "行政院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 15,
+      "modified_date": "民國 114 年 01 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院組織法_251103_021859.pdf"
+    },
+    "中央行政機關組織基準法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 39,
+      "modified_date": "民國 114 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中央行政機關組織基準法_251103_021858.pdf"
+    },
+    "銓敘部組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 8,
+      "modified_date": "民國 112 年 04 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\銓敘部組織法_251103_021857.pdf"
+    },
+    "司法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 22,
+      "modified_date": "民國 111 年 01 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\司法院組織法_251103_021859.pdf"
+    },
+    "預算法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 101,
+      "modified_date": "民國 110 年 06 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\預算法_250730_005420.pdf"
+    },
+    "法庭旁聽規則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 12,
+      "modified_date": "民國 110 年 02 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\法庭旁聽規則_260202_113329.pdf"
+    },
+    "法庭錄音錄影及其利用保存辦法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 13,
+      "modified_date": "民國 111 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\法庭錄音錄影及其利用保存辦法_251103_021854.pdf"
+    },
+    "法庭錄音錄影公開播送實施辦法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 15,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\法庭錄音錄影公開播送實施辦法_260605_210624.pdf"
+    },
+    "⾏政院所屬各級⼈事機構⼈員設置管理要點": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院所屬各級人事機構人員設置管理要點_250729_221344.pdf"
+    },
+    "公民投票法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 56,
+      "modified_date": "民國 114 年 12 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\公民投票法_251227_004015.pdf"
+    },
+    "憲法訴訟法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 95,
+      "modified_date": "民國 114 年 01 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\憲法訴訟法_251103_021903.pdf"
+    },
+    "中央法規標準法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 26,
+      "modified_date": "民國 93 年 05 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中央法規標準法_251103_021903.pdf"
+    },
+    "立法院職權行使法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 106,
+      "modified_date": "民國 113 年 06 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\立法院職權行使法_251103_021900.pdf"
+    },
+    "總統副總統選舉罷免法施行細則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 48,
+      "modified_date": "民國 112 年 09 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\總統副總統選舉罷免法施行細則_251103_021901.pdf"
+    },
+    "立法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 43,
+      "modified_date": "民國 112 年 12 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\立法院組織法_251103_021859.pdf"
+    },
+    "法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 154,
+      "modified_date": "民國 115 年 05 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\法院組織法_260605_205832.pdf"
+    },
+    "國家安全局組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 10,
+      "modified_date": "民國 109 年 01 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\國家安全局組織法_260202_180905.pdf"
+    },
+    "人事管理條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 11,
+      "modified_date": "民國 72 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\人事管理條例_250729_221345.pdf"
+    },
+    "考試院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 11,
+      "modified_date": "民國 112 年 04 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\考試院組織法_251103_021858.pdf"
+    },
+    "中央政府機關員額管理辦法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 26,
+      "modified_date": "民國 111 年 10 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中央政府機關員額管理辦法_251103_021857.pdf"
+    },
+    "促進轉型正義條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 28,
+      "modified_date": "民國 111 年 05 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\促進轉型正義條例_260202_111349.pdf"
+    },
+    "少年及家事法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 54,
+      "modified_date": "民國 111 年 06 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\少年及家事法院組織法_251103_021855.pdf"
+    },
+    "監察院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 17,
+      "modified_date": "民國 109 年 01 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\監察院組織法_251103_021858.pdf"
+    },
+    "中華民國總統府組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 20,
+      "modified_date": "民國 99 年 09 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中華民國總統府組織法_251103_021900.pdf"
+    },
+    "政黨及其附隨組織不當取得財產處理條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 34,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\政黨及其附隨組織不當取得財產處理條例_260817_132316.pdf"
+    },
+    "中華民國憲法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 175,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中華民國憲法_251103_021904.pdf"
+    },
+    "公職人員選舉罷免法施行細則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 62,
+      "modified_date": "民國 114 年 11 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\公職人員選舉罷免法施行細則_260202_111722.pdf"
+    },
+    "總統副總統選舉罷免法（新 84.08.09 制定）": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 128,
+      "modified_date": "民國 115 年 08 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\總統副總統選舉罷免法_260828_015219.pdf"
+    },
+    "中央政府機關總員額法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 11,
+      "modified_date": "民國 108 年 12 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\中央政府機關總員額法_251103_021857.pdf"
+    },
+    "智慧財產及商業法院組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 45,
+      "modified_date": "民國 112 年 04 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\智慧財產及商業法院組織法_251103_021855.pdf"
+    },
+    "公職人員選舉罷免法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 148,
+      "modified_date": "民國 115 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\公職人員選舉罷免法_260717_003645.pdf"
+    },
+    "公民投票法施行細則（107.02.26訂定）": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 23,
+      "modified_date": "民國 108 年 10 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\公民投票法施行細則_260202_111750.pdf"
+    },
+    "強化國防自主暨無人載具產業發展條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 24,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\強化國防自主暨無人載具產業發展條例_260928_225629.pdf"
+    },
+    "監察法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 32,
+      "modified_date": "民國 110 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\監察法_250729_221348.pdf"
+    },
+    "行政院人事行政總處處務規程": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 17,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院人事行政總處處務規程_250729_221345.pdf"
+    },
+    "二二八事件處理及賠償條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 19,
+      "modified_date": "民國 107 年 01 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\二二八事件處理及賠償條例_260202_111426.pdf"
+    },
+    "行政院人事行政總處組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 6,
+      "modified_date": "民國 110 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院人事行政總處組織法_250729_221345.pdf"
+    },
+    "憲法法庭審理規則（110.06.30 訂定）": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 79,
+      "modified_date": "民國 112 年 09 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\憲法法庭審理規則_251103_021903.pdf"
+    },
+    "立法院議事規則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 63,
+      "modified_date": "民國 105 年 11 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\立法院議事規則_260202_111616.pdf"
+    },
+    "反滲透法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 12,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\反滲透法_250729_221347.pdf"
+    },
+    "行政院功能業務與組織調整條例": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 21,
+      "modified_date": "民國 110 年 12 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\行政院功能業務與組織調整條例_250729_221346.pdf"
+    },
+    "審計部組織法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 18,
+      "modified_date": "民國 115 年 01 月 21 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\憲法\\審計部組織法_260204_221537.pdf"
+    },
+    "國家賠償法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 17,
+      "modified_date": "民國 108 年 12 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\國家賠償法_251103_025707.pdf"
+    },
+    "政府採購法施行細則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 127,
+      "modified_date": "民國 110 年 07 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\政府採購法施行細則_260917_134039.pdf"
+    },
+    "訴願扣除在途期間辦法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 6,
+      "modified_date": "民國 104 年 02 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\訴願扣除在途期間辦法_260202_180257.pdf"
+    },
+    "遊說法施行細則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 25,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\遊說法施行細則_260202_183642.pdf"
+    },
+    "規費法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 22,
+      "modified_date": "民國 106 年 06 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\規費法_251103_025621.pdf"
+    },
+    "政治獻金法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 36,
+      "modified_date": "民國 107 年 06 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\政治獻金法_260202_183704.pdf"
+    },
+    "行政院及各級行政機關訴願審議委員會審議規則": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 35,
+      "modified_date": "民國 103 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\行政院及各級行政機關訴願審議委員會審議規則_251103_025709.pdf"
+    },
+    "行政法人法": {
+      "branch": "🏛️ 憲法與公法學門",
+      "articles_count": 42,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\行政法\\行政法\\行政法人法_251103_025706.pdf"
+    },
+    "民法債編施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 37,
+      "modified_date": "民國 110 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法債編施行法_250729_222039.pdf"
+    },
+    "土地法施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 63,
+      "modified_date": "民國 100 年 06 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\土地法施行法_260405_174137.pdf"
+    },
+    "民法繼承編施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 15,
+      "modified_date": "民國 115 年 08 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法繼承編施行法_260828_015338.pdf"
+    },
+    "動產擔保交易法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 45,
+      "modified_date": "民國 96 年 07 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\動產擔保交易法_250729_222032.pdf"
+    },
+    "民法物權編施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 31,
+      "modified_date": "民國 99 年 02 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法物權編施行法_250729_222038.pdf"
+    },
+    "土地法第三十四條之一執行要點": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\土地法第三十四條之一執行要點_260514_171349.pdf"
+    },
+    "涉外民事法律適用法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 63,
+      "modified_date": "民國 99 年 05 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\涉外民事法律適用法_250729_222028.pdf"
+    },
+    "公寓大廈管理條例施行細則": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 14,
+      "modified_date": "民國 94 年 11 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\公寓大廈管理條例施行細則_250729_222033.pdf"
+    },
+    "動產擔保交易法施行細則": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 14,
+      "modified_date": "民國 104 年 12 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\動產擔保交易法施行細則_250729_222031.pdf"
+    },
+    "土地法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 262,
+      "modified_date": "民國 113 年 08 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\土地法_250729_222031.pdf"
+    },
+    "祭祀公業條例": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 60,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\祭祀公業條例_250729_222034.pdf"
+    },
+    "民法親屬編施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 24,
+      "modified_date": "民國 110 年 01 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法親屬編施行法_250729_222038.pdf"
+    },
+    "民法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 1439,
+      "modified_date": "民國 115 年 08 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法_260828_015322.pdf"
+    },
+    "金融消費者保護法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 41,
+      "modified_date": "民國 112 年 12 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\金融消費者保護法_250729_222035.pdf"
+    },
+    "司法院釋字第七四八號解釋施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 27,
+      "modified_date": "民國 112 年 06 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\司法院釋字第七四八號解釋施行法_250729_222037.pdf"
+    },
+    "消費者保護法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 78,
+      "modified_date": "民國 104 年 06 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\消費者保護法_250729_222036.pdf"
+    },
+    "公寓大廈管理條例": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 66,
+      "modified_date": "民國 111 年 05 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\公寓大廈管理條例_250729_222034.pdf"
+    },
+    "⼟地法第四⼗六條之⼀⾄第四⼗六條之三執⾏要點": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\土地法第四十六條之一至第四十六條之三執行要點_260405_174045.pdf"
+    },
+    "民法總則施行法": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 22,
+      "modified_date": "民國 110 年 01 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\民法總則施行法_250729_222040.pdf"
+    },
+    "土地登記規則": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 184,
+      "modified_date": "民國 110 年 07 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\土地登記規則_260409_120632.pdf"
+    },
+    "時效取得地上權登記審查要點": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\時效取得地上權登記審查要點_260705_205753.pdf"
+    },
+    "消費者保護法施行細則": {
+      "branch": "⚖️ 民事実體法學門",
+      "articles_count": 43,
+      "modified_date": "民國 104 年 12 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民法\\消費者保護法施行細則_250729_222035.pdf"
+    },
+    "民事閱卷規則": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 29,
+      "modified_date": "民國 112 年 04 月 12 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\民事閱卷規則_260202_113418.pdf"
+    },
+    "非訟事件法": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 223,
+      "modified_date": "民國 107 年 06 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\非訟事件法_250729_224925.pdf"
+    },
+    "辦理強制執行事件應行注意事項": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\辦理強制執行事件應行注意事項_250729_224927.pdf"
+    },
+    "辦理民事訴訟事件應行注意事項": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\辦理民事訴訟事件應行注意事項_261001_140329.pdf"
+    },
+    "鄉鎮市調解條例": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 53,
+      "modified_date": "民國 112 年 01 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\管收條例_260202_132224.pdf"
+    },
+    "未繼承登記不動產辦理強制執行聯繫辦法": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 19,
+      "modified_date": "民國 94 年 01 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\未繼承登記不動產辦理強制執行聯繫辦法_260202_125056.pdf"
+    },
+    "非訟事件法施行細則": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 32,
+      "modified_date": "民國 102 年 06 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\非訟事件法施行細則_250729_224925.pdf"
+    },
+    "提存法": {
+      "branch": "📜 民事程序法與非訟學門",
+      "articles_count": 32,
+      "modified_date": "民國 96 年 12 月 12 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\民事訴訟法\\提存法_250729_224924 (1).pdf"
+    },
+    "家庭暴力防治法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 77,
+      "modified_date": "民國 112 年 12 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\家庭暴力防治法_250729_225339.pdf"
+    },
+    "貪污治罪條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 22,
+      "modified_date": "民國 105 年 06 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\貪污治罪條例_250729_225339.pdf"
+    },
+    "性侵害犯罪防治法施行細則": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 18,
+      "modified_date": "民國 112 年 08 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\性侵害犯罪防治法施行細則_260202_134315.pdf"
+    },
+    "詐欺犯罪危害防制條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 58,
+      "modified_date": "民國 115 年 01 月 21 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\詐欺犯罪危害防制條例_260204_221634.pdf"
+    },
+    "兒童及少年性剝削防制條例施行細則": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 26,
+      "modified_date": "民國 112 年 08 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\兒童及少年性剝削防制條例施行細則_250729_225340.pdf"
+    },
+    "洗錢防制法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 31,
+      "modified_date": "民國 113 年 07 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\洗錢防制法_250729_225338.pdf"
+    },
+    "人口販運防制法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 47,
+      "modified_date": "民國 112 年 06 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\人口販運防制法_260325_104703.pdf"
+    },
+    "毒品危害防制條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 49,
+      "modified_date": "民國 111 年 05 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\毒品危害防制條例_250729_225343.pdf"
+    },
+    "兒童及少年性剝削防制條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 59,
+      "modified_date": "民國 113 年 08 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\兒童及少年性剝削防制條例_250729_225340.pdf"
+    },
+    "中華民國刑法施行法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 27,
+      "modified_date": "民國 115 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\中華民國刑法施行法_260808_061758.pdf"
+    },
+    "妨害兵役治罪條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 25,
+      "modified_date": "民國 111 年 05 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\妨害兵役治罪條例_260202_134449.pdf"
+    },
+    "中華民國刑法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 422,
+      "modified_date": "民國 115 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\中華民國刑法_260801_102207.pdf"
+    },
+    "陸海空軍刑法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 79,
+      "modified_date": "民國 112 年 12 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\陸海空軍刑法_250729_225344.pdf"
+    },
+    "性騷擾防治法施行細則": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 26,
+      "modified_date": "民國 113 年 03 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\性騷擾防治法施行細則_260202_134332.pdf"
+    },
+    "槍砲彈藥刀械許可及管理辦法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 34,
+      "modified_date": "民國 114 年 03 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\槍砲彈藥刀械許可及管理辦法_260202_133357.pdf"
+    },
+    "跟蹤騷擾防制法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 23,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\跟蹤騷擾防制法_250729_225341.pdf"
+    },
+    "家庭暴力防治法施行細則": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 31,
+      "modified_date": "民國 113 年 07 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\家庭暴力防治法施行細則_260202_134359.pdf"
+    },
+    "槍砲彈藥刀械管制條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 34,
+      "modified_date": "民國 113 年 01 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\槍砲彈藥刀械管制條例_250729_225343.pdf"
+    },
+    "組織犯罪防制條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 21,
+      "modified_date": "民國 112 年 05 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\組織犯罪防制條例_250729_225342.pdf"
+    },
+    "性侵害犯罪防治法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 56,
+      "modified_date": "民國 112 年 02 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\性侵害犯罪防治法_250729_225342.pdf"
+    },
+    "性騷擾防治法": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 34,
+      "modified_date": "民國 112 年 08 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\性騷擾防治法_250729_225341.pdf"
+    },
+    "毒品危害防制條例施行細則": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 31,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\毒品危害防制條例施行細則_260202_133512.pdf"
+    },
+    "懲治走私條例": {
+      "branch": "⚔️ 刑事實體法學門",
+      "articles_count": 13,
+      "modified_date": "民國 101 年 06 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑法\\懲治走私條例_260202_134517.pdf"
+    },
+    "國際刑事司法互助法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 38,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\國際刑事司法互助法_260605_210920.pdf"
+    },
+    "調度司法警察條例": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 14,
+      "modified_date": "民國 69 年 07 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\調度司法警察條例_260202_141937.pdf"
+    },
+    "檢察機關辦理刑事案件證⼈鑑定⼈⽇費旅費及鑑定費⽀給要點": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\檢察機關辦理刑事案件證人鑑定人日費旅費及鑑定費支給要點_260202_140731.pdf"
+    },
+    "保安處分累進處遇規程": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 23,
+      "modified_date": "民國 95 年 10 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\保安處分累進處遇規程_260331_124714.pdf"
+    },
+    "更生保護法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 21,
+      "modified_date": "民國 99 年 05 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\更生保護法_260202_141625.pdf"
+    },
+    "法院辦理通緝案件應⾏注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\法院辦理通緝案件應行注意事項_260202_140557 (1).pdf"
+    },
+    "刑事案件確定後去氧核醣核酸鑑定條例": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 10,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\刑事案件確定後去氧核醣核酸鑑定條例_250729_230848.pdf"
+    },
+    "公設辯護人條例": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 23,
+      "modified_date": "民國 112 年 01 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\公設辯護人條例_260202_141840.pdf"
+    },
+    "法院辦理刑事訴訟簡易程序案件應行注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\法院辦理刑事訴訟簡易程序案件應行注意事項_250729_230900.pdf"
+    },
+    "法院辦理刑事訴訟協商程序案件應⾏注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\法院辦理刑事訴訟協商程序案件應行注意事項_260202_140116.pdf"
+    },
+    "引渡法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 26,
+      "modified_date": "民國 69 年 07 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\引渡法_260202_141711.pdf"
+    },
+    "刑事訴訟法施行法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 26,
+      "modified_date": "民國 112 年 12 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\刑事訴訟法施行法_250729_230901.pdf"
+    },
+    "監獄行刑法施行細則": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 59,
+      "modified_date": "民國 109 年 07 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\監獄行刑法施行細則_250729_230851.pdf"
+    },
+    "赦免法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 9,
+      "modified_date": "民國 80 年 09 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\赦免法_260202_141741.pdf"
+    },
+    "羈押法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 117,
+      "modified_date": "民國 109 年 01 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\羈押法_250729_230854.pdf"
+    },
+    "提審法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 12,
+      "modified_date": "民國 103 年 01 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\提審法_250729_230853.pdf"
+    },
+    "軍事審判法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 243,
+      "modified_date": "民國 108 年 04 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\軍事審判法_250729_230858.pdf"
+    },
+    "犯罪被害人權益保障法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 103,
+      "modified_date": "民國 112 年 02 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\犯罪被害人權益保障法_250729_230849.pdf"
+    },
+    "犯罪被害人權益保障法施行細則": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 46,
+      "modified_date": "民國 112 年 06 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\犯罪被害人權益保障法施行細則_260202_134609.pdf"
+    },
+    "法院訴訟當事人在途期間標準": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 4,
+      "modified_date": "民國 107 年 06 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\法院訴訟當事人在途期間標準_260202_140523.pdf"
+    },
+    "刑事妥速審判法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 14,
+      "modified_date": "民國 108 年 06 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\刑事妥速審判法_250729_230859.pdf"
+    },
+    "檢察機關辦理重⼤刑事案件注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\檢察機關辦理重大刑事案件注意事項_260202_140400.pdf"
+    },
+    "監獄行刑法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 156,
+      "modified_date": "民國 109 年 01 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\監獄行刑法_250729_230852.pdf"
+    },
+    "刑事訴訟法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 712,
+      "modified_date": "民國 115 年 05 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\刑事訴訟法_260605_205752.pdf"
+    },
+    "法院處理扣押物應⾏注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\法院處理扣押物應行注意事項_260202_140436.pdf"
+    },
+    "少年事件處理法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 120,
+      "modified_date": "民國 112 年 06 月 21 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\少年事件處理法_250729_230855.pdf"
+    },
+    "去氧核醣核酸採樣條例": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 14,
+      "modified_date": "民國 101 年 01 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\去氧核醣核酸採樣條例_250729_230849.pdf"
+    },
+    "檢察機關辦理通緝案件應⾏注意事項": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\檢察機關辦理通緝案件應行注意事項_260202_140640.pdf"
+    },
+    "證人保護法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 23,
+      "modified_date": "民國 107 年 06 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\證人保護法_250729_230851.pdf"
+    },
+    "通訊保障及監察法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 40,
+      "modified_date": "民國 113 年 07 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\通訊保障及監察法_250729_230853.pdf"
+    },
+    "國民法官法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 113,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\國民法官法_250729_230857.pdf"
+    },
+    "刑事補償法": {
+      "branch": "🛡️ 刑事程序法與偵審學門",
+      "articles_count": 43,
+      "modified_date": "民國 112 年 12 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\刑事訴訟法\\刑事補償法_250729_230852 (1).pdf"
+    },
+    "強制汽車責任保險法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 13,
+      "modified_date": "民國 111 年 11 月 25 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\強制汽車責任保險法施行細則_250729_222657.pdf"
+    },
+    "銀行法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 11,
+      "modified_date": "民國 91 年 08 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\銀行法施行細則_260202_190712.pdf"
+    },
+    "有限合夥法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 44,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\有限合夥法_250812_165719.pdf"
+    },
+    "海商法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 153,
+      "modified_date": "民國 98 年 07 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\海商法_250812_165637.pdf"
+    },
+    "發行人募集與發行有價證券處理準則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 92,
+      "modified_date": "民國 115 年 06 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\發行人募集與發行有價證券處理準則_260921_141716.pdf"
+    },
+    "商業會計法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 87,
+      "modified_date": "民國 103 年 06 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\商業會計法_250812_165641.pdf"
+    },
+    "船員法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 15,
+      "modified_date": "民國 107 年 03 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\船員法施行細則_260202_112552.pdf"
+    },
+    "不動產證券化條例施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 14,
+      "modified_date": "民國 98 年 06 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\不動產證券化條例施行細則_260405_211527.pdf"
+    },
+    "證券交易法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 229,
+      "modified_date": "民國 113 年 08 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\證券交易法_250812_165639.pdf"
+    },
+    "期貨交易法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 7,
+      "modified_date": "民國 102 年 08 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\期貨交易法施行細則_250812_165638.pdf"
+    },
+    "企業併購法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 56,
+      "modified_date": "民國 111 年 06 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\企業併購法_250812_165640.pdf"
+    },
+    "引水法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 43,
+      "modified_date": "民國 115 年 08 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\引水法_260828_015245.pdf"
+    },
+    "證券投資人及期貨交易人保護法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 47,
+      "modified_date": "民國 114 年 07 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\證券投資人及期貨交易人保護法_250729_222654.pdf"
+    },
+    "公司登記辦法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 6,
+      "modified_date": "民國 110 年 04 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\公司登記辦法_260202_112745.pdf"
+    },
+    "信託法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 86,
+      "modified_date": "民國 98 年 12 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\信託法_250729_222657.pdf"
+    },
+    "證券投資信託及顧問法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 129,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\證券投資信託及顧問法_250729_222656.pdf"
+    },
+    "商業會計處理準則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 45,
+      "modified_date": "民國 115 年 07 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\商業會計處理準則_260914_115522.pdf"
+    },
+    "票據法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 17,
+      "modified_date": "民國 75 年 12 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\票據法施行細則_250812_165637.pdf"
+    },
+    "保險代理人管理規則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 65,
+      "modified_date": "民國 113 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險代理人管理規則_250812_165634.pdf"
+    },
+    "中央銀行法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 48,
+      "modified_date": "民國 103 年 01 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\中央銀行法_260202_190735.pdf"
+    },
+    "公司法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 534,
+      "modified_date": "民國 114 年 12 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\公司法_260106_193948.pdf"
+    },
+    "銀行法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 204,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\銀行法_250729_222656.pdf"
+    },
+    "保險經紀人管理規則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 65,
+      "modified_date": "民國 113 年 07 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險經紀人管理規則_250812_165633.pdf"
+    },
+    "存款保險條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 52,
+      "modified_date": "民國 104 年 02 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\存款保險條例_250729_222653.pdf"
+    },
+    "強制汽車責任保險法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 56,
+      "modified_date": "民國 111 年 06 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\強制汽車責任保險法_251129_122442.pdf"
+    },
+    "信用合作社法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 65,
+      "modified_date": "民國 107 年 01 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\信用合作社法_260202_191027.pdf"
+    },
+    "商業登記法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 38,
+      "modified_date": "民國 114 年 12 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\商業登記法_260106_193912.pdf"
+    },
+    "保險業設立許可及管理辦法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 40,
+      "modified_date": "民國 114 年 07 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險業設立許可及管理辦法_250812_165634.pdf"
+    },
+    "航業法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 65,
+      "modified_date": "民國 103 年 01 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\航業法_260202_112631.pdf"
+    },
+    "不動產證券化條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 71,
+      "modified_date": "民國 106 年 12 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\不動產證券化條例_250729_222653.pdf"
+    },
+    "農業金融法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 63,
+      "modified_date": "民國 106 年 01 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\農業金融法_250729_222655.pdf"
+    },
+    "現行法規所定貨幣單位折算新臺幣條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 3,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\現行法規所定貨幣單位折算新臺幣條例_260202_132637.pdf"
+    },
+    "電子簽章法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 22,
+      "modified_date": "民國 113 年 05 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\電子簽章法_260202_212303.pdf"
+    },
+    "光碟管理條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 29,
+      "modified_date": "民國 105 年 11 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\光碟管理條例_260202_194944.pdf"
+    },
+    "保險公證人管理規則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 47,
+      "modified_date": "民國 108 年 05 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險公證人管理規則_250812_165632.pdf"
+    },
+    "信託業法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 77,
+      "modified_date": "民國 107 年 01 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\信託業法_250729_222656.pdf"
+    },
+    "保險業務員管理規則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 23,
+      "modified_date": "民國 114 年 01 月 02 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險業務員管理規則_250812_165634.pdf"
+    },
+    "票據掛失⽌付處理規範": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 17,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\票據掛失止付處理規範_260202_112712.pdf"
+    },
+    "金融資產證券化條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 119,
+      "modified_date": "民國 103 年 06 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\金融資產證券化條例_250729_222654.pdf"
+    },
+    "合作社法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 94,
+      "modified_date": "民國 104 年 06 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\合作社法_260202_191010.pdf"
+    },
+    "船舶法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 109,
+      "modified_date": "民國 107 年 11 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\船舶法_250812_165636.pdf"
+    },
+    "證券交易法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 15,
+      "modified_date": "民國 101 年 11 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\證券交易法施行細則_250812_165639.pdf"
+    },
+    "強制汽車責任保險給付標準": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 9,
+      "modified_date": "民國 115 年 05 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\強制汽車責任保險給付標準_260613_231005.pdf"
+    },
+    "票據法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 147,
+      "modified_date": "民國 76 年 06 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\票據法_250812_165638.pdf"
+    },
+    "保險法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 266,
+      "modified_date": "民國 114 年 06 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險法_251101_190236.pdf"
+    },
+    "行政院金融重建基金設置及管理條例": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 18,
+      "modified_date": "民國 104 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\行政院金融重建基金設置及管理條例_250729_222652.pdf"
+    },
+    "金融機構合併法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 16,
+      "modified_date": "民國 104 年 12 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\金融機構合併法_250729_222655.pdf"
+    },
+    "虛擬資產服務法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 56,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\虛擬資產服務法_260801_102626.pdf"
+    },
+    "期貨交易法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 129,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\期貨交易法_250812_165638.pdf"
+    },
+    "電子簽章法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 18,
+      "modified_date": "民國 113 年 11 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\電子簽章法施行細則_260202_212327.pdf"
+    },
+    "儲蓄互助社法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 37,
+      "modified_date": "民國 104 年 02 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\儲蓄互助社法_260202_190952.pdf"
+    },
+    "公開發行股票公司股務處理準則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 84,
+      "modified_date": "民國 115 年 03 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\公開發行股票公司股務處理準則_260921_094006.pdf"
+    },
+    "船員法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 112,
+      "modified_date": "民國 110 年 04 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\船員法_260202_112519.pdf"
+    },
+    "保險法施行細則": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 17,
+      "modified_date": "民國 97 年 06 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\保險法施行細則_251111_182558.pdf"
+    },
+    "票券金融管理法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 81,
+      "modified_date": "民國 107 年 12 月 05 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\票券金融管理法_250729_222653.pdf"
+    },
+    "金融控股公司法": {
+      "branch": "🏢 商事法學門 (公司/證交/保險)",
+      "articles_count": 76,
+      "modified_date": "民國 108 年 01 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\商事法\\金融控股公司法_250729_222655.pdf"
+    },
+    "公平交易委員會對於事業發侵害著作權、商標權或專利權警告函案件之處理原則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於事業發侵害著作權、商標權或專利權警告函案件之處理原則_260405_214216.pdf"
+    },
+    "公平交易委員會對於不動產廣告案件之處理原則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於不動產廣告案件之處理原則_260405_214332.pdf"
+    },
+    "著作權法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 158,
+      "modified_date": "民國 111 年 06 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\著作權法_250729_231152.pdf"
+    },
+    "植物品種及種苗法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 26,
+      "modified_date": "民國 109 年 01 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\植物品種及種苗法施行細則_260907_150244.pdf"
+    },
+    "專利權期間延長核定辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 10,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利權期間延長核定辦法_261002_105007.pdf"
+    },
+    "公平交易法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 37,
+      "modified_date": "民國 111 年 04 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易法施行細則_260405_214057.pdf"
+    },
+    "營業秘密法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 25,
+      "modified_date": "民國 109 年 01 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\營業秘密法_250729_231150.pdf"
+    },
+    "植物品種及種苗法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 66,
+      "modified_date": "民國 112 年 05 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\植物品種及種苗法_260907_150211.pdf"
+    },
+    "著作權爭議調解辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 19,
+      "modified_date": "民國 114 年 05 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\著作權爭議調解辦法_260202_193743.pdf"
+    },
+    "積體電路電路布局保護法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 22,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\積體電路電路布局保護法施行細則_260911_224106.pdf"
+    },
+    "商標電子申請及電子送達實施辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 21,
+      "modified_date": "民國 109 年 06 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標電子申請及電子送達實施辦法_261007_180957.pdf"
+    },
+    "公平交易法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 51,
+      "modified_date": "民國 106 年 06 月 14 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易法_250729_231152.pdf"
+    },
+    "積體電路電路布局保護法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 41,
+      "modified_date": "民國 91 年 06 月 12 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\積體電路電路布局保護法_260202_211915.pdf"
+    },
+    "著作權法第五條第⼀項各款著作內容例⽰": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\音樂著作強制授權申請許可及使用報酬辦法_260202_193706.pdf"
+    },
+    "多層次傳銷管理法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 41,
+      "modified_date": "民國 113 年 08 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\多層次傳銷管理法_260202_213915.pdf"
+    },
+    "個人資料保護法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 66,
+      "modified_date": "民國 114 年 11 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\個人資料保護法_251201_110341.pdf"
+    },
+    "公平交易委員會對於預售屋銷售⾏為案件之處理原則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於預售屋銷售行為案件之處理原則_260405_214338.pdf"
+    },
+    "有關專利申請之生物材料寄存辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 25,
+      "modified_date": "民國 104 年 06 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\有關專利申請之生物材料寄存辦法_261002_105033.pdf"
+    },
+    "審定核駁理由先行通知實施要點": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\審定核駁理由先行通知實施要點_261012_134744.pdf"
+    },
+    "公平交易委員會對於不動產經紀業之規範說明": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於不動產經紀業之規範說明_260405_214344.pdf"
+    },
+    "商標識別性審查基準": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標識別性審查基準_260921_143854.pdf"
+    },
+    "專利法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 168,
+      "modified_date": "民國 111 年 05 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利法_250729_231154.pdf"
+    },
+    "正字標記管理規則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 30,
+      "modified_date": "民國 111 年 01 月 22 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\正字標記管理規則_260202_192826.pdf"
+    },
+    "專利年費減免辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 9,
+      "modified_date": "民國 105 年 06 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利年費減免辦法_261002_105051.pdf"
+    },
+    "公平交易委員會對於網路廣告案件之處理原則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於網路廣告案件之處理原則_260405_214232.pdf"
+    },
+    "商標法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 54,
+      "modified_date": "民國 113 年 05 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標法施行細則_250729_231152.pdf"
+    },
+    "商標規費收費標準": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 9,
+      "modified_date": "民國 114 年 06 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標規費收費標準_261007_180932.pdf"
+    },
+    "商標審查官資格條例": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 8,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標審查官資格條例_261012_134810.pdf"
+    },
+    "專利電子申請及電子送達實施辦法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 22,
+      "modified_date": "民國 109 年 06 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利電子申請及電子送達實施辦法_260202_193600.pdf"
+    },
+    "專利侵權判斷要點": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利侵權判斷要點_260922_073149.pdf"
+    },
+    "商標識別性審查基準_260921_143854 (1)": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標識別性審查基準_260921_143854 (1).pdf"
+    },
+    "商標法": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 113,
+      "modified_date": "民國 112 年 05 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\商標法_250729_231153.pdf"
+    },
+    "公平交易委員會對於公平交易法第⼆⼗五條案件之處理原則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\公平交易委員會對於公平交易法第二十五條案件之處理原則_260405_214157.pdf"
+    },
+    "多層次傳銷管理法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 20,
+      "modified_date": "民國 104 年 10 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\多層次傳銷管理法施行細則_260202_213900.pdf"
+    },
+    "專利法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 93,
+      "modified_date": "民國 112 年 03 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利法施行細則_260915_150605.pdf"
+    },
+    "個人資料保護法施行細則": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 33,
+      "modified_date": "民國 105 年 03 月 02 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\個人資料保護法施行細則_250729_231150.pdf"
+    },
+    "證明標章、團體標章及團體商標審查基準": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\證明標章、團體標章及團體商標審查基準_261012_134958.pdf"
+    },
+    "專利審查基準": {
+      "branch": "💡 智財法與新興科技法學門",
+      "articles_count": 1,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\智慧財產權法\\專利審查基準_261001_140703.pdf"
+    },
+    "大量解僱勞工保護法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 21,
+      "modified_date": "民國 104 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\大量解僱勞工保護法_250730_001219.pdf"
+    },
+    "勞動檢查法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 42,
+      "modified_date": "民國 112 年 12 月 07 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞動檢查法施行細則_250730_001218.pdf"
+    },
+    "勞工退休金條例": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 69,
+      "modified_date": "民國 108 年 05 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工退休金條例_250730_001228.pdf"
+    },
+    "職業災害勞工保護法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 41,
+      "modified_date": "民國 107 年 11 月 21 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業災害勞工保護法_250730_001221.pdf"
+    },
+    "社會救助法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 16,
+      "modified_date": "民國 111 年 11 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\社會救助法施行細則_260202_182631.pdf"
+    },
+    "性別平等工作法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 20,
+      "modified_date": "民國 113 年 01 月 17 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\性別平等工作法施行細則_250730_001225.pdf"
+    },
+    "工會法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 42,
+      "modified_date": "民國 103 年 10 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\工會法施行細則_250730_001224.pdf"
+    },
+    "就業服務法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 85,
+      "modified_date": "民國 114 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\就業服務法_250730_001226.pdf"
+    },
+    "勞動檢查法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 40,
+      "modified_date": "民國 109 年 06 月 10 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞動檢查法_250730_001218.pdf"
+    },
+    "全民健康保險法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 75,
+      "modified_date": "民國 114 年 10 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險法施行細則_260705_205140.pdf"
+    },
+    "性別平等工作法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 50,
+      "modified_date": "民國 112 年 08 月 16 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\性別平等工作法_250730_001225.pdf"
+    },
+    "兒童及少年福利與權益保障法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 28,
+      "modified_date": "民國 109 年 02 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\兒童及少年福利與權益保障法施行細則_260713_031049.pdf"
+    },
+    "勞資爭議處理法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 67,
+      "modified_date": "民國 110 年 04 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞資爭議處理法_250730_001223.pdf"
+    },
+    "全民健康保險法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 106,
+      "modified_date": "民國 112 年 06 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險法_250730_001220.pdf"
+    },
+    "勞工保險條例施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 105,
+      "modified_date": "民國 114 年 01 月 06 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工保險條例施行細則_250730_001222.pdf"
+    },
+    "身心障礙者權益保障法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 34,
+      "modified_date": "民國 105 年 02 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\身心障礙者權益保障法施行細則_250730_001215.pdf"
+    },
+    "農民健康保險條例": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 60,
+      "modified_date": "民國 112 年 02 月 08 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\農民健康保險條例_260203_001415.pdf"
+    },
+    "勞工職業災害保險及保護法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 92,
+      "modified_date": "民國 114 年 05 月 29 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工職業災害保險及保護法施行細則_250730_001221.pdf"
+    },
+    "就業服務法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 17,
+      "modified_date": "民國 113 年 06 月 18 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\就業服務法施行細則_250730_001226.pdf"
+    },
+    "兒童及少年福利與權益保障法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 136,
+      "modified_date": "民國 110 年 01 月 20 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\兒童及少年福利與權益保障法_260202_182428.pdf"
+    },
+    "農民健康保險條例施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 77,
+      "modified_date": "民國 112 年 02 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\農民健康保險條例施行細則_260203_001428.pdf"
+    },
+    "老人福利法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 16,
+      "modified_date": "民國 98 年 11 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\老人福利法施行細則_260202_182752.pdf"
+    },
+    "全民健康保險藥物給付項目及支付標準": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 112,
+      "modified_date": "民國 115 年 08 月 24 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險藥物給付項目及支付標準_260828_015654.pdf"
+    },
+    "勞工健康保護規則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 29,
+      "modified_date": "民國 115 年 06 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工健康保護規則_260705_204721.pdf"
+    },
+    "身心障礙者權益保障法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 121,
+      "modified_date": "民國 114 年 08 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\身心障礙者權益保障法_251029_112720.pdf"
+    },
+    "團體協約法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 34,
+      "modified_date": "民國 104 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\團體協約法_250730_001224.pdf"
+    },
+    "勞工退休金條例施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 63,
+      "modified_date": "民國 115 年 07 月 15 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工退休金條例施行細則_260808_061519.pdf"
+    },
+    "老人福利法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 58,
+      "modified_date": "民國 114 年 08 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\老人福利法_260202_182732.pdf"
+    },
+    "勞工保險條例": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 104,
+      "modified_date": "民國 115 年 01 月 21 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工保險條例_260204_221416.pdf"
+    },
+    "職工福利金條例施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 15,
+      "modified_date": "民國 105 年 03 月 11 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職工福利金條例施行細則_250730_001214.pdf"
+    },
+    "工會法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 49,
+      "modified_date": "民國 111 年 11 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\工會法_250730_001225.pdf"
+    },
+    "原住民族工作權保障法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 15,
+      "modified_date": "民國 111 年 04 月 28 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\原住民族工作權保障法施行細則_260202_234920.pdf"
+    },
+    "全民健康保險資料特定目的外利用產業利益回饋辦法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 7,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險資料特定目的外利用產業利益回饋辦法_260819_044055.pdf"
+    },
+    "職業災害勞工保護法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 24,
+      "modified_date": "民國 108 年 02 月 23 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業災害勞工保護法施行細則_250730_001220.pdf"
+    },
+    "職工福利金條例": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 16,
+      "modified_date": "民國 104 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職工福利金條例_250730_001214.pdf"
+    },
+    "職業安全衛生法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 61,
+      "modified_date": "民國 114 年 12 月 19 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業安全衛生法_260106_193557.pdf"
+    },
+    "勞工請假規則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 13,
+      "modified_date": "民國 114 年 12 月 09 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工請假規則_251227_003950.pdf"
+    },
+    "國民年金法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 63,
+      "modified_date": "民國 109 年 06 月 03 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\國民年金法_250730_001216.pdf"
+    },
+    "原住民族工作權保障法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 26,
+      "modified_date": "民國 104 年 02 月 04 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\原住民族工作權保障法_260202_234902.pdf"
+    },
+    "職業訓練法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 13,
+      "modified_date": "民國 101 年 05 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業訓練法施行細則_250730_001214.pdf"
+    },
+    "全民健康保險資料管理條例": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 27,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險資料管理條例 _260819_043817.pdf"
+    },
+    "勞工職業災害保險及保護法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 109,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞工職業災害保險及保護法_250730_001222.pdf"
+    },
+    "社會救助法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 59,
+      "modified_date": "民國 104 年 12 月 30 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\社會救助法_250730_001217.pdf"
+    },
+    "勞動基準法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 70,
+      "modified_date": "民國 113 年 03 月 27 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞動基準法施行細則_250730_001228.pdf"
+    },
+    "職場霸凌防治措施準則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 29,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職場霸凌防治措施準則_260705_205253.pdf"
+    },
+    "就業保險法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 47,
+      "modified_date": "民國 111 年 01 月 12 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\就業保險法_250730_001227.pdf"
+    },
+    "全民健康保險資料管理條例施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 5,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險資料管理條例施行細則_260819_043835.pdf"
+    },
+    "全民健康保險資料特定目的外利用管理辦法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 21,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\全民健康保險資料特定目的外利用管理辦法_260819_043918.pdf"
+    },
+    "就業保險法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 38,
+      "modified_date": "民國 114 年 12 月 02 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\就業保險法施行細則_251227_004132.pdf"
+    },
+    "政府機關（構）及行政法人執行法定職務利用全民健康保險資料管理辦法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 6,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\政府機關（構）及行政法人執行法定職務利用全民健康保險資料管理辦法_260819_044147.pdf"
+    },
+    "職業安全衛生法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 56,
+      "modified_date": "民國 115 年 06 月 26 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業安全衛生法施行細則_260705_205239.pdf"
+    },
+    "職業訓練法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 50,
+      "modified_date": "民國 104 年 07 月 01 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\職業訓練法_260202_181641.pdf"
+    },
+    "國民年金法施行細則": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 72,
+      "modified_date": "民國 114 年 03 月 13 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\國民年金法施行細則_250730_001216.pdf"
+    },
+    "勞動基準法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 98,
+      "modified_date": "民國 113 年 07 月 31 日",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\勞動基準法_250730_001229.pdf"
+    },
+    "地方主管機關受理最高負責人職場霸凌事件申訴處理辦法": {
+      "branch": "💼 勞動法與社會法學門",
+      "articles_count": 20,
+      "modified_date": "",
+      "pdf_path": "G:\\我的雲端硬碟\\LawExamData\\六法\\勞動與社會法\\地方主管機關受理最高負責人職場霸凌事件申訴處理辦法_260705_205409.pdf"
+    }
+  },
+  "total_laws_count": 2141,
+  "total_articles_count": 64162
 }

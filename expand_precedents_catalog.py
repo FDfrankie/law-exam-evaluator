@@ -58,6 +58,7 @@ def extract_cases_from_notes() -> Dict[str, Set[str]]:
             content = tf.read_text(encoding="utf-8", errors="ignore")
             for m in CASE_REGEX.findall(content):
                 clean_m = re.sub(r'\s+', '', m)
+                clean_m = re.sub(r'^(?:簡評|編自|亦經|見|參照|如|依據|參見|例如)+', '', clean_m)
                 if not ("字" in clean_m and "號" in clean_m):
                     continue
                 if any(k in clean_m for k in ["地院", "地方法院"]):
@@ -133,10 +134,8 @@ def process_single_scoring_file(file_path: Path, all_note_district: Set[str], se
         is_district = any(k in norm_id for k in ["地方法院", "地院"])
         is_district_approved = False
         if is_district:
-            # 必須在筆記引述清單中，或為借名登記等必考核心爭點
+            # 嚴格限制：僅收錄考生讀書筆記與名師講義中有具體提及/引述之地方法院判決
             if any(dc in norm_id or norm_id in dc for dc in all_note_district):
-                is_district_approved = True
-            elif any(kw in data.get("topic", "") for kw in ["借名登記", "純經濟損失", "侵權", "背信", "不當得利", "表見代理"]):
                 is_district_approved = True
 
         if is_supreme or is_high or is_admin or is_ip or is_district_approved:
@@ -187,17 +186,22 @@ def build_expanded_catalog():
             existing_records = []
     print(f"📖 目前已有本機權威裁判: {len(existing_records)} 筆")
     
+    # 2. 筆記引述裁判提取
+    note_cases = extract_cases_from_notes()
+    all_note_district = {re.sub(r'\s+', '', c) for c in note_cases["district"]}
+
     seen_ids = set()
     unified_records = []
     for r in existing_records:
         cid = re.sub(r'\s+', '', r.get("case_id", ""))
+        lvl = r.get("level", "")
+        # 若為地方法院裁判，嚴格限定必須為考生筆記或講義中引述之事實審判決
+        if "地方法院" in cid or "地院" in cid or "地方法院" in lvl:
+            if not any(dc in cid or cid in dc for dc in all_note_district):
+                continue
         if cid and cid not in seen_ids:
             seen_ids.add(cid)
             unified_records.append(r)
-
-    # 2. 筆記引述裁判提取
-    note_cases = extract_cases_from_notes()
-    all_note_district = {re.sub(r'\s+', '', c) for c in note_cases["district"]}
 
     # 3. 多執行緒並行處理 scoring_standards 裁判庫
     if SCORING_DIR.exists():
@@ -251,6 +255,21 @@ def build_expanded_catalog():
 
     print(f"  ✅ 從 583 份筆記中增補名師指定引用裁判: {added_from_notes} 筆")
     
+    # 規範化清理所有 case_id 與 title 前綴噪音並嚴格去重
+    cleaned_records = []
+    final_seen = set()
+    for r in unified_records:
+        cid = r.get("case_id", "").strip()
+        cid = re.sub(r'^(?:簡評|編自|亦經|見|參照|如|依據|參見|例如)+', '', cid)
+        r["case_id"] = cid
+        if r.get("title", "").startswith("筆記收錄裁判："):
+            r["title"] = f"筆記收錄裁判：{cid}"
+        norm_key = re.sub(r'\s+', '', cid)
+        if norm_key and norm_key not in final_seen:
+            final_seen.add(norm_key)
+            cleaned_records.append(r)
+    unified_records = cleaned_records
+
     # 統計審級分布
     breakdown = {"最高法院/大法官": 0, "高等法院": 0, "行政法院": 0, "智財法院": 0, "地方法院": 0, "其他": 0}
     for r in unified_records:
