@@ -20,7 +20,7 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")

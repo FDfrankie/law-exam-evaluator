@@ -34,7 +34,7 @@ class LawExamGenerator:
 
     def _call_model(self, prompt: Any, generation_config: Any = None) -> Any:
         models_to_try = [self.model_name]
-        for m in ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
+        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
             if m not in models_to_try:
                 models_to_try.append(m)
         last_err = None

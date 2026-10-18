@@ -288,25 +288,44 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             if drive_notes:
                 st.caption(f"⚡ 已自您的 Google Drive 自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
                 
-                # 科目篩選清單
-                subjects_in_notes = sorted(list(set(n["subject"] for n in drive_notes)))
+                # 科目篩選清單（含大類全科整合）
+                raw_subs_notes = sorted(list(set(n["subject"] for n in drive_notes)))
+                note_categories = ["全部科目"]
+                has_civ_notes = any(s in ["民總", "債各", "身分法", "民法"] for s in raw_subs_notes)
+                has_crim_notes = any(s in ["刑總", "刑分", "刑法"] for s in raw_subs_notes)
+                if has_civ_notes:
+                    note_categories.append("民法全科 (民總/債各/身分法)")
+                if has_crim_notes:
+                    note_categories.append("刑法全科 (刑總/刑分)")
+                note_categories.extend(raw_subs_notes)
+
                 default_sub_idx = 0
-                for i, sub in enumerate(["全部科目"] + subjects_in_notes):
-                    if subject and (sub in subject or subject in sub):
-                        default_sub_idx = i
-                        break
+                if subject:
+                    if "民法" in subject and "民法全科 (民總/債各/身分法)" in note_categories:
+                        default_sub_idx = note_categories.index("民法全科 (民總/債各/身分法)")
+                    elif "刑法" in subject and "刑法全科 (刑總/刑分)" in note_categories:
+                        default_sub_idx = note_categories.index("刑法全科 (刑總/刑分)")
+                    else:
+                        for i, sub in enumerate(note_categories):
+                            if sub != "全部科目" and (sub in subject or subject in sub):
+                                default_sub_idx = i
+                                break
                         
                 col_sel1, col_sel2 = st.columns([1, 2])
                 with col_sel1:
                     sel_note_sub = st.selectbox(
                         "筆記分類篩選：",
-                        ["全部科目"] + subjects_in_notes,
+                        note_categories,
                         index=default_sub_idx,
                         key="sel_note_subject_filter"
                     )
                 
                 if sel_note_sub == "全部科目":
                     filtered_notes = drive_notes
+                elif sel_note_sub == "民法全科 (民總/債各/身分法)":
+                    filtered_notes = [n for n in drive_notes if n["subject"] in ["民總", "債各", "身分法", "民法"]]
+                elif sel_note_sub == "刑法全科 (刑總/刑分)":
+                    filtered_notes = [n for n in drive_notes if n["subject"] in ["刑總", "刑分", "刑法"]]
                 else:
                     filtered_notes = [n for n in drive_notes if n["subject"] == sel_note_sub]
                 
@@ -437,23 +456,75 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             try:
                 with open(cw_index_path, "r", encoding="utf-8") as f_cw:
                     cw_list = json.load(f_cw)
-                cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
-                if not cw_sub_list:
-                    cw_sub_list = cw_list
                 
-                all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
-                cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
-                sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
+                # 建立完整的講義分類體系（含全科整合分類）
+                raw_subs = sorted(list(set(c.get("subject", "") for c in cw_list if c.get("subject"))))
+                cw_categories = ["全部科目"]
+                
+                has_civ = any("民法" in s for s in raw_subs)
+                has_crim = any("刑法" in s for s in raw_subs)
+                
+                if has_civ:
+                    cw_categories.append("民法全科 (總則/債總/債各)")
+                if has_crim:
+                    cw_categories.append("刑法全科 (總則/分則)")
+                cw_categories.extend(raw_subs)
+                
+                default_cw_idx = 0
+                if subject:
+                    if "民法" in subject and "民法全科 (總則/債總/債各)" in cw_categories:
+                        default_cw_idx = cw_categories.index("民法全科 (總則/債總/債各)")
+                    elif "刑法" in subject and "刑法全科 (總則/分則)" in cw_categories:
+                        default_cw_idx = cw_categories.index("刑法全科 (總則/分則)")
+                    else:
+                        for idx_c, cat in enumerate(cw_categories):
+                            if cat != "全部科目" and (cat in subject or subject in cat):
+                                default_cw_idx = idx_c
+                                break
+                
+                col_cw1, col_cw2 = st.columns([1, 2])
+                with col_cw1:
+                    sel_cw_sub = st.selectbox(
+                        "筆記分類篩選：",
+                        cw_categories,
+                        index=default_cw_idx,
+                        key="sel_coursework_subject_filter"
+                    )
+                
+                # 依分類過濾講義檔案（精確排除非本學門檔案）
+                if sel_cw_sub == "全部科目":
+                    filtered_cw = cw_list
+                elif sel_cw_sub == "民法全科 (總則/債總/債各)":
+                    filtered_cw = [c for c in cw_list if c.get("subject") in ["民法總則", "民法債編總論", "民法債編各論"]]
+                elif sel_cw_sub == "刑法全科 (總則/分則)":
+                    filtered_cw = [c for c in cw_list if c.get("subject") in ["刑法總則", "刑法分則"]]
+                else:
+                    filtered_cw = [c for c in cw_list if c.get("subject") == sel_cw_sub]
+                
+                with col_cw2:
+                    all_cw_label = f"🌟 【全部分析】引用此分類全部講義重點 (共 {len(filtered_cw)} 份，自動爭點大綱精萃)"
+                    cw_options = [all_cw_label] + [
+                        f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" 
+                        for c in filtered_cw
+                    ]
+                    sel_cw = st.selectbox(
+                        "選擇欲引用的名師講義/課輔檔案：",
+                        cw_options,
+                        key="select_coursework_doc"
+                    )
+                
                 if sel_cw == all_cw_label:
-                    st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
-                    if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
-                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
+                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{sel_cw_sub}】全部 **{len(filtered_cw)} 份** 雲端講義與課輔大綱，優先調用本機高速快取；彙編成完整法學爭點大典以供客製命題。")
+                    if st.checkbox(f"✅ 確認載入【{sel_cw_sub}】全部講義精華爭點以進行全科命題", value=True, key=f"cb_use_all_cw_{sel_cw_sub}"):
+                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in filtered_cw])
+                        with st.expander(f"🔍 檢視已載入【{sel_cw_sub}】之講義爭點精華彙編 (共 {len(notes_from_coursework):,} 字)", expanded=False):
+                            st.text_area("講義核心爭點彙編（已帶入命題引擎）：", value=notes_from_coursework, height=220, key=f"preview_cw_all_{sel_cw_sub}")
                 elif sel_cw:
                     sel_idx = cw_options.index(sel_cw) - 1
-                    chosen_item = cw_sub_list[sel_idx]
+                    chosen_item = filtered_cw[sel_idx]
                     st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
                     st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
-                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
+                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key=f"cb_use_cw_{chosen_item.get('filename')}"):
                         notes_from_coursework = chosen_item.get("summary_preview", "")
             except Exception as e:
                 st.error(f"讀取講義庫失敗: {e}")
@@ -461,8 +532,18 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
 
     final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
+    note_source_label = "個人筆記"
+    if notes_from_text:
+        note_source_label = "手動貼上/編輯之筆記"
+    elif notes_from_drive:
+        note_source_label = "Google Drive 雲端筆記"
+    elif notes_from_file:
+        note_source_label = "本機上傳之筆記"
+    elif notes_from_coursework:
+        note_source_label = "名師課輔講義爭點精萃"
+
     if final_notes:
-        st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
+        st.info(f"💡 目前已載入【{note_source_label}】重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的重點爭點進行客製化命題！")
 
     if stage == "一試 (選擇題 / 單選題)":
         stage1_tab_ai, stage1_tab_300 = st.tabs([
