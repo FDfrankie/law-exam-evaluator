@@ -1627,6 +1627,23 @@ elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
         st.divider()
         st.subheader("📚 AI 權威爭點與法條判解檢索分析報告")
 
+        # 司法院歷年全台裁判全宗直連檢索（地院 / 高院 / 智財 / 高行 / 最高院 30 年資料庫）
+        ext_urls = res.get("external_search_urls", {})
+        if ext_urls:
+            with st.expander("🌐 司法院歷年全台裁判全宗即時直連檢索（涵蓋地院、高院、智財、高行、最高院 30 年資料庫）", expanded=True):
+                st.markdown(f"💡 針對查詢爭點 **`{res.get('query', '')}`**，您可直接點擊以下官方直連入口，即時調閱司法院官方 30 年完整裁判全文：")
+                ext_col1, ext_col2, ext_col3 = st.columns(3)
+                url_items = list(ext_urls.items())
+                with ext_col1:
+                    for lbl, lnk in url_items[:2]:
+                        st.link_button(lbl, lnk, use_container_width=True)
+                with ext_col2:
+                    for lbl, lnk in url_items[2:4]:
+                        st.link_button(lbl, lnk, use_container_width=True)
+                with ext_col3:
+                    for lbl, lnk in url_items[4:]:
+                        st.link_button(lbl, lnk, use_container_width=True)
+
         # 本地權威命中裁判展示
         if matched_cases:
             with st.expander(f"🏛️ 本機權威庫即時命中之最高法院大法庭 / 憲法法庭裁判 ({len(matched_cases)} 筆)", expanded=True):

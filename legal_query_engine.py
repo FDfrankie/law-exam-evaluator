@@ -51,27 +51,56 @@ def get_precedents_catalog() -> List[Dict[str, Any]]:
                 pass
     return []
 
+def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, str]:
+    """生成通往司法院 30 年全台全審級法院判決資料庫的即時直連查詢連結"""
+    import urllib.parse
+    clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
+    tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
+    search_keyword = " ".join(tokens[:4]) if tokens else clean_q[:25]
+    encoded_k = urllib.parse.quote(search_keyword)
+
+    return {
+        "🏛️ 司法院 30 年裁判書全文檢索 (全台地院/高院/最高院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
+        "📜 憲法法庭裁判與司法院大法官解釋系統": f"https://cons.judicial.gov.tw/jcc/zh-tw/jep01?q={encoded_k}",
+        "⚖️ 最高法院大法庭裁定專區": "https://tps.judicial.gov.tw/tw/lp-1153-011.html",
+        "🏢 智慧財產及商業法院裁判全文檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html",
+        "🏛️ 最高行政法院大法庭裁定專區": "https://tpa.judicial.gov.tw/tw/lp-2099-021.html"
+    }
+
 def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> List[Dict[str, Any]]:
-    """從 824+ 份權威判解庫中高速篩選最相關之判決/大法庭裁定"""
+    """從 824+ 份權威判解庫中高速篩選最相關之判決/大法庭裁定（支援多維雙向語義匹配與科目保底）"""
     catalog = get_precedents_catalog()
     if not catalog:
         return []
 
-    tokens = [t.strip() for t in re.split(r'[\s,，、。！？]+', query) if len(t.strip()) >= 2]
-    if not tokens:
-        tokens = [query.strip()]
+    # 1. 拆分原始 tokens
+    raw_tokens = [t.strip() for t in re.split(r'[\s,，、。！？]+', query) if len(t.strip()) >= 2]
+    if not raw_tokens:
+        raw_tokens = [query.strip()]
+
+    # 2. 提取 2-gram / 3-gram 關鍵字，提升自然語言長句查詢命中率
+    ngram_tokens = set(raw_tokens)
+    for raw in raw_tokens:
+        if len(raw) > 2:
+            for n in [2, 3, 4]:
+                for i in range(len(raw) - n + 1):
+                    ngram_tokens.add(raw[i:i+n])
+    tokens = list(ngram_tokens)
+
+    # 3. 提取法條條號與數字
+    numbers = re.findall(r'\d+', query)
 
     scored_items = []
     for item in catalog:
         score = 0
-        text_pool = " ".join([
-            item.get("case_id", ""),
-            item.get("title", ""),
-            item.get("sub_category", ""),
-            item.get("issue", ""),
-            item.get("holding", ""),
-            " ".join(item.get("laws_cited", []))
-        ])
+        case_id = item.get("case_id", "")
+        title = item.get("title", "")
+        sub_cat = item.get("sub_category", "")
+        issue = item.get("issue", "")
+        holding = item.get("holding", "")
+        laws_cited = item.get("laws_cited", [])
+        
+        text_pool = f"{case_id} {title} {sub_cat} {issue} {holding} {' '.join(laws_cited)}"
 
         # 大法庭與憲法裁判權重加成
         level = item.get("level", "")
@@ -81,30 +110,52 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
             score += 10
 
         # 科目匹配加成
+        item_sub = item.get("subject", "")
         if subject and "全部" not in subject:
-            item_sub = item.get("subject", "")
             sub_keywords = [w.strip() for w in re.split(r'[\s（）()【】/・、,，]+', subject) if len(w.strip()) >= 2]
-            if any(k in item_sub or k in item.get("title", "") for k in sub_keywords):
-                score += 12
+            if any(k in item_sub or k in title for k in sub_keywords):
+                score += 15
 
-        # 關鍵字命中計分
+        # 雙向匹配 A：查詢 token 是否出現在判決文字池
         for tok in tokens:
             if tok in text_pool:
-                score += 10
-                if tok in item.get("title", "") or tok in item.get("sub_category", ""):
-                    score += 15
-                if tok in item.get("case_id", ""):
-                    score += 20
+                score += 8
+                if tok in title or tok in sub_cat:
+                    score += 16
+                if tok in case_id:
+                    score += 25
+
+        # 雙向匹配 B：判決的關鍵爭點/次分類名稱是否出現在使用者的查詢句子中 (逆向命中)
+        if sub_cat and len(sub_cat) >= 2 and sub_cat in query:
+            score += 35
+        if title and len(title) >= 4 and any(title[i:i+4] in query for i in range(len(title)-3)):
+            score += 25
 
         # 法條完全命中計分
-        for law in item.get("laws_cited", []):
-            if any(tok in law for tok in tokens):
-                score += 20
+        for law in laws_cited:
+            if any(tok in law for tok in raw_tokens):
+                score += 25
+            if any(num in law for num in numbers if len(num) >= 2):
+                score += 15
+
+        # 判決字號數字命中（例如 1719、16）
+        if any(num in case_id for num in numbers if len(num) >= 2):
+            score += 30
 
         if score > 0:
             scored_items.append((score, item))
 
     scored_items.sort(key=lambda x: -x[0])
+    
+    # 智慧保底機制：若特殊冷僻爭點未直接命中，優先篩選同科目最高權威的大法庭/憲法裁判，絕不讓結果留空
+    if not scored_items and subject and "全部" not in subject:
+        sub_fallback = [
+            it for it in catalog 
+            if any(k in it.get("subject", "") for k in re.split(r'[\s（）()【】/・、,，]+', subject) if len(k) >= 2)
+        ]
+        if sub_fallback:
+            return sub_fallback[:top_k]
+
     return [x[1] for x in scored_items[:top_k]]
 
 
@@ -187,11 +238,11 @@ class LegalIssueQueryEngine:
 - 簡要提煉 1~3 個最關鍵的法律爭議核心（衝突所在與規範漏洞或解釋疑義）
 - 說明爭點在國家考試與實務實務上的重要性
 
-### 三、🏛️ 權威司法實務裁判見解（最高權威位階）
-【注意】：必須嚴格依照司法位階最高原則列出，嚴禁引用普通地方法院或高等法院裁判作為主要論據！
+### 三、🏛️ 權威司法實務裁判見解（最高法院、高等法院與各審級法院代表判決）
 1. **憲法法庭判決 / 大法官解釋**（若有涉基本權或違憲審查，引出案由、字號與核心主文）
 2. **最高法院大法庭裁定 / 最高行政法院大法庭裁定**（引出完整年度字號，如最高法院108年度台上大字第1719號，並詳述主文與核心法理）
 3. **最高法院精選裁判 / 具有參考價值裁判 / 經典判例 / 決議**（引出代表性字號與裁判要旨）
+4. **高等法院 / 智慧財產及商業法院 / 高等行政法院代表性裁判**（補充具重要指標意義或事實認定典型之審級裁判與字號）
 
 ### 四、📚 學說見解深度對照（肯否兩說）
 - **甲說（通說 / 實務主流見解）**：立論依據、法理基礎、代表學者（如王澤鑑、林山田、黃榮堅、陳敏、姜世明、葉啟洲教授等）
@@ -211,5 +262,6 @@ class LegalIssueQueryEngine:
             "query": query,
             "subject": subject,
             "matched_local_precedents": matched_precedents,
-            "markdown_result": response_text
+            "markdown_result": response_text,
+            "external_search_urls": generate_judicial_search_urls(query, subject)
         }
