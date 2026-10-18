@@ -68,30 +68,15 @@ def merge_datasets():
     try:
         with open(temp_verified_jsonl, "w", encoding="utf-8") as f_ver:
             for name, path, default_source in VERIFIED_DATASET_FILES:
-                if path.exists():
-                    count = 0
-                    if path.suffix == ".jsonl":
-                        with open(path, "r", encoding="utf-8") as f:
-                            for line in f:
-                                line_str = line.strip()
-                                if line_str:
-                                    item = json.loads(line_str)
-                                    h = compute_hash(item)
-                                    if h not in seen_hashes:
-                                        seen_hashes.add(h)
-                                        clean_item = {
-                                            "id": str(item.get("id", f"sample_{h[:12]}")),
-                                            "source_type": str(item.get("source_type", default_source)),
-                                            "instruction": str(item.get("instruction", "")).strip(),
-                                            "input": str(item.get("input", "")).strip(),
-                                            "output": str(item.get("output", "")).strip()
-                                        }
-                                        f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
-                                        count += 1
-                    else:
-                        with open(path, "r", encoding="utf-8") as f:
-                            items = json.load(f)
-                            for item in items:
+                if not path.exists():
+                    raise FileNotFoundError(f"核實庫來源資料集遺失: {path.name} ({path})，終止 Stage 1 合併以防止生成殘缺資料庫")
+                count = 0
+                if path.suffix == ".jsonl":
+                    with open(path, "r", encoding="utf-8") as f:
+                        for line in f:
+                            line_str = line.strip()
+                            if line_str:
+                                item = json.loads(line_str)
                                 h = compute_hash(item)
                                 if h not in seen_hashes:
                                     seen_hashes.add(h)
@@ -104,11 +89,25 @@ def merge_datasets():
                                     }
                                     f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
                                     count += 1
-                    verified_count += count
-                    stats[name] = count
-                    print(f"  [LOADED & DEDUPED] {name}: {count:,} samples from {path.name}")
                 else:
-                    print(f"  [SKIPPED] {path.name} (not found)")
+                    with open(path, "r", encoding="utf-8") as f:
+                        items = json.load(f)
+                        for item in items:
+                            h = compute_hash(item)
+                            if h not in seen_hashes:
+                                seen_hashes.add(h)
+                                clean_item = {
+                                    "id": str(item.get("id", f"sample_{h[:12]}")),
+                                    "source_type": str(item.get("source_type", default_source)),
+                                    "instruction": str(item.get("instruction", "")).strip(),
+                                    "input": str(item.get("input", "")).strip(),
+                                    "output": str(item.get("output", "")).strip()
+                                }
+                                f_ver.write(json.dumps(clean_item, ensure_ascii=False) + "\n")
+                                count += 1
+                verified_count += count
+                stats[name] = count
+                print(f"  [LOADED & DEDUPED] {name}: {count:,} samples from {path.name}")
 
         # 原子性覆蓋正式核實庫檔案 (防止中斷或殘缺覆蓋)
         os.replace(str(temp_verified_jsonl), str(out_verified_jsonl))
@@ -147,18 +146,17 @@ def merge_datasets():
 
             # 2. 串流追加百萬合成推理基準集（若有錯誤立即拋出異常中斷，絕不產生殘缺資料）
             for name, path, default_source in SYNTHETIC_DATASET_FILES:
-                if path.exists():
-                    syn_count = 0
-                    with open(path, "r", encoding="utf-8", buffering=1024*1024*8) as f:
-                        for line in f:
-                            line_str = line.strip()
-                            if line_str:
-                                f_uni.write(line_str + "\n")
-                                syn_count += 1
-                    unified_count += syn_count
-                    print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
-                else:
-                    print(f"  [SKIPPED] {path.name} (not found)")
+                if not path.exists():
+                    raise FileNotFoundError(f"合成基準來源資料集遺失: {path.name} ({path})，終止 Stage 2 合併以防止生成殘缺資料庫")
+                syn_count = 0
+                with open(path, "r", encoding="utf-8", buffering=1024*1024*8) as f:
+                    for line in f:
+                        line_str = line.strip()
+                        if line_str:
+                            f_uni.write(line_str + "\n")
+                            syn_count += 1
+                unified_count += syn_count
+                print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
 
         # 3. 原子性覆蓋正式檔案 (os.replace 在 Windows/POSIX 均保證原子覆蓋，避免 unlink 造成空檔漏洞)
         os.replace(str(temp_unified_jsonl), str(out_unified_jsonl))
