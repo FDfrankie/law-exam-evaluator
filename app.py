@@ -1996,13 +1996,20 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             timeline_hits = legis_data.get("timeline_hits", [])
             total_amends_display = len(curated_amends) if curated_amends else len(timeline_hits)
 
+            badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
             badge_orders = f" ｜ 📋 【{len(key_regulations)} 部法規命令】" if key_regulations else ""
             badge_rulings = f" ｜ 📜 【{len(admin_rulings)} 筆主管函釋】" if admin_rulings else ""
             badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
             badge_notes = f" ｜ 📝 【精準命中 {len(notes)} 份個人筆記】" if notes else ""
 
-            with st.expander(f"📖 【{lname} {ano}】{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_notes}", expanded=(idx < 2)):
+            with st.expander(f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_notes}", expanded=(idx < 2 or art.get("is_latest_amendment"))):
+                if art.get("is_latest_amendment"):
+                    st.success(f"🆕 **此條文為立法院最新三讀通過並經總統府公布之修正條文！** (施行日期：{art.get('modified_date', '最新公布')})")
+                    if art.get("amendment_reason"):
+                        st.markdown(f"🏛️ **官方立法理由：** {art.get('amendment_reason')}")
+                    if art.get("exam_points"):
+                        st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
 
                 tab_prec, tab_orders, tab_rulings, tab_legis, tab_notes, tab_ai = st.tabs([
