@@ -26,3 +26,5 @@ training_data/
 # 系統隱藏檔
 .DS_Store
 Thumbs.db
+desktop.ini
+*.tmp

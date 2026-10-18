@@ -62,25 +62,30 @@ def init_directories():
 
 def safe_requests_get(url: str, session=None, **kwargs):
     """
-    發送 HTTP GET：優先嚴格遵循標準 TLS/SSL 憑證驗證；
-    若因本機作業系統未預載台灣政府 (GRCA) 根憑證而導致 SSLError，
-    發出明確日誌警示後以相容模式降級重試，避免無條件靜默關閉安全性驗證。
+    發送 HTTP GET：嚴格遵循標準 TLS/SSL 憑證安全驗證 (verify=True)。
+    為防範中間人攻擊 (MITM) 與靜默降級風險，預設絕不自動停用 SSL 驗證。
+    僅在使用者顯式配置環境變數 LEGAL_ALLOW_INSECURE_SSL=1 的受信任測試情境下，
+    才允許對缺少台灣政府 (GRCA) 根憑證的機關伺服器以相容模式連線。
     """
     import requests
     req = session.get if session else requests.get
     
-    # 讀取環境變數強制設定 (預設優先驗證)
-    enforce_ssl = os.getenv("LEGAL_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
-    if not enforce_ssl:
-        return req(url, verify=False, **kwargs)
+    allow_insecure = os.getenv("LEGAL_ALLOW_INSECURE_SSL", "0").lower() in ("1", "true", "yes")
 
     try:
         return req(url, verify=True, **kwargs)
     except requests.exceptions.SSLError as e:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        print(f"  [SSL 憑證警告] 本機缺少台灣政府 (GRCA) 憑證鏈，切換相容模式重試: {url}")
-        return req(url, verify=False, **kwargs)
+        if allow_insecure:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            print(f"  [SECURITY WARNING] 已啟用 LEGAL_ALLOW_INSECURE_SSL，降級以 verify=False 重試: {url}")
+            return req(url, verify=False, **kwargs)
+        raise requests.exceptions.SSLError(
+            f"TLS/SSL 憑證驗證失敗：無法安全連線至 {url} (原因: {e})。\n"
+            "系統嚴格遵循安全標準，預設禁止不安全之非驗證連線。\n"
+            "若確認目標為政府機關且本機缺少 GRCA 根憑證，並確知連線環境安全，"
+            "請顯式設定環境變數 LEGAL_ALLOW_INSECURE_SSL=1。"
+        ) from e
 
 if __name__ == "__main__":
     init_directories()

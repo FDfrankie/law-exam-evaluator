@@ -787,18 +787,22 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         
         st.markdown("""
         #### 🛡️ Hugging Face Arrow 綱要相容保證：
-        每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕 Colab 第 4 格 `CastError`：
+        每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕訓練資料載入與分詞之型別異常：
         - `id`: 樣本唯一識別碼
         - `source_type`: 資料來源識別（手寫筆記 / 真實判決 / 憲法法庭 / 名師講義 / 模擬題庫）
         - `instruction`: 任務系統指令（IRAC 申論、一試單選、評分診斷）
         - `input`: 案例情境或題目題幹
         - `output`: 上位卷完整解答或標準試題解析
 
-        #### 🚀 Google Colab 微調執行指南：
-        1. 在 Google Colab 中開啟專案內的 `train_colab.ipynb`。
-        2. 掛載 Google Drive（點擊執行第 1 格）。
-        3. 依序執行環境安裝與金鑰設定（第 2、3 格）。
-        4. 執行第 4 格：已配置 `Features` 明確型別防護與容錯讀取，**可順暢完成載入與分詞**。
-        5. 執行第 5 格：啟動 Unsloth 4-bit 顯存優化，開始訓練微調專屬司律法律大模型！
+        #### 📜 資料來源溯源與授權邊界 (Data Provenance & Legal Licensing)：
+        - **資料來源合法溯源**：本訓練集涵蓋之實務裁判、憲法法庭判決與全國法規命令，均取自司法院裁判書公開系統、憲法法庭公報及全國法規資料庫公開政府資訊；國家考試題目均為考選部公開真題。
+        - **著作權法合規性**：遵循中華民國《著作權法》第 9 條第 1 項規定，憲法、法律、命令、公文及裁判依法不得為著作權標的；並依同法第 52 條規定，於教育研習與學術研究正當目的合理範圍內引用。
+        - **使用目的限制**：本資料庫及微調模型僅供法律考生研讀、手寫試卷評分診斷與學術評測使用，非供未授權商業兜售或從事未具資格之法律代書服務。
+
+        #### 🚀 Google Colab / Kaggle 雲端微調執行指南：
+        1. **Colab 訓練**：開啟專案目錄下 `train_colab.ipynb`，直接掛載 Google Drive 讀取資料集；
+        2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，填入 Google Drive 分享連結極速自動調用（或掛載 Kaggle Input）；
+        3. **中斷接續**：支援 `RESUME_FROM_CHECKPOINT` 自動接續最近 checkpoint，跨 session 支援 `EXISTING_LORA_PATH` 接續微調；
+        4. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
         """)
 

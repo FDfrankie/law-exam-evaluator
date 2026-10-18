@@ -1,14 +1,26 @@
 """
 Master SFT Training Dataset Unified Merger & Quality Verifier
-1. Generates law_exam_verified_sft.jsonl:
+
+【資料來源與權威溯源 (Data Provenance)】:
+1. 司法實務裁判：司法院公開裁判書資料庫，依政府資訊公開法及裁判書公開原則取得
+2. 憲法法庭判決與大法官解釋：憲法法庭與司法院公報公開之憲法裁判與解釋文
+3. 全國法規與主管命令：立法院與全國法規資料庫公開之法定條文
+4. 國家考試歷年真題：考選部司法官律師、司法特考及公立大學法研所公開公務考試真題
+5. 個人手寫讀書筆記：考生自主研讀之手寫心智圖與爭點筆記 OCR 提煉
+6. 100萬筆司法推理基準庫：以真實事實情境為基礎提煉之標準 IRAC 三段論合成樣本
+
+【教育合理使用與法規遵循 (Educational Licensing Boundaries)】:
+- 遵循我國著作權法第 9 條第 1 項規定，憲法、法律、命令、公文及裁判依法不得為著作權之標的。
+- 遵循我國著作權法第 52 條規定，為教育與學術研究之正當目的，在合理範圍內引用並微調法學模型。
+- 本資料庫僅供司法官與律師國家考試考生學術研習、法學論述訓練與答題診斷使用。
+
+【資料集輸出目標】:
+1. law_exam_verified_sft.jsonl:
    - 100% Authentic, Verified Legal SFT Dataset (Zero synthetic noise)
-   - Real Substantive Court Judgments (scoring_standards)
-   - Constitutional Court Decisions & Grand Justices Interpretations
-   - Official National Statutory Interpretation Rules
-   - Curated 26-Discipline Jurists Controversy Matrix
-   - Strict Deduplication & Source Provenance Tracking
-2. Generates law_exam_master_sft_unified.jsonl:
-   - Comprehensive Unified Corpus (Verified Authentic + Segregated Synthetic 1M Baseline)
+   - 嚴格去重、欄位正規化為 5 大核心欄位 (id, source_type, instruction, input, output)
+2. law_exam_master_sft_unified.jsonl:
+   - 全量統一大庫 (Verified Authentic + Segregated Synthetic 1M Baseline)
+   - 採原子串流生成與嚴格失敗回滾機制 (Atomic streaming with rollback on failure)
 """
 import os
 import sys
@@ -113,18 +125,18 @@ def merge_datasets():
     temp_unified_jsonl = TRAINING_DIR / "law_exam_master_sft_unified.tmp"
 
     unified_count = 0
-    with open(temp_unified_jsonl, "w", encoding="utf-8", buffering=1024*1024*8) as f_uni:
-        # First copy all verified samples
-        with open(out_verified_jsonl, "r", encoding="utf-8") as f_ver_in:
-            for line in f_ver_in:
-                f_uni.write(line)
-                unified_count += 1
+    try:
+        with open(temp_unified_jsonl, "w", encoding="utf-8", buffering=1024*1024*8) as f_uni:
+            # 1. 串流寫入核實核心集
+            with open(out_verified_jsonl, "r", encoding="utf-8") as f_ver_in:
+                for line in f_ver_in:
+                    f_uni.write(line)
+                    unified_count += 1
 
-        # Then append synthetic 1M dataset directly via stream
-        for name, path, default_source in SYNTHETIC_DATASET_FILES:
-            if path.exists():
-                syn_count = 0
-                try:
+            # 2. 串流追加百萬合成推理基準集（若有錯誤立即拋出異常中斷，絕不產生殘缺資料）
+            for name, path, default_source in SYNTHETIC_DATASET_FILES:
+                if path.exists():
+                    syn_count = 0
                     with open(path, "r", encoding="utf-8", buffering=1024*1024*8) as f:
                         for line in f:
                             line_str = line.strip()
@@ -133,12 +145,18 @@ def merge_datasets():
                                 syn_count += 1
                     unified_count += syn_count
                     print(f"  [APPENDED] {name}: {syn_count:,} samples from {path.name}")
-                except Exception as e:
-                    print(f"  [WARN] Failed appending {path.name}: {e}")
+                else:
+                    print(f"  [SKIPPED] {path.name} (not found)")
 
-    if out_unified_jsonl.exists():
-        out_unified_jsonl.unlink()
-    temp_unified_jsonl.replace(out_unified_jsonl)
+        # 3. 原子性覆蓋正式檔案 (os.replace 在 Windows/POSIX 均保證原子覆蓋，避免 unlink 造成空檔漏洞)
+        os.replace(str(temp_unified_jsonl), str(out_unified_jsonl))
+    except Exception as e:
+        if temp_unified_jsonl.exists():
+            try:
+                temp_unified_jsonl.unlink()
+            except Exception:
+                pass
+        raise RuntimeError(f"合併統一資料庫失敗，已終止替換並清理暫存檔以確保正式資料完整性：{e}") from e
 
     uni_size_mb = out_unified_jsonl.stat().st_size / (1024 * 1024)
 
