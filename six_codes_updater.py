@@ -250,9 +250,12 @@ def update_law_amendments(law_name: str, force_ai_crawl: bool = False) -> Dict[s
     history = load_amendments_history()
     log_entry = {
         "law_name": law_name,
+        "status": "已成功更新最新修正條文",
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "amendment_date": amendment_data.get("latest_amendment_date"),
+        "latest_amendment_date": amendment_data.get("latest_amendment_date"),
         "summary": amendment_data.get("summary"),
+        "amended_count": updated_articles_count,
+        "amended_articles": amendment_data.get("amended_articles", []),
         "articles_updated_count": updated_articles_count,
         "articles_details": amendment_data.get("amended_articles", [])
     }
