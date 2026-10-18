@@ -889,8 +889,9 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
     st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
     st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
 
-    sft_tab1, sft_tab2, sft_tab3 = st.tabs([
-        "📤 上傳手寫筆記並蒸餾入庫",
+    sft_tab1, sft_tab2, sft_tab3, sft_tab4 = st.tabs([
+        "📤 單份筆記匯入與即時蒸餾",
+        "📚 全科文字自動提取與合併單一 PDF",
         "📂 已收錄手寫筆記與 SFT 樣本瀏覽",
         "📊 100 萬筆 SFT 總資料庫與 Colab 微調指南"
     ])
@@ -901,7 +902,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         
         distill_mode = st.radio(
             "請選擇匯入方式：",
-            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，已收錄 68 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
+            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，全考科已收錄 200+ 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
             horizontal=True,
             key="distill_import_mode"
         )
@@ -910,7 +911,11 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
             from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
             drive_notes = get_google_drive_notes_list()
             if drive_notes:
-                st.caption(f"⚡ 目前 Google Drive 已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋身分法 26 份、民總 21 份、憲法 12 份、專利法 5 份、民訴 2 份、刑法各論 1 份、雜項 1 份）：")
+                sub_counts_dict = {}
+                for n in drive_notes:
+                    sub_counts_dict[n["subject"]] = sub_counts_dict.get(n["subject"], 0) + 1
+                cat_summary = "、".join(f"{s} {c} 份" for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1])[:8])
+                st.caption(f"⚡ 目前已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋 {cat_summary} 等全台法學考科）：")
                 
                 sub_list = sorted(list(set(n["subject"] for n in drive_notes)))
                 col_d1, col_d2 = st.columns([1, 2])
@@ -994,9 +999,109 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                             st.error(f"蒸餾處理失敗: {de}")
 
     with sft_tab2:
-        st.subheader("📂 SamsungNotes 已永久歸檔之個人法學筆記 (68 份)")
+        st.subheader("📚 全考科整合：依體系合併為單一完整 PDF 與全科文字自動提取")
+        st.write("直接將一整個法學考科（如身分法 27 份、民總 21 份、刑分 16 份、商事法 20 份、保險法 17 份等）所有零散筆記依據法學章節體系邏輯順序，拼接合併為【單一完整 PDF】方便平日研讀，或啟動【全科文字自動提取】彙編為 Markdown 大典並直接批次入庫！")
+        
+        from ingest_user_notes_to_sft import (
+            get_google_drive_notes_list, merge_subject_pdfs, extract_subject_text_corpus, get_chapter_sort_key
+        )
+        
+        all_notes = get_google_drive_notes_list()
+        sub_dict = {}
+        for n in all_notes:
+            if "全科整合" not in n["filename"] and "全科體系" not in n["filename"] and not n["filename"].endswith("_全科筆記文字總彙編.md"):
+                sub_dict.setdefault(n["subject"], []).append(n)
+                
+        if sub_dict:
+            sub_options = [f"【{s}】(共 {len(nlist)} 份筆記 / 講義)" for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))]
+            sel_sub_label = st.selectbox("請選擇欲處理的法學考科：", sub_options, key="merge_sub_select")
+            sel_subject = sel_sub_label.split("【")[1].split("】")[0]
+            sub_notes = sub_dict[sel_subject]
+            
+            with st.expander(f"📋 展開檢視【{sel_subject}】所收錄的 {len(sub_notes)} 份章節檔案清單（已依體系順序排列）", expanded=False):
+                sorted_sub_notes = sorted(sub_notes, key=lambda x: get_chapter_sort_key(x["path"]))
+                for s_idx, sn in enumerate(sorted_sub_notes, 1):
+                    badge = "⚡ 已快取" if sn["is_cached"] else "📄 待提取"
+                    dist_badge = f" ｜ 🎯 已提煉 {sn['distilled_count']} 組 SFT" if sn["distilled_count"] > 0 else ""
+                    st.write(f"{s_idx}. **《{sn['filename']}》** (`{sn['size_mb']:.2f} MB`) ｜ {badge}{dist_badge}")
+            
+            st.divider()
+            
+            c_op1, c_op2 = st.columns(2)
+            
+            with c_op1:
+                st.markdown(f"### 📑 方案一：合併為《{sel_subject}》單一完整 PDF")
+                st.caption(f"自動依據章節法理順序（如親屬總論 -> 婚約 -> 婚姻...至扣減權）高速拼接本考科所有 {len(sub_notes)} 份 PDF，生成一個完整可離線劃記閱讀的超大 PDF。")
+                if st.button(f"🚀 開始合併【{sel_subject}】全科為單一 PDF", type="primary", key="btn_run_merge_pdf"):
+                    with st.spinner(f"正在使用高精度 C++ 引擎依章節順序拼接【{sel_subject}】各章頁面..."):
+                        try:
+                            merge_res = merge_subject_pdfs(sel_subject)
+                            st.session_state[f"merged_pdf_{sel_subject}"] = merge_res
+                            st.balloons()
+                            st.success(f"🎉 合併成功！已生成《{merge_res['output_path'].name}》")
+                        except Exception as me:
+                            st.error(f"合併失敗: {me}")
+                            
+                if f"merged_pdf_{sel_subject}" in st.session_state:
+                    m_info = st.session_state[f"merged_pdf_{sel_subject}"]
+                    st.info(f"📄 總頁數：**{m_info['total_pages']} 頁** ｜ 檔案大小：**{m_info['file_size_mb']:.2f} MB**")
+                    if m_info["output_path"].exists():
+                        with open(m_info["output_path"], "rb") as f_pdf:
+                            st.download_button(
+                                label=f"⬇️ 立即下載【{sel_subject}】全科整合手寫體系總筆記 PDF",
+                                data=f_pdf.read(),
+                                file_name=m_info["output_path"].name,
+                                mime="application/pdf",
+                                key="btn_dl_merged_pdf"
+                            )
+                            
+            with c_op2:
+                st.markdown(f"### ⚡ 方案二：全科自動文字提取與 OCR 彙編")
+                st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini 2.0 Flash 辨識並彙整為單一 Markdown 筆記大典。")
+                ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini 2.0 Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
+                
+                if st.button(f"⚡ 開始全自動文字提取【{sel_subject}】全科筆記", type="primary", key="btn_run_extract_corpus"):
+                    prog_bar = st.progress(0.0)
+                    status_text = st.empty()
+                    
+                    def ui_progress(cur, total, fname):
+                        prog_bar.progress(cur / total)
+                        status_text.text(f"正在提取 [{cur}/{total}]: 《{fname[:25]}...》")
+                        
+                    with st.spinner(f"正在遍歷與提取【{sel_subject}】全考科文字..."):
+                        try:
+                            corpus_res = extract_subject_text_corpus(
+                                sel_subject, 
+                                auto_ocr=ocr_flag, 
+                                progress_callback=ui_progress
+                            )
+                            st.session_state[f"corpus_{sel_subject}"] = corpus_res
+                            prog_bar.progress(1.0)
+                            status_text.text("全科文字提取完成！")
+                            st.balloons()
+                            st.success(f"🎉 提取成功！全科彙整共提取 **{corpus_res['total_chars']:,} 字元**（共 {corpus_res['total_notes']} 份檔案）。")
+                        except Exception as ce:
+                            st.error(f"文字提取失敗: {ce}")
+                            
+                if f"corpus_{sel_subject}" in st.session_state:
+                    c_info = st.session_state[f"corpus_{sel_subject}"]
+                    st.info(f"📝 總文字量：**{c_info['total_chars']:,} 字元** ｜ 收錄章節：**{c_info['total_notes']} 章**")
+                    st.download_button(
+                        label=f"⬇️ 立即下載【{sel_subject}】全科筆記文字總彙編 Markdown",
+                        data=c_info["full_text"].encode("utf-8"),
+                        file_name=f"{sel_subject}_全科筆記文字總彙編.md",
+                        mime="text/markdown",
+                        key="btn_dl_corpus_md"
+                    )
+                    with st.expander(f"🔍 檢視【{sel_subject}】全科文字彙總預覽 (前 2,000 字)", expanded=False):
+                        st.markdown(c_info["full_text"][:2000] + "\n\n*(篇幅過長，已截斷預覽，完整全文請點擊上方按鈕下載)*")
+        else:
+            st.info("目前尚未偵測到任何法學筆記檔案。")
+
+    with sft_tab3:
         from ingest_user_notes_to_sft import get_google_drive_notes_list
         all_dn = get_google_drive_notes_list()
+        st.subheader(f"📂 SamsungNotes 已永久歸檔之個人法學筆記 ({len(all_dn)} 份)")
         if all_dn:
             st.caption(f"目前已於雲端硬碟永久歸檔 **{len(all_dn)} 份** 手寫與打字法學筆記：")
             sub_dict = {}
@@ -1034,7 +1139,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         else:
             st.info("目前尚未生成個人筆記 SFT 檔案。")
 
-    with sft_tab3:
+    with sft_tab4:
         st.subheader("📊 SFT 微調資料庫總覽與規格")
         
         ver_file = Path(DATA_DIR) / "training_data" / "law_exam_verified_sft.jsonl"
