@@ -123,21 +123,71 @@ def get_laws_in_branch(branch_name: str) -> List[str]:
                     available.append(l)
     return available or list(law_map.keys())[:10]
 
-def search_articles(keyword: str, selected_law: str = "", selected_branch: str = "") -> List[Dict[str, Any]]:
-    """依據關鍵字、條號或法規搜尋條文"""
-    articles, meta, law_map = load_six_codes_data()
+def normalize_article_no(ano_str: str) -> str:
+    """標準化條號字串，例如 '第 184 條' -> '184', '第 10-1 條' -> '10-1', '第 10 之 1 條' -> '10-1'"""
+    if not ano_str:
+        return ""
+    clean = re.sub(r'[第條\s]', '', str(ano_str))
+    clean = clean.replace('之', '-')
+    return clean
+
+def parse_article_query(keyword: str, known_laws: List[str] = None):
+    """
+    從關鍵字精準解析法規名稱、條號與文字關鍵字。
+    支援範例：
+    - '184' / '第184條' -> target_no='184', is_pure_no=True
+    - '184-1' / '184之1' -> target_no='184-1', is_pure_no=True
+    - '民法184' / '民法第184條' -> detected_law='民法', target_no='184', is_pure_no=True
+    - '純粹經濟上損失' -> target_no=None, is_pure_no=False, text_kw='純粹經濟上損失'
+    """
     kw = keyword.strip()
-
-    # 提取條號數字
-    m_no = re.search(r'(?:第\s*)?(\d+(?:之\d+)?)(?:\s*條)?', kw)
-    target_no = m_no.group(1) if m_no else None
-
-    results = []
+    detected_law = ""
     
-    # 決定搜尋範圍
+    if known_laws:
+        for l in sorted(known_laws, key=len, reverse=True):
+            if kw.startswith(l):
+                detected_law = l
+                kw = kw[len(l):].strip()
+                break
+            elif l in kw:
+                detected_law = l
+                kw = kw.replace(l, "").strip()
+                break
+
+    m_no = re.search(r'(?:第\s*)?(\d+)(?:\s*(?:條\s*)?之\s*(\d+)|\s*-\s*(\d+))?(?:\s*條)?', kw)
+    target_no = None
+    is_pure_no = False
+    text_kw = kw
+    
+    if m_no:
+        main_no = m_no.group(1)
+        sub_no = m_no.group(2) or m_no.group(3)
+        target_no = f"{main_no}-{sub_no}" if sub_no else main_no
+        
+        rem = re.sub(r'(?:第\s*)?\d+(?:\s*(?:條\s*)?之\s*\d+|\s*-\s*\d+)?(?:\s*條)?', '', kw).strip()
+        rem = re.sub(r'[\s,，、/]+', '', rem)
+        if len(rem) == 0:
+            is_pure_no = True
+            text_kw = ""
+        else:
+            text_kw = rem
+            
+    return detected_law, target_no, is_pure_no, text_kw
+
+def search_articles(keyword: str, selected_law: str = "", selected_branch: str = "") -> List[Dict[str, Any]]:
+    """依據關鍵字、條號或法規精準搜尋條文（杜絕子字串誤判，如搜尋 184 不得匹配 1184）"""
+    articles, meta, law_map = load_six_codes_data()
+    raw_kw = keyword.strip()
+
+    detected_law, target_no, is_pure_no, text_kw = parse_article_query(raw_kw, list(law_map.keys()))
+    
+    # 決定目標法典（關鍵字內偵測到的法名優先，如「民法184」優先鎖定民法）
+    target_law = detected_law or selected_law
+    
+    # 決定搜尋母體
     pool = []
-    if selected_law and selected_law in law_map:
-        pool = law_map[selected_law]
+    if target_law and target_law in law_map:
+        pool = law_map[target_law]
     elif selected_branch:
         laws = get_laws_in_branch(selected_branch)
         for l in laws:
@@ -145,27 +195,54 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     else:
         pool = articles
 
+    prec_index = meta.get("precedents_article_index", {})
+    scored_results = []
+    
     for a in pool:
         ano = a.get("article_no", "")
         content = a.get("content", "")
         lname = a.get("law_name", "")
+        norm_ano = normalize_article_no(ano)
+        
+        score = 0
+        
+        # 1. 條號精確邊界比對（184 絕不得誤配 1184、2184 等）
+        if target_no:
+            if norm_ano == target_no:
+                # 條號完全精準一致
+                score += 300
+            elif "-" not in target_no and (norm_ano.startswith(f"{target_no}-") or norm_ano.startswith(f"{target_no}之")):
+                # 附帶呈現該主條之枝條（如查 184 時呈現 184-1）
+                score += 150
+            elif is_pure_no:
+                # 若為純條號查詢，非指定條號者一律排除
+                continue
+                
+        # 2. 文字關鍵字比對
+        if text_kw:
+            if text_kw in content:
+                score += 100
+            if text_kw in lname:
+                score += 80
+            # 支援爭點/裁判庫聯查（例如「純粹經濟損失」直接定位第 184 條）
+            clean_no = norm_ano.replace("-", "之")
+            key = f"{lname}_第{clean_no}條"
+            if key in prec_index:
+                for p in prec_index[key]:
+                    p_text = f"{p.get('title', '')} {p.get('holding', '')} {p.get('sub_category', '')}"
+                    if text_kw in p_text:
+                        score += 60
+                        break
+        elif not raw_kw:
+            # 無搜尋詞時依序瀏覽法典條文
+            score = 1
+            
+        if score > 0:
+            scored_results.append((score, a))
 
-        matched = False
-        # 1. 條號精確匹配
-        if target_no and (f"第 {target_no} 條" in ano or f"第{target_no}條" in ano or ano == f"第 {target_no} 條"):
-            matched = True
-        # 2. 關鍵字模糊匹配
-        elif kw and (kw in content or kw in ano or kw in lname):
-            matched = True
-        elif not kw:
-            matched = True
-
-        if matched:
-            results.append(a)
-            if len(results) >= 50:
-                break
-
-    return results
+    # 完全精準命中條號者優先置頂
+    scored_results.sort(key=lambda x: -x[0])
+    return [x[1] for x in scored_results[:50]]
 
 def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
     """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、個人筆記）"""
