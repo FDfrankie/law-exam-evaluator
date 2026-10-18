@@ -158,6 +158,49 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
 
     return [x[1] for x in scored_items[:top_k]]
 
+def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
+    """根據案號（精確、包含或關鍵字）從裁判庫中獲取裁判卡片"""
+    catalog = get_precedents_catalog()
+    if not catalog or not case_id:
+        return None
+    clean_id = re.sub(r'[\s\-_]+', '', case_id).lower()
+    
+    # 1. 完全或前綴/後綴匹配
+    for r in catalog:
+        cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
+        if cid == clean_id:
+            return r
+            
+    # 2. 包含匹配
+    for r in catalog:
+        cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
+        if clean_id in cid or cid in clean_id:
+            return r
+            
+    # 3. 案號核心數字與中文字號比對 (例如 108台上大1719)
+    nums = re.findall(r'\d+', clean_id)
+    chars = re.findall(r'[\u4e00-\u9fa5]+', clean_id)
+    if nums and chars:
+        for r in catalog:
+            cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
+            if all(n in cid for n in nums) and any(c in cid for c in chars if len(c) >= 2):
+                return r
+    return None
+
+def get_all_precedent_options() -> List[str]:
+    """獲取供 UI 下拉選單快速挑選之裁判格式標籤（依審級與重要性排序）"""
+    catalog = get_precedents_catalog()
+    options = []
+    for r in catalog:
+        cid = r.get("case_id", "")
+        court = r.get("court", "")
+        lvl = r.get("level", "")
+        tit = r.get("title", "")
+        if cid:
+            tag = f"{cid} ｜ {court} ｜ {tit[:22]}"
+            options.append(tag)
+    return options
+
 
 class LegalIssueQueryEngine:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
@@ -274,4 +317,208 @@ class LegalIssueQueryEngine:
             "matched_local_precedents": matched_precedents,
             "markdown_result": response_text,
             "external_search_urls": generate_judicial_search_urls(query, subject)
+        }
+
+    def summarize_judgment(
+        self,
+        case_id: str,
+        judgment_text: str = "",
+        subject: str = ""
+    ) -> Dict[str, Any]:
+        """
+        AI 判決深度摘要：
+        依使用者需求，嚴格產出以下核心區塊：
+        1. 裁判基本資訊
+        2. 一、主文 (Disposition)
+        3. 二、案例事實 (Case Facts)
+        4. 三、案件爭點 (Legal Issues)
+        5. 四、雙方所述 (Parties' Contentions: 原告/上訴人主張 vs 被告/被上訴人答辯)
+        6. 五、法院心證與裁判論理 (Court's Ratio Decidendi)
+        7. 六、專業評析、相似實務對照與國考作答要領 (Analysis & Exam Relevance)
+        """
+        local_rec = get_precedent_by_id(case_id)
+        local_context = ""
+        if local_rec:
+            local_context = f"""
+【本機權威庫已收錄之本裁判核心卡片】：
+- 裁判字號：{local_rec.get('case_id')}
+- 法院與審級：{local_rec.get('court')} ({local_rec.get('level')})
+- 爭點領域：{local_rec.get('title')} ({local_rec.get('sub_category')})
+- 核心要旨：{local_rec.get('holding')}
+- 引用法規：{', '.join(local_rec.get('laws_cited', []))}
+- 學說評析：{local_rec.get('scholarly_views')}
+- 國考作答提示：{local_rec.get('exam_application_hint')}
+"""
+        user_text_context = ""
+        if judgment_text.strip():
+            user_text_context = f"\n【使用者提供之裁判全文或事實節錄】：\n{judgment_text.strip()[:8000]}\n"
+
+        prompt = f"""
+你是一位台灣「司法院前最高法院研究法官」兼「律師司法官高等考試權威講座名師」，擅長精準解構各級法院裁判書。
+現在請針對以下司法裁判進行極致嚴謹、體系分明、高度可讀的【AI 判決精華深度摘要】：
+
+裁判案號/字號：【{case_id}】
+所屬科目領域：【{subject or '司法實務綜合'}】
+
+{local_context}
+{user_text_context}
+
+請務必嚴格遵循以下六大標題區塊輸出完整 Markdown 報告：
+
+### 🏛️ 裁判基本資訊
+- **裁判字號**：完整案號（例：最高法院108年度台上大字第1719號民事裁定、臺灣臺南地方法院106年度亡字第40號民事裁定、臺灣高等法院115年度上字第620號判決）
+- **管轄法院與審級**：所屬法院（最高法院、高等法院、高等行政法院、最高行政法院、智慧財產及商業法院或地方法院）與審級權威定位
+- **涉及核心法規條號**：具體法規全稱與條項（例如：民法第184條第1項前段、第767條第1項、保險法第64條等）
+
+### 一、📜 裁判主文 (Disposition)
+- 請以清晰格式列出本案之「裁判主文」（例如：原判決廢棄，發回臺灣高等法院；上訴駁回；原告之訴駁回；宣告被繼承人於某年某月某日死亡等）。
+
+### 二、🔍 案例客觀事實 (Case Facts)
+- 當事人法律關係背景與起因（原委、契約締結、借名登記、物之交付、侵權損害發生經過或行政處分作成歷程）。
+- 雙方紛爭爆發之具體時空經過與關鍵客觀事實細節。
+
+### 三、⚖️ 案件核心法律爭點 (Legal Issues)
+- 簡要提煉 1~3 項繫屬於法院的核心法律爭端（例如：借名登記出名人擅自將不動產移轉第三人是否屬無權處分？死亡宣告在特定重大空難浩劫時如何計算特別災難失蹤期間？）。
+
+### 四、🗣️ 雙方當事人所述與攻防焦點 (Parties' Contentions)
+- **原告 / 上訴人主張**：其起訴/上訴之訴訟標的、請求權基礎、主要事實陳述、為何主張他方違約/違法/侵權、援引之法理與法條。
+- **被告 / 被上訴人答辯**：對事實之抗辯（如否認借名關係、抗辯善意受讓取得、消滅時效抗辯、過失相抵或不可抗力抗辯）。
+
+### 五、⚖️ 法院心證與裁判論理 (Court's Ratio Decidendi)
+- **事實認定與舉證責任分配**：法院如何認定雙方爭執之事實真相、舉證責任如何歸屬。
+- **認事用法與法條涵攝**：法院對關鍵法規與制度目的之權威解釋（文義、體系、歷史與客觀目的解釋）。
+- **法院心證形成的判決理由**：為何法院採信某方、駁回另一方之抗辯？關鍵之心證論理轉折為何？
+
+### 六、🎓 專業評析、相似實務對照與國考作答要領 (Analysis & Exam Relevance)
+- **法理與學說評析**：本案裁判在法學體系上的重要地位（符合通說、少數說、或是突破舊實務之劃時代定錨見解）。
+- **相似權威裁判對照**：對比最高法院相關大法庭裁定、判例或其他法院之相似/相異判決（分析其同中之異、異中之同）。
+- **司律二試上位卷作答要領**：若國考二試出題以此事實為藍本，考生應如何精準「開標、確立大前提、事實涵攝並下結論」，達到閱卷委員給予上位卷之高分標準！
+
+請直接以標準、專業且結構完整的繁體中文 Markdown 輸出。
+"""
+        result_md = self._call_model(prompt)
+        return {
+            "case_id": case_id,
+            "subject": subject,
+            "local_record": local_rec,
+            "markdown_result": result_md,
+            "external_search_urls": generate_judicial_search_urls(case_id, subject)
+        }
+
+    def compare_precedents(
+        self,
+        case_a: str,
+        case_b: str,
+        text_a: str = "",
+        text_b: str = "",
+        topic: str = ""
+    ) -> Dict[str, Any]:
+        """
+        AI 案例橫向比對與分歧研析：
+        對比兩則裁判/大法庭裁定/判例之間的事實差異、爭點、法條、主張、心證與見解分歧
+        """
+        rec_a = get_precedent_by_id(case_a)
+        rec_b = get_precedent_by_id(case_b)
+
+        ctx_a = f"【裁判 A 庫存資訊】：案號={case_a} | 審級={rec_a.get('level')} | 要旨={rec_a.get('holding')} | 學說={rec_a.get('scholarly_views')}" if rec_a else f"【裁判 A】：案號={case_a}"
+        ctx_b = f"【裁判 B 庫存資訊】：案號={case_b} | 審級={rec_b.get('level')} | 要旨={rec_b.get('holding')} | 學說={rec_b.get('scholarly_views')}" if rec_b else f"【裁判 B】：案號={case_b}"
+
+        if text_a.strip():
+            ctx_a += f"\n裁判 A 內容/節錄：\n{text_a.strip()[:4000]}"
+        if text_b.strip():
+            ctx_b += f"\n裁判 B 內容/節錄：\n{text_b.strip()[:4000]}"
+
+        prompt = f"""
+你是一位台灣「司法院法官學院講座」兼「律師司法官高等考試典試委員」，擅長裁判區別技術 (Case Distinguishing) 與實務見解脈絡比較。
+現在請針對以下兩則重要司法裁判進行全方位、深度橫向對比分析：
+
+【裁判 A】：{case_a}
+【裁判 B】：{case_b}
+核心比對主題/領域：【{topic or '法律爭點橫向對比'}】
+
+{ctx_a}
+{ctx_b}
+
+請以結構分明之 Markdown 產出專業比對報告，務必包含以下各大區塊：
+
+### ⚖️ 兩大裁判核心對照綜整矩陣
+請使用 Markdown 表格，精準對比以下維度：
+| 比對維度 | 🏛️ 【裁判 A】({case_a}) | 🏛️ 【裁判 B】({case_b}) |
+| :--- | :--- | :--- |
+| **管轄法院與審級** | ... | ... |
+| **裁判結果 / 主文** | ... | ... |
+| **核心法律爭點** | ... | ... |
+| **關鍵適用法條** | ... | ... |
+| **採納之學說/理論** | ... | ... |
+| **實務拘束力定位** | （如：現行大法庭定錨裁定 / 歷史判例 / 事實審獨立見解） | ... |
+
+### 一、🔍 案例客觀事實異同剖析 (Fact Differences & Distinguishing)
+- 兩案在當事人關係、行為態樣、法律事實細節（如善意/惡意、登記外觀、契約約定條款）之關鍵異同。
+- 說明為何兩案看似雷同，卻可能因為特定細微事實而有不同判決走向（案例區別技術）。
+
+### 二、🗣️ 雙方當事人主張與攻防焦點對比
+- 【裁判 A】中雙方爭執要點 vs 【裁判 B】中雙方攻防要點。
+
+### 三、⚖️ 法院心證與裁判論理核心對比
+- 兩案承審法官/法庭在事實認定、法意探求、法益權衡與價值判斷上的心證差異。
+
+### 四、📚 法律見解核心分歧（肯否兩說 / 見解變遷）
+- 剖析兩案所代表的法學思潮與見解分歧：
+  - 【裁判 A 代表之法理】：立論基礎、採納學者
+  - 【裁判 B 代表之法理】：立論基礎、採納學者
+  - 兩者是否存在「見解衝突（肯否兩說）」抑或「不同類型案件之區別對待」？
+
+### 五、📈 司法實務發展趨勢與現行有效見解定錨
+- 目前最高法院民刑事大法庭、最高行政法院或憲法法庭之終局立場為何？
+- 哪一個裁判代表了目前司法實務的穩健主流通說？
+
+### 六、✍️ 司律二試作答高分策略（事實區別與開標涵攝心法）
+- 考生在二試申論題中，若題設事實出現類似情境，應如何：
+  1. 俐落開標，並同時引述這兩則指標裁判之案號。
+  2. 展現高級的「案例區別 (Distinguishing)」法學論述技術。
+  3. 大前提確立與事實涵攝的最佳得分範本。
+
+請以清晰、嚴謹之繁體中文 Markdown 輸出。
+"""
+        result_md = self._call_model(prompt)
+        return {
+            "case_a": case_a,
+            "case_b": case_b,
+            "topic": topic,
+            "rec_a": rec_a,
+            "rec_b": rec_b,
+            "markdown_result": result_md,
+            "external_search_urls": {
+                f"⚖️ 七法搜尋【{case_a}】": generate_judicial_search_urls(case_a).get("⚖️ 七法 Lawsnote 智慧法學語意搜尋", ""),
+                f"⚖️ 七法搜尋【{case_b}】": generate_judicial_search_urls(case_b).get("⚖️ 七法 Lawsnote 智慧法學語意搜尋", "")
+            }
+        }
+
+    def unified_legal_search(self, query: str, subject: str = "全部科目") -> Dict[str, Any]:
+        """
+        全方位法學統一檢索樞紐：
+        多維度即時查詢：
+        1. 本地權威判解庫 (1,256 筆裁判/大法庭/憲判字/高院/筆記地院)
+        2. 司律核心法條庫 (六法全書關聯條號)
+        3. 外部七法 / 法源 / 司法院 30 年判決跨庫直連
+        """
+        clean_q = query.strip()
+        precedents = search_local_precedents(clean_q, subject=subject, top_k=8)
+        
+        matched_articles = []
+        try:
+            from six_codes_engine import search_articles
+            all_arts = search_articles(clean_q)
+            matched_articles = all_arts[:6]
+        except Exception:
+            pass
+
+        ext_urls = generate_judicial_search_urls(clean_q, subject)
+
+        return {
+            "query": clean_q,
+            "subject": subject,
+            "precedents": precedents,
+            "articles": matched_articles,
+            "external_urls": ext_urls
         }
