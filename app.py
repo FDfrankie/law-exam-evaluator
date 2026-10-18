@@ -32,15 +32,20 @@ with st.sidebar:
     st.title("⚖️ 司律 AI 助手")
     st.markdown(f"**雲端同步位置**:  \n`{GOOGLE_DRIVE_DATA_DIR}`")
     st.divider()
+    mode_options = [
+        "📝 試卷評分與手寫辨識 (手寫/PDF/Word)",
+        "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)",
+        "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
+        "📖 高分權威擬答生成",
+        "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
+    ]
+    if "app_mode" not in st.session_state or st.session_state["app_mode"] not in mode_options:
+        st.session_state["app_mode"] = mode_options[0]
+
     app_mode = st.radio(
         "選擇功能模式：",
-        [
-            "📝 試卷評分與手寫辨識 (手寫/PDF/Word)",
-            "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)",
-            "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
-            "📖 高分權威擬答生成",
-            "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
-        ]
+        mode_options,
+        key="app_mode"
     )
     api_key = get_gemini_api_key()
     if not api_key:
@@ -65,6 +70,19 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
         st.subheader("1. 題目與標準")
         if "question_text_content" not in st.session_state:
             st.session_state.question_text_content = ""
+        if "rubric_text_content" not in st.session_state:
+            st.session_state.rubric_text_content = ""
+
+        if st.session_state.get("imported_from_bank_label"):
+            c_info1, c_info2 = st.columns([4, 1])
+            with c_info1:
+                st.success(f"🎉 已成功自題庫帶入：**{st.session_state['imported_from_bank_label']}**！\n試題已自動填入下方，請於右側直接上傳考生作答即可開始評閱。")
+            with c_info2:
+                if st.button("✖️ 清除題目", key="btn_clear_imported_q"):
+                    st.session_state.question_text_content = ""
+                    st.session_state.rubric_text_content = ""
+                    st.session_state.imported_from_bank_label = ""
+                    st.rerun()
 
         q_input_mode = st.radio(
             "題目提供方式：",
@@ -123,9 +141,11 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
         rubric_text = st.text_area(
             "評分標準 / 參考擬答 (選填，留空則由 AI 自律法學知識庫推導)：",
+            value=st.session_state.get("rubric_text_content", ""),
             height=110,
             placeholder="可貼入補習班爭點、評分大綱或最高法院判決字號..."
         )
+        st.session_state.rubric_text_content = rubric_text
 
     with col2:
         st.subheader("2. 上傳考生作答")
@@ -628,12 +648,21 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 st.info(f"**命題要點與得分關鍵：**\n{res.get('scoring_criteria', '')}")
 
             full_q_text = f"【案例事實】：\n{res.get('question_facts', '')}\n\n【問題】：\n" + "\n".join(res.get("sub_questions", []))
-            if st.button("🏆 生成榜首級示範擬答 (IRAC 三段論法)", type="primary"):
-                with st.spinner("榜首法學講座名師正在撰寫嚴謹三段論法擬答..."):
-                    gen = LawExamGenerator()
-                    ans = gen.generate_model_answer(question=full_q_text, subject=subject)
-                    st.markdown("### 🏆 閱卷高分示範擬答：")
-                    st.markdown(ans)
+            
+            cq_col1, cq_col2 = st.columns(2)
+            with cq_col1:
+                if st.button("🏆 生成榜首級示範擬答 (IRAC 三段論法)", type="primary"):
+                    with st.spinner("榜首法學講座名師正在撰寫嚴謹三段論法擬答..."):
+                        gen = LawExamGenerator()
+                        ans = gen.generate_model_answer(question=full_q_text, subject=subject)
+                        st.markdown("### 🏆 閱卷高分示範擬答：")
+                        st.markdown(ans)
+            with cq_col2:
+                if st.button("📝 一鍵將此題直接帶入【試卷評分】批改"):
+                    st.session_state["question_text_content"] = full_q_text
+                    st.session_state["imported_from_bank_label"] = f"【AI 客製模擬考題 - {subject}】"
+                    st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                    st.rerun()
 
 # ----------------- 模式 3: 歷年真題庫檢索 -----------------
 elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)":
@@ -715,18 +744,32 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                                     st.write(ocr_res)
                                     text = ocr_res
 
-                    # 榜首擬答與題型演練按鈕
-                    bcol1, bcol2 = st.columns(2)
+                    # 操作按鈕列：一鍵帶入試卷評分、生成擬答、變形出題
+                    bcol1, bcol2, bcol3 = st.columns([1.5, 1.3, 1.2])
                     with bcol1:
-                        if st.button(f"💡 針對本題生成榜首級高分示範擬答 (IRAC)", key=f"ans_btn_{e_id}"):
+                        if st.button(f"📝 一鍵將此題直接帶入【試卷評分】批改", type="primary", key=f"send_eval_btn_{e_id}"):
+                            final_q = text
+                            if "[試題掃描檔" in final_q or len(final_q.strip()) < 100:
+                                with st.spinner("正在自動轉錄試卷完整題目文字..."):
+                                    ocr_text = crawler.ocr_exam_by_id(e_id)
+                                    if ocr_text:
+                                        final_q = ocr_text
+                            
+                            st.session_state["question_text_content"] = final_q.strip()
+                            st.session_state["imported_from_bank_label"] = f"[{yr}年] {sch} - {dept} ｜ 【{subj}】"
+                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.rerun()
+
+                    with bcol2:
+                        if st.button(f"💡 榜首示範擬答 (IRAC)", key=f"ans_btn_{e_id}"):
                             with st.spinner("法學大模型正在為本真題撰寫上位卷完美擬答..."):
                                 gen = LawExamGenerator()
                                 model_ans = gen.generate_model_answer(question=text, subject=subj)
                                 st.markdown("### 🏆 示範擬答全文：")
                                 st.markdown(model_ans)
 
-                    with bcol2:
-                        if st.button(f"🎯 依此真題進行題型演繹與變形出題", key=f"remake_btn_{e_id}"):
+                    with bcol3:
+                        if st.button(f"🎯 變形出題演練", key=f"remake_btn_{e_id}"):
                             with st.spinner("正在將本題核心法理演繹為司律一試測驗題..."):
                                 gen = LawExamGenerator()
                                 remake_res = gen.generate_stage1_exam(
@@ -778,9 +821,15 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                         st.markdown("#### 講義核心重點與爭點摘要：")
                         st.write(fprev)
                         
-                        cwb1, cwb2 = st.columns(2)
+                        cwb1, cwb2, cwb3 = st.columns([1.5, 1.2, 1.2])
                         with cwb1:
-                            if st.button(f"🎲 依此講義爭點生成司律一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
+                            if st.button(f"📝 一鍵將此講義案例帶入【試卷評分】批改", type="primary", key=f"cw_btn_eval_{c_idx}"):
+                                st.session_state["question_text_content"] = fprev.strip()
+                                st.session_state["imported_from_bank_label"] = f"名師講義爭點案例：【{fsub}】{fname}"
+                                st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                                st.rerun()
+                        with cwb2:
+                            if st.button(f"🎲 依此爭點生成一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
                                 with st.spinner("正在基於名師講義核心爭點出題中..."):
                                     gen = LawExamGenerator()
                                     mcq_res = gen.generate_stage1_exam(
@@ -791,8 +840,8 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                                     )
                                     st.session_state["stage1_exam_data"] = mcq_res
                                     st.success("一試測驗題生成成功！可至「🎯 司律模擬出題」模式開始作答。")
-                        with cwb2:
-                            if st.button(f"✍️ 依此講義核心爭點命題二試實例題", key=f"cw_btn_essay_{c_idx}"):
+                        with cwb3:
+                            if st.button(f"✍️ 命題二試申論題", key=f"cw_btn_essay_{c_idx}"):
                                 with st.spinner("正在基於名師講義爭點設計實例題..."):
                                     gen = LawExamGenerator()
                                     essay_res = gen.generate_stage2_exam(
@@ -825,6 +874,13 @@ elif app_mode == "📖 高分權威擬答生成":
                     gen = LawExamGenerator()
                     ans = gen.generate_model_answer(question=target_q)
                     st.markdown(ans)
+                    st.divider()
+                    if st.button("📝 將此題與示範擬答帶入【試卷評分】批改 (自動帶入題目與評分標準)"):
+                        st.session_state["question_text_content"] = target_q
+                        st.session_state["rubric_text_content"] = ans
+                        st.session_state["imported_from_bank_label"] = "二試申論題（含榜首示範擬答標準）"
+                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                        st.rerun()
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
 
