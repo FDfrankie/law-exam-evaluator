@@ -1683,32 +1683,6 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             key="six_codes_search_kw"
         )
 
-    # 快捷核心考條按鈕
-    st.markdown("##### 📌 司律核心高頻爭點條文直達：")
-    q_btn_cols = st.columns(6)
-    quick_jump = None
-    with q_btn_cols[0]:
-        if st.button("民法 第 184 條", use_container_width=True):
-            quick_jump = ("民法", "184")
-    with q_btn_cols[1]:
-        if st.button("民法 第 759-1 條", use_container_width=True):
-            quick_jump = ("民法", "759-1")
-    with q_btn_cols[2]:
-        if st.button("刑法 第 19 條", use_container_width=True):
-            quick_jump = ("中華民國刑法", "19")
-    with q_btn_cols[3]:
-        if st.button("刑訴 第 159-5 條", use_container_width=True):
-            quick_jump = ("刑事訴訟法", "159-5")
-    with q_btn_cols[4]:
-        if st.button("保險法 第 64 條", use_container_width=True):
-            quick_jump = ("保險法", "64")
-    with q_btn_cols[5]:
-        if st.button("公司法 第 185 條", use_container_width=True):
-            quick_jump = ("公司法", "185")
-
-    if quick_jump:
-        selected_law = quick_jump[0]
-        search_kw = quick_jump[1]
 
     # 執行檢索
     matched_articles = search_articles(keyword=search_kw, selected_law=selected_law, selected_branch=selected_branch)
