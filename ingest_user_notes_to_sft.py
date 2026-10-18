@@ -414,6 +414,15 @@ def distill_single_note_file(file_path: Path, max_pages: int = 15) -> List[Dict[
             for s in existing_samples:
                 f_out.write(json.dumps(s, ensure_ascii=False) + "\n")
         
+        # 同步鏡像至 code/data/training_data/ 確保本機提煉成果隨時可推播至 Streamlit Cloud
+        repo_data_sft = Path(__file__).resolve().parent / "data" / "training_data" / "law_exam_user_notes_sft.jsonl"
+        if repo_data_sft.resolve() != OUT_SFT_FILE.resolve():
+            try:
+                repo_data_sft.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(OUT_SFT_FILE, repo_data_sft)
+            except Exception:
+                pass
+
         try:
             merge_datasets(include_synthetic=False)
         except Exception as me:

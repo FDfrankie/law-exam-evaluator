@@ -12,13 +12,28 @@ __pycache__/
 .pytest_cache/
 
 # 資料輸出與暫存報告
-data/
 evaluation_reports/
 student_submissions/
-raw_exams/
-scoring_standards/
-training_data/
+checkpoints/
+model_weights/
 *.log
+*.tmp
+_cache/
+
+# 大檔排除 (超過 GitHub 100MB 限制之全量合成庫與權重)
+*1m_judicial_reasoning*.jsonl
+*master_sft_unified*.jsonl
+*balanced_weighted*.jsonl
+*.safetensors
+*.bin
+*.pt
+
+# 忽略 data 內的動態暫存目錄
+data/evaluation_reports/
+data/student_submissions/
+data/checkpoints/
+data/model_weights/
+data/SamsungNotes/_cache/
 
 # Jupyter Notebook 快取
 .ipynb_checkpoints/
@@ -27,4 +42,4 @@ training_data/
 .DS_Store
 Thumbs.db
 desktop.ini
-*.tmp
+

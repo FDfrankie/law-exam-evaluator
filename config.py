@@ -27,13 +27,23 @@ def get_base_data_dir() -> Path:
     if custom_dir:
         return Path(custom_dir)
     
-    # Check if Google Drive exists on Windows
+    # Priority 1: Check if Google Drive directory exists on Windows
+    for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
+        if g_path.exists():
+            return g_path
+            
+    # Priority 2: Repository local data directory (for Streamlit Cloud / Linux / cloned repo)
+    local_data = Path(__file__).resolve().parent / "data"
+    if local_data.exists():
+        return local_data
+        
+    # Priority 3: Fallback to G: drive parent if user is setting up Google Drive
     for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
         if g_path.parent.exists():
             return g_path
-            
-    # Fallback to local data directory (e.g. for Streamlit Cloud / Linux)
-    return Path(__file__).resolve().parent / "data"
+
+    return local_data
+
 
 DATA_DIR = get_base_data_dir()
 GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
