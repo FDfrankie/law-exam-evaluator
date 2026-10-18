@@ -9,10 +9,13 @@ Master SFT Training Dataset Unified Merger & Quality Verifier
 5. 個人手寫讀書筆記：考生自主研讀之手寫心智圖與爭點筆記 OCR 提煉
 6. 100萬筆司法推理基準庫：以真實事實情境為基礎提煉之標準 IRAC 三段論合成樣本
 
-【教育合理使用與法規遵循 (Educational Licensing Boundaries)】:
-- 遵循我國著作權法第 9 條第 1 項規定，憲法、法律、命令、公文及裁判依法不得為著作權之標的。
-- 遵循我國著作權法第 52 條規定，為教育與學術研究之正當目的，在合理範圍內引用並微調法學模型。
-- 本資料庫僅供司法官與律師國家考試考生學術研習、法學論述訓練與答題診斷使用。
+【法律性質與著作權遵循界限 (Legal & Copyright Boundaries)】:
+1. 公開公務資訊（依法不得為著作權標的）：
+   - 依著作權法第 9 條第 1 項第 1 款至第 3 款，憲法、法律、法規命令、公文及法院實質裁判書，依法不受著作權保護，屬公共領域資訊。
+2. 私人研析與學術資料（合理使用與私法授權限制）：
+   - 個人手寫筆記屬考生個人創作；名師講義與學說爭議涉及學者文獻。
+   - 僅得在著作權法第 52 條教育研習目的及第 65 條「合理使用」基準之必要最小限度內進行個人自律研析與模型評測。
+   - 本專案資料集與微調權重僅供內部自律學習與答題推論研究，未獲著作權人授權前嚴禁公開散布、出版或商業營利。
 
 【資料集輸出目標】:
 1. law_exam_verified_sft.jsonl:
@@ -57,15 +60,16 @@ def merge_datasets():
     print("=" * 70)
 
     out_verified_jsonl = TRAINING_DIR / "law_exam_verified_sft.jsonl"
+    temp_verified_jsonl = TRAINING_DIR / "law_exam_verified_sft.tmp"
     seen_hashes = set()
     verified_count = 0
     stats = {}
 
-    with open(out_verified_jsonl, "w", encoding="utf-8") as f_ver:
-        for name, path, default_source in VERIFIED_DATASET_FILES:
-            if path.exists():
-                count = 0
-                try:
+    try:
+        with open(temp_verified_jsonl, "w", encoding="utf-8") as f_ver:
+            for name, path, default_source in VERIFIED_DATASET_FILES:
+                if path.exists():
+                    count = 0
                     if path.suffix == ".jsonl":
                         with open(path, "r", encoding="utf-8") as f:
                             for line in f:
@@ -103,10 +107,18 @@ def merge_datasets():
                     verified_count += count
                     stats[name] = count
                     print(f"  [LOADED & DEDUPED] {name}: {count:,} samples from {path.name}")
-                except Exception as e:
-                    print(f"  [WARN] Failed loading {path.name}: {e}")
-            else:
-                print(f"  [SKIPPED] {path.name} (not found)")
+                else:
+                    print(f"  [SKIPPED] {path.name} (not found)")
+
+        # 原子性覆蓋正式核實庫檔案 (防止中斷或殘缺覆蓋)
+        os.replace(str(temp_verified_jsonl), str(out_verified_jsonl))
+    except Exception as e:
+        if temp_verified_jsonl.exists():
+            try:
+                temp_verified_jsonl.unlink()
+            except Exception:
+                pass
+        raise RuntimeError(f"Stage 1 核實庫合併失敗，已終止替換並清理暫存檔以確保正式資料完整性：{e}") from e
 
     ver_size_mb = out_verified_jsonl.stat().st_size / (1024 * 1024)
 
