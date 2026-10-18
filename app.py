@@ -17,6 +17,7 @@ from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
 from exam_generator import LawExamGenerator
 from exam_bank_crawler import LawExamBankCrawler
+from legal_query_engine import LegalIssueQueryEngine, search_local_precedents
 
 # 設定頁面配置
 st.set_page_config(
@@ -37,6 +38,7 @@ with st.sidebar:
         "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)",
         "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
         "📖 高分權威擬答生成",
+        "🔍 AI 爭點查詢 (法條・判解・學說速查)",
         "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
     ]
     if "app_mode" not in st.session_state or st.session_state["app_mode"] not in mode_options:
@@ -1017,7 +1019,138 @@ elif app_mode == "📖 高分權威擬答生成":
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
 
-# ----------------- 模式 5: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
+# ----------------- 模式 5: AI 爭點查詢 (法條・判解・學說速查) -----------------
+elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
+    st.header("🔍 AI 爭點查詢與權威判解・學說速查中心")
+    st.write("輸入法學爭點、核心關鍵字或案例事實，AI 智慧法學引擎將即刻引出**核心法條構成要件**、**最高司法權威見解（憲法法庭判決/最高法院大法庭裁定/精選裁判）**、**學說肯否二說**與**二試上位卷 IRAC 開標示範**，並支援一鍵帶入試卷評分或擬答生成！")
+
+    # 快捷範例按鈕列
+    st.markdown("##### 💡 司律必考核心重大爭點快捷速查：")
+    preset_cols = st.columns(4)
+    preset_query = None
+    with preset_cols[0]:
+        if st.button("⚖️ 借名登記處分效力", use_container_width=True):
+            preset_query = "借名登記之出名人未經同意將不動產處分移轉予第三人，效力為何？"
+    with preset_cols[1]:
+        if st.button("⚖️ 原因自由行為責任", use_container_width=True):
+            preset_query = "刑法第19條第3項原因自由行為之責任能力判定標準與過失自陷處罰界限"
+    with preset_cols[2]:
+        if st.button("⚖️ 保險詐欺與除斥期間", use_container_width=True):
+            preset_query = "要保人惡意詐欺違反告知義務逾2年，保險人能否依民法第92條撤銷？"
+    with preset_cols[3]:
+        if st.button("⚖️ 純粹經濟上損失", use_container_width=True):
+            preset_query = "民法第184條第1項前段侵權責任所保護之權利是否包含純粹經濟上損失？"
+
+    preset_cols2 = st.columns(4)
+    with preset_cols2[0]:
+        if st.button("⚖️ 毒品販賣既遂標準", use_container_width=True):
+            preset_query = "販賣毒品罪之既遂標準究竟以買賣契約合致為準，抑或須以毒品交付為準？"
+    with preset_cols2[1]:
+        if st.button("⚖️ 警察強制採尿取證", use_container_width=True):
+            preset_query = "司法警察依刑事訴訟法第205條之2強制採尿取證是否牴觸法官保留原則與身心權？"
+    with preset_cols2[2]:
+        if st.button("⚖️ 不真正連帶時效利益", use_container_width=True):
+            preset_query = "不真正連帶債務中一人時效完成者，他債務人能否類推適用民法第276條第2項免責？"
+    with preset_cols2[3]:
+        if st.button("⚖️ 傳聞證據擬制同意", use_container_width=True):
+            preset_query = "當事人於準備程序未對傳聞證據異議，於審判期日能否再行撤回擬制同意？"
+
+    if preset_query:
+        st.session_state["ai_query_input_text"] = preset_query
+
+    st.divider()
+
+    # 查詢輸入區
+    col_q_sub, col_q_mode = st.columns([1, 1])
+    with col_q_sub:
+        q_subject = st.selectbox(
+            "選擇專屬考科範疇：",
+            ["全部科目", "民事法（民法與民事訴訟法）", "刑事法（刑法與刑事訴訟法）", "公法（憲法與行政法）", "商事法（公司、保險、證交）"],
+            key="ai_query_subject"
+        )
+    with col_q_mode:
+        q_search_type = st.radio(
+            "查詢模式：",
+            ["🔍 法律爭點與關鍵字查詢", "📜 案件事實深度法律爭點分析"],
+            horizontal=True,
+            key="ai_query_mode"
+        )
+
+    current_query_val = st.session_state.get("ai_query_input_text", "")
+    query_text = st.text_area(
+        "請輸入欲查詢之爭點問題、關鍵字、判決字號或案件事實情境：",
+        value=current_query_val,
+        height=120,
+        placeholder="例如：借名登記出名人無權處分或有權處分、刑法19條原因自由行為、111年憲判字第16號...",
+        key="ai_query_text_area"
+    )
+
+    col_btn_search, col_btn_clear = st.columns([3, 1])
+    with col_btn_search:
+        btn_do_query = st.button("🚀 啟動 AI 爭點與權威判解檢索", type="primary", use_container_width=True)
+    with col_btn_clear:
+        if st.button("✖️ 清除查詢內容", use_container_width=True):
+            st.session_state["ai_query_input_text"] = ""
+            st.session_state.pop("ai_query_result", None)
+            st.rerun()
+
+    if btn_do_query:
+        if not query_text.strip():
+            st.warning("請先輸入欲查詢之爭點或關鍵字！")
+        else:
+            with st.spinner("正在比對本機 824+ 份權威判解庫 (最高法院大法庭裁定、憲判字) 並進行法理推導與學說肯否兩說分析..."):
+                try:
+                    engine = LegalIssueQueryEngine()
+                    res = engine.query_legal_issue(query=query_text.strip(), subject=q_subject)
+                    st.session_state["ai_query_result"] = res
+                    st.session_state["ai_query_input_text"] = query_text.strip()
+                except Exception as qe:
+                    st.error(f"檢索失敗: {qe}")
+
+    if "ai_query_result" in st.session_state:
+        res = st.session_state["ai_query_result"]
+        matched_cases = res.get("matched_local_precedents", [])
+        
+        st.divider()
+        st.subheader("📚 AI 權威爭點與法條判解檢索分析報告")
+        
+        # 本地權威命中裁判展示
+        if matched_cases:
+            with st.expander(f"🏛️ 本機權威庫即時命中之最高法院大法庭 / 憲法法庭裁判 ({len(matched_cases)} 筆)", expanded=True):
+                for mc in matched_cases:
+                    c_id = mc.get("case_id", "")
+                    lvl = mc.get("level", "")
+                    tit = mc.get("title", "")
+                    laws = ", ".join(mc.get("laws_cited", []))
+                    holding = mc.get("holding", "")
+                    st.markdown(f"**【{lvl}】`{c_id}`** ｜ **{tit}**")
+                    if laws:
+                        st.caption(f"📌 涉及法規：{laws}")
+                    st.info(f"**核心主文/判旨：** {holding}")
+                    if mc.get("exam_application_hint"):
+                        st.success(f"✍️ **國考作答提示：** {mc.get('exam_application_hint')}")
+                    st.markdown("---")
+
+        # Markdown 完整深度爭點報告
+        st.markdown(res.get("markdown_result", ""))
+
+        st.divider()
+        st.subheader("🔗 跨功能一鍵聯動：將此爭點解析轉化為考試訓練")
+        act_col1, act_col2 = st.columns(2)
+        with act_col1:
+            if st.button("📝 【一鍵帶入試卷評分】作為評分標準與參考擬答", use_container_width=True, type="primary"):
+                st.session_state["question_text_content"] = f"【爭點問題研析】：\n{res.get('query', '')}"
+                st.session_state["rubric_text_content"] = res.get("markdown_result", "")
+                st.session_state["imported_from_bank_label"] = f"AI 爭點速查標準【{res.get('query', '')[:20]}...】"
+                st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                st.rerun()
+        with act_col2:
+            if st.button("📖 【一鍵帶入高分擬答生成】針對此爭點撰寫申論答題", use_container_width=True):
+                st.session_state["m4_target_question"] = res.get("query", "")
+                st.session_state["app_mode"] = "📖 高分權威擬答生成"
+                st.rerun()
+
+# ----------------- 模式 6: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
 elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
     st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
     st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
