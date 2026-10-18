@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from PIL import Image
 
-from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR
+from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR
 from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
 from exam_generator import LawExamGenerator

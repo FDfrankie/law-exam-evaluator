@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import time
