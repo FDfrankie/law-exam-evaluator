@@ -1271,9 +1271,11 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
 elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)":
     st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
 
-    m3_tab1, m3_tab2 = st.tabs([
+    comm_q_all = load_community_questions()
+    m3_tab1, m3_tab2, m3_tab3 = st.tabs([
         "🏛️ 考選部與臺大法研/轉學考歷年真題庫",
-        "🎓 大學名師講義與課輔爭點知識庫 (190+ 份各科講義與簡報)"
+        "🎓 大學名師講義與課輔爭點知識庫 (190+ 份各科講義與簡報)",
+        f"👥 社群考生共享真題庫與自創模擬試卷 ({len(comm_q_all)} 題)"
     ])
 
     with m3_tab1:
@@ -1456,6 +1458,74 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                                     st.success("二試實例題生成成功！可至「🎯 司律模擬出題」模式查看或生成擬答。")
             except Exception as cwe:
                 st.error(f"講義庫讀取異常: {cwe}")
+
+    with m3_tab3:
+        st.markdown(f"#### 👥 全民社群考生共享真題與自創模擬題庫（共收錄 {len(comm_q_all)} 份獨立檔案）")
+        st.caption("所有考生在【試卷評分】或【出題系統】中上傳、產出之實戰題目，均即時獨立存檔並自動匯聚於此，供所有考生共同切磋與演練！")
+
+        cq_top1, cq_top2 = st.columns([3, 1])
+        with cq_top1:
+            cq_kw = st.text_input("搜尋社群題目關鍵字、考科或爭點：", placeholder="例如：侵權行為、抵押權、原因自由行為、董事責任...", key="cq_search_kw")
+        with cq_top2:
+            st.write("")
+            st.write("")
+            add_new_q_exp = st.checkbox("➕ 手動新增共享題目", key="chk_add_comm_q")
+
+        if add_new_q_exp:
+            with st.container():
+                st.markdown("##### ➕ 貢獻一道新題目至社群共享庫")
+                n_title = st.text_input("試卷標題 / 考點摘要：", placeholder="例如：112年司律二試民法第一題改編")
+                n_subj = st.selectbox("所屬科目：", ["民法", "民事訴訟法", "刑法", "刑事訴訟法", "行政法", "憲法", "公司法", "證券交易法", "保險法", "智慧財產權法", "勞動與社會法", "跨領域綜合"], key="n_subj_select")
+                n_content = st.text_area("題目事實與子題內容：", height=120, placeholder="案例事實與問題...")
+                n_rubric = st.text_area("參考答案 / 評分標準（選填）：", height=70)
+                if st.button("📤 立即上傳並建立獨立題庫檔案", key="btn_save_new_comm_q"):
+                    if n_content.strip():
+                        new_q_rec = archive_uploaded_question(title=n_title, content=n_content, subject=n_subj, rubric=n_rubric, uploader="熱心考生")
+                        st.success(f"🎉 成功存檔並建立試題：`{new_q_rec.get('question_id')}.json`！已同步匯入社群題庫！")
+                        st.rerun()
+                    else:
+                        st.error("請填寫題目內容！")
+
+        comm_filtered = comm_q_all
+        if cq_kw:
+            comm_filtered = search_community_questions(cq_kw)
+
+        if not comm_filtered:
+            st.info("💡 目前社群題庫暫無符合條件之試卷。在【試卷評分】模式評分題目後，系統將實時為您獨立存檔入庫！")
+        else:
+            st.caption(f"共顯示 **{len(comm_filtered)}** 道社群共享試題：")
+            for cq_idx, q_item in enumerate(comm_filtered):
+                q_id = q_item.get("question_id", f"comm_q_{cq_idx}")
+                q_title = q_item.get("title", "未命名題目")
+                q_subj = q_item.get("subject", "跨領域")
+                q_uploader = q_item.get("uploader", "社群考生")
+                q_time = q_item.get("created_at", "")
+                q_text = q_item.get("content", "")
+                q_rubric = q_item.get("rubric", "")
+
+                with st.expander(f"📝 【{q_subj}】{q_title} ｜ 👤 {q_uploader} ｜ 📅 {q_time}"):
+                    st.caption(f"題目獨立編號：`{q_id}.json` ｜ 字數：{len(q_text)} 字")
+                    st.markdown("#### 📜 試題內容：")
+                    st.write(q_text)
+                    if q_rubric:
+                        with st.expander("🔍 檢視出題者提供之評分要點/參考答案"):
+                            st.info(q_rubric)
+
+                    c_act1, c_act2 = st.columns(2)
+                    with c_act1:
+                        if st.button(f"📝 帶入【試卷評分】進行批改", key=f"btn_import_eval_{q_id}"):
+                            st.session_state["question_text_content"] = q_text
+                            st.session_state["rubric_text_content"] = q_rubric
+                            st.session_state["imported_from_bank_label"] = f"【社群共享題庫】{q_title}"
+                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.rerun()
+                    with c_act2:
+                        if st.button(f"🏆 生成榜首級示範擬答 (IRAC)", key=f"btn_model_ans_{q_id}"):
+                            with st.spinner("榜首名師正在撰寫嚴謹三段論法擬答..."):
+                                gen = LawExamGenerator()
+                                m_ans = gen.generate_model_answer(question=q_text, subject=q_subj)
+                                st.markdown("##### 🏆 閱卷高分示範擬答：")
+                                st.markdown(m_ans)
 
 # ----------------- 模式 4: 擬答生成 -----------------
 elif app_mode == "📖 高分權威擬答生成":
@@ -1764,6 +1834,32 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             key=f"search_kw_widget_{st.session_state.get('six_codes_kw_rev', 0)}"
         )
         st.session_state["six_codes_search_kw"] = search_kw
+
+    # 🌟 新功能：更新六法按鈕（按下去之後六法會自動聯網更新最近的修法，同步至本機大典）
+    up_col1, up_col2 = st.columns([3, 1])
+    with up_col1:
+        st.caption(f"💡 目前法學大庫已收錄 **{selected_law}**。若立法院近期三讀通過修正條文，點擊右方按鈕即可自動連線全國法規會與立法院公報更新！")
+    with up_col2:
+        if st.button(f"🔄 更新六法（【{selected_law}】最新修法）", use_container_width=True, key=f"btn_update_law_{selected_law}"):
+            with st.spinner(f"正在聯網比對並更新【{selected_law}】最新公布條文與立法理由..."):
+                update_res = update_law_amendments(selected_law)
+                clear_six_codes_cache()
+                st.session_state[f"last_amendment_res_{selected_law}"] = update_res
+                st.toast(f"✅ 【{selected_law}】修法資料更新完成！", icon="🎉")
+
+    if st.session_state.get(f"last_amendment_res_{selected_law}"):
+        last_res = st.session_state.get(f"last_amendment_res_{selected_law}")
+        with st.expander(f"🆕 【{selected_law}】最新修法更新報告 ｜ 📅 {last_res.get('latest_amendment_date', '最新修正公布')}", expanded=True):
+            st.markdown(f"**🌟 修法重點摘要：** {last_res.get('summary', '')}")
+            st.caption(f"更新狀態：`{last_res.get('status')}` ｜ 本次更新條文數：`{last_res.get('amended_count', 0)}` 條")
+            for am_item in last_res.get("amended_articles", []):
+                st.markdown(f"##### 📌 {am_item.get('article_no')}")
+                st.info(f"**最新施行條文全文：**\n{am_item.get('new_content', '')}")
+                if am_item.get('amendment_reason'):
+                    st.markdown(f"🏛️ **立法院官方立法理由：**\n{am_item.get('amendment_reason')}")
+                if am_item.get('exam_points'):
+                    st.success(f"✍️ **司律二試國考作答熱點：**\n{am_item.get('exam_points')}")
+                st.markdown("---")
 
     # 若當前選擇者為法規命令或細則，提示授權母法並提供快速返回母法按鈕
     if any(s in selected_law for s in ["辦法", "細則", "準則", "規則", "規程", "標準"]):
