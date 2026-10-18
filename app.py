@@ -1006,19 +1006,6 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             questions = exam_data.get("questions", [])
             answer_key = exam_data.get("answer_key", {})
 
-            st.divider()
-            st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
-            
-            # 以每 5 題一行排版速查表
-            cols_per_row = 5
-            for row_start in range(1, len(questions) + 1, cols_per_row):
-                key_cols = st.columns(cols_per_row)
-                for c_idx in range(cols_per_row):
-                    q_num = row_start + c_idx
-                    if q_num <= len(questions):
-                        with key_cols[c_idx]:
-                            st.info(f"**第 {q_num} 題**：`({answer_key.get(str(q_num), 'A')})`")
-
             # 統計本卷所有試題考點分類
             raw_cats = [q.get("category", "").strip() for q in questions if q.get("category")]
             clean_cats = sorted(list(set(raw_cats)))
@@ -1078,6 +1065,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 if st.button("🏁 交卷立即線上批改評分", type="primary"):
                     st.session_state["stage1_graded"] = True
                     st.session_state["stage1_user_answers"] = user_answers
+                    st.rerun()
 
             with col_export:
                 md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
@@ -1089,7 +1077,8 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 )
 
             # 批改結果與考點分類實力診斷
-            if st.session_state.get("stage1_graded"):
+            is_graded = st.session_state.get("stage1_graded", False)
+            if is_graded:
                 u_answers = st.session_state.get("stage1_user_answers", user_answers)
                 score = 0
                 for q_num_str, correct_ans in answer_key.items():
@@ -1133,6 +1122,31 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         )
                         if stats["missed"]:
                             st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
+
+            # 第二部分：標準答案速查表 (置於試題區與線上批改評分之後，避免提前洩題)
+            st.divider()
+            st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
+            
+            u_answers_map = st.session_state.get("stage1_user_answers", user_answers) if is_graded else {}
+            # 以每 5 題一行排版速查表
+            cols_per_row = 5
+            for row_start in range(1, len(questions) + 1, cols_per_row):
+                key_cols = st.columns(cols_per_row)
+                for c_idx in range(cols_per_row):
+                    q_num = row_start + c_idx
+                    if q_num <= len(questions):
+                        with key_cols[c_idx]:
+                            c_ans = answer_key.get(str(q_num), 'A')
+                            if is_graded:
+                                u_ans = u_answers_map.get(str(q_num))
+                                if u_ans == c_ans:
+                                    st.success(f"**第 {q_num} 題**：`({c_ans})` ✅ 正確")
+                                elif u_ans:
+                                    st.error(f"**第 {q_num} 題**：`({c_ans})` ❌ (選 {u_ans})")
+                                else:
+                                    st.warning(f"**第 {q_num} 題**：`({c_ans})` ⚪ 未作答")
+                            else:
+                                st.info(f"**第 {q_num} 題**：`({c_ans})`")
 
             st.divider()
             st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
