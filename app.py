@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 from PIL import Image
 
-from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR
+from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
 from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
 from exam_generator import LawExamGenerator
@@ -273,8 +273,18 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
         topic = st.text_input("出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：", placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...")
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
+    
+    # 預先讀取雲端筆記清單，確保標籤與計數精確
+    try:
+        from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
+        drive_notes = get_google_drive_notes_list()
+    except Exception:
+        drive_notes = []
+
+    drive_tab_label = f"📂 從 Google Drive 個人筆記庫挑選 (免上傳，全庫收錄 {len(drive_notes)} 份筆記)" if drive_notes else "📂 從 Google Drive 個人筆記庫挑選 (免上傳)"
+
     note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
-        "📂 從 Google Drive 個人筆記庫挑選 (免上傳，直接載入 68 份筆記)",
+        drive_tab_label,
         "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
         "✍️ 直接貼上/編輯筆記文字",
         "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
@@ -283,51 +293,83 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
     notes_from_drive = ""
     with note_tab_drive:
         try:
-            from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
-            drive_notes = get_google_drive_notes_list()
             if drive_notes:
-                st.caption(f"⚡ 已自您的 Google Drive 自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
+                st.caption(f"⚡ 已自您的 Google Drive「資源」與筆記庫自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
                 
-                # 科目篩選清單（含大類全科整合）
-                raw_subs_notes = sorted(list(set(n["subject"] for n in drive_notes)))
-                note_categories = ["全部科目"]
-                has_civ_notes = any(s in ["民總", "債各", "身分法", "民法"] for s in raw_subs_notes)
-                has_crim_notes = any(s in ["刑總", "刑分", "刑法"] for s in raw_subs_notes)
-                if has_civ_notes:
-                    note_categories.append("民法全科 (民總/債各/身分法)")
-                if has_crim_notes:
-                    note_categories.append("刑法全科 (刑總/刑分)")
-                note_categories.extend(raw_subs_notes)
+                # 科目分類群組與統計
+                CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
+                CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
+                PUB_GROUP = ["憲法", "行政法", "公法考古題"]
+                COMM_GROUP = ["商事法", "保險法"]
+                IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
 
-                default_sub_idx = 0
+                civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
+                crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
+                pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
+                comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
+                ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
+
+                sub_counts = {}
+                for n in drive_notes:
+                    sub_counts[n["subject"]] = sub_counts.get(n["subject"], 0) + 1
+
+                cat_options = [
+                    f"全部科目 (全庫共 {len(drive_notes)} 份)",
+                    f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
+                    f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
+                    f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
+                    f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
+                    f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
+                ]
+                for s, c in sorted(sub_counts.items(), key=lambda x: -x[1]):
+                    cat_options.append(f"【{s}】(共 {c} 份)")
+
+                # 智能預設選中匹配當前考科
+                default_cat_idx = 0
                 if subject:
-                    if "民法" in subject and "民法全科 (民總/債各/身分法)" in note_categories:
-                        default_sub_idx = note_categories.index("民法全科 (民總/債各/身分法)")
-                    elif "刑法" in subject and "刑法全科 (刑總/刑分)" in note_categories:
-                        default_sub_idx = note_categories.index("刑法全科 (刑總/刑分)")
-                    else:
-                        for i, sub in enumerate(note_categories):
-                            if sub != "全部科目" and (sub in subject or subject in sub):
-                                default_sub_idx = i
-                                break
+                    if any(k in subject for k in ["民法", "債", "物權", "身分", "總則"]):
+                        default_cat_idx = 1
+                    elif any(k in subject for k in ["刑法", "刑總", "刑分"]):
+                        default_cat_idx = 2
+                    elif any(k in subject for k in ["公法", "憲法", "行政"]):
+                        default_cat_idx = 3
+                    elif any(k in subject for k in ["商事", "公司", "保險", "證交"]):
+                        default_cat_idx = 4
+                    elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
+                        default_cat_idx = 5
                         
                 col_sel1, col_sel2 = st.columns([1, 2])
                 with col_sel1:
-                    sel_note_sub = st.selectbox(
+                    sel_note_category = st.selectbox(
                         "筆記分類篩選：",
-                        note_categories,
-                        index=default_sub_idx,
+                        cat_options,
+                        index=default_cat_idx,
                         key="sel_note_subject_filter"
                     )
                 
-                if sel_note_sub == "全部科目":
+                # 依分類篩選筆記
+                if "全部科目" in sel_note_category:
                     filtered_notes = drive_notes
-                elif sel_note_sub == "民法全科 (民總/債各/身分法)":
-                    filtered_notes = [n for n in drive_notes if n["subject"] in ["民總", "債各", "身分法", "民法"]]
-                elif sel_note_sub == "刑法全科 (刑總/刑分)":
-                    filtered_notes = [n for n in drive_notes if n["subject"] in ["刑總", "刑分", "刑法"]]
+                    cat_display = "全部科目"
+                elif "民法全輯" in sel_note_category:
+                    filtered_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
+                    cat_display = "民法全輯（總則/債編/物權/身分）"
+                elif "刑法全輯" in sel_note_category:
+                    filtered_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
+                    cat_display = "刑法全輯（刑總/刑分）"
+                elif "公法全輯" in sel_note_category:
+                    filtered_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
+                    cat_display = "公法全輯（憲法/行政法）"
+                elif "商事法全輯" in sel_note_category:
+                    filtered_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
+                    cat_display = "商事法全輯"
+                elif "智財全輯" in sel_note_category:
+                    filtered_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
+                    cat_display = "智慧財產權法全輯"
                 else:
-                    filtered_notes = [n for n in drive_notes if n["subject"] == sel_note_sub]
+                    target_sub = sel_note_category.split("【")[1].split("】")[0]
+                    filtered_notes = [n for n in drive_notes if n["subject"] == target_sub]
+                    cat_display = target_sub
                 
                 with col_sel2:
                     all_notes_label = f"🌟 【全部分析】載入此分類全部筆記 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
@@ -342,7 +384,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     )
                 
                 if sel_note_label == all_notes_label:
-                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{sel_note_sub}】全部 **{len(filtered_notes)} 份** 雲端筆記，優先調用本機高速快取；手寫或掃描 PDF 自動調用 Gemini 2.0 Flash 進行多模態辨識，彙編成完整法學爭點大典以供客製命題。")
+                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{cat_display}】全部 **{len(filtered_notes)} 份** 雲端筆記，優先調用高速數位文字與本機快取；手寫或掃描 PDF 自動調用 Gemini Flash 進行多模態辨識，彙編成完整法學爭點大典以供客製命題。")
                     c_btn1, c_btn2 = st.columns([2, 1])
                     with c_btn1:
                         load_all_btn = st.button(f"🚀 一鍵分析並載入全部筆記 (共 {len(filtered_notes)} 份)", type="primary", key="btn_load_all_drive_notes")
@@ -351,10 +393,10 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         if sync_btn:
                             with st.spinner("正在掃描雲端硬碟各科筆記..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
-                                st.success(f"同步完成！新增/更新了 {c} 份筆記。")
+                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
                                 st.rerun()
 
-                    session_all_key = f"cached_all_notes_text_{sel_note_sub}_{len(filtered_notes)}"
+                    session_all_key = f"cached_all_notes_text_{cat_display}_{len(filtered_notes)}"
                     if load_all_btn or (session_all_key in st.session_state):
                         if load_all_btn:
                             prog_bar = st.progress(0.0)
@@ -378,7 +420,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         combined_all = st.session_state.get(session_all_key, "")
                         if combined_all:
                             notes_from_drive = combined_all
-                            st.success(f"🎉 成功全部分析【{sel_note_sub}】共 {len(filtered_notes)} 份筆記，累計取得 {len(combined_all):,} 字元！已自動帶入下方命題引擎。")
+                            st.success(f"🎉 成功全部分析【{cat_display}】共 {len(filtered_notes)} 份筆記，累計取得 {len(combined_all):,} 字元！已自動帶入下方命題引擎。")
                             with st.expander("🔍 檢視已解析之全部分類筆記重點與爭點摘要", expanded=False):
                                 st.text_area("全部分析筆記內容彙整（已用於客製命題）：", value=combined_all, height=220, key="preview_drive_all_notes")
                 elif sel_note_label:
@@ -389,11 +431,11 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     with c_btn1:
                         load_btn = st.button("🚀 載入此份雲端筆記 (自動進行文字提取 / 手寫多模態 OCR)", type="primary", key="btn_load_drive_note")
                     with c_btn2:
-                        sync_btn = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes")
-                        if sync_btn:
+                        sync_btn_single = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_single")
+                        if sync_btn_single:
                             with st.spinner("正在掃描雲端硬碟各科筆記..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
-                                st.success(f"同步完成！新增/更新了 {c} 份筆記。")
+                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
                                 st.rerun()
 
                     session_key = f"cached_note_text_{chosen_note['filename']}"
@@ -456,75 +498,23 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             try:
                 with open(cw_index_path, "r", encoding="utf-8") as f_cw:
                     cw_list = json.load(f_cw)
+                cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
+                if not cw_sub_list:
+                    cw_sub_list = cw_list
                 
-                # 建立完整的講義分類體系（含全科整合分類）
-                raw_subs = sorted(list(set(c.get("subject", "") for c in cw_list if c.get("subject"))))
-                cw_categories = ["全部科目"]
-                
-                has_civ = any("民法" in s for s in raw_subs)
-                has_crim = any("刑法" in s for s in raw_subs)
-                
-                if has_civ:
-                    cw_categories.append("民法全科 (總則/債總/債各)")
-                if has_crim:
-                    cw_categories.append("刑法全科 (總則/分則)")
-                cw_categories.extend(raw_subs)
-                
-                default_cw_idx = 0
-                if subject:
-                    if "民法" in subject and "民法全科 (總則/債總/債各)" in cw_categories:
-                        default_cw_idx = cw_categories.index("民法全科 (總則/債總/債各)")
-                    elif "刑法" in subject and "刑法全科 (總則/分則)" in cw_categories:
-                        default_cw_idx = cw_categories.index("刑法全科 (總則/分則)")
-                    else:
-                        for idx_c, cat in enumerate(cw_categories):
-                            if cat != "全部科目" and (cat in subject or subject in cat):
-                                default_cw_idx = idx_c
-                                break
-                
-                col_cw1, col_cw2 = st.columns([1, 2])
-                with col_cw1:
-                    sel_cw_sub = st.selectbox(
-                        "筆記分類篩選：",
-                        cw_categories,
-                        index=default_cw_idx,
-                        key="sel_coursework_subject_filter"
-                    )
-                
-                # 依分類過濾講義檔案（精確排除非本學門檔案）
-                if sel_cw_sub == "全部科目":
-                    filtered_cw = cw_list
-                elif sel_cw_sub == "民法全科 (總則/債總/債各)":
-                    filtered_cw = [c for c in cw_list if c.get("subject") in ["民法總則", "民法債編總論", "民法債編各論"]]
-                elif sel_cw_sub == "刑法全科 (總則/分則)":
-                    filtered_cw = [c for c in cw_list if c.get("subject") in ["刑法總則", "刑法分則"]]
-                else:
-                    filtered_cw = [c for c in cw_list if c.get("subject") == sel_cw_sub]
-                
-                with col_cw2:
-                    all_cw_label = f"🌟 【全部分析】引用此分類全部講義重點 (共 {len(filtered_cw)} 份，自動爭點大綱精萃)"
-                    cw_options = [all_cw_label] + [
-                        f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" 
-                        for c in filtered_cw
-                    ]
-                    sel_cw = st.selectbox(
-                        "選擇欲引用的名師講義/課輔檔案：",
-                        cw_options,
-                        key="select_coursework_doc"
-                    )
-                
+                all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
+                cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
+                sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
                 if sel_cw == all_cw_label:
-                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{sel_cw_sub}】全部 **{len(filtered_cw)} 份** 雲端講義與課輔大綱，優先調用本機高速快取；彙編成完整法學爭點大典以供客製命題。")
-                    if st.checkbox(f"✅ 確認載入【{sel_cw_sub}】全部講義精華爭點以進行全科命題", value=True, key=f"cb_use_all_cw_{sel_cw_sub}"):
-                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in filtered_cw])
-                        with st.expander(f"🔍 檢視已載入【{sel_cw_sub}】之講義爭點精華彙編 (共 {len(notes_from_coursework):,} 字)", expanded=False):
-                            st.text_area("講義核心爭點彙編（已帶入命題引擎）：", value=notes_from_coursework, height=220, key=f"preview_cw_all_{sel_cw_sub}")
+                    st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
+                    if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
+                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
                 elif sel_cw:
                     sel_idx = cw_options.index(sel_cw) - 1
-                    chosen_item = filtered_cw[sel_idx]
+                    chosen_item = cw_sub_list[sel_idx]
                     st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
                     st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
-                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key=f"cb_use_cw_{chosen_item.get('filename')}"):
+                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
                         notes_from_coursework = chosen_item.get("summary_preview", "")
             except Exception as e:
                 st.error(f"讀取講義庫失敗: {e}")
@@ -532,18 +522,8 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
 
     final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
-    note_source_label = "個人筆記"
-    if notes_from_text:
-        note_source_label = "手動貼上/編輯之筆記"
-    elif notes_from_drive:
-        note_source_label = "Google Drive 雲端筆記"
-    elif notes_from_file:
-        note_source_label = "本機上傳之筆記"
-    elif notes_from_coursework:
-        note_source_label = "名師課輔講義爭點精萃"
-
     if final_notes:
-        st.info(f"💡 目前已載入【{note_source_label}】重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的重點爭點進行客製化命題！")
+        st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
     if stage == "一試 (選擇題 / 單選題)":
         stage1_tab_ai, stage1_tab_300 = st.tabs([
@@ -1017,7 +997,7 @@ elif app_mode == "📖 高分權威擬答生成":
         if m4_up_file is not None:
             st.info(f"📄 已選擇檔案：`{m4_up_file.name}` ({len(m4_up_file.getvalue()) / (1024*1024):.2f} MB)")
             if st.button("🔍 辨識並自動帶入題目文字", key="btn_m4_ocr"):
-                with st.spinner("正在使用 Gemini 2.0 Flash 多模態神經網路自動辨識並轉錄題目全文..."):
+                with st.spinner("正在使用 Gemini Flash 多模態神經網路自動辨識並轉錄題目全文..."):
                     try:
                         ext = m4_up_file.name.split(".")[-1].lower()
                         transcribed = ""
@@ -1028,11 +1008,19 @@ elif app_mode == "📖 高分權威擬答生成":
                             ev = LawExamEvaluator()
                             if hasattr(ev, "client") and ev.client:
                                 prompt = "請將此張試卷照片或截圖中的完整題目文字逐字謄錄為繁體中文，保持原本標號、事實情境與子題配分。直接輸出題目文字，勿加入額外寒暄。"
-                                r = ev.client.models.generate_content(
-                                    model="gemini-2.0-flash",
-                                    contents=[img, prompt]
-                                )
-                                transcribed = r.text.strip()
+                                for m_name in [DEFAULT_GEMINI_MODEL] + [m for m in GEMINI_FALLBACK_MODELS if m != DEFAULT_GEMINI_MODEL]:
+                                    try:
+                                        r = ev.client.models.generate_content(
+                                            model=m_name,
+                                            contents=[img, prompt]
+                                        )
+                                        if r and r.text:
+                                            transcribed = r.text.strip()
+                                            break
+                                    except Exception:
+                                        continue
+                                if not transcribed:
+                                    transcribed = "[多模態視覺辨識失敗，請檢查 API Key 或網路連線]"
                             else:
                                 transcribed = "[無法調用視覺模型，請確認 API Key]"
                         elif ext == "pdf":
@@ -1236,7 +1224,7 @@ elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
 elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)":
     st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")
-    st.write("全面收錄全台 **61 部核心司律考科法規、10,183 條法定條文**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則**及**考生個人手寫讀書筆記**！")
+    st.write("全面收錄全台 **1,791 部國家法律、法規命令與施行細則，共 60,301 條法定條文**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則**及**考生個人手寫讀書筆記**！")
 
     # 1. 導航選擇列
     col_b, col_l, col_q = st.columns([1, 1, 2])
@@ -1343,7 +1331,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                 with tab_ai:
                     ai_cache_key = f"ai_anno_{lname}_{ano}"
                     if st.button(f"✨ 啟動 AI 深度釋析（立法理由、主管機關函釋、通說有力說）", key=f"btn_run_anno_{idx}"):
-                        with st.spinner(f"正在由 Gemini 2.0 Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
+                        with st.spinner(f"正在由 Gemini Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
                             try:
                                 annotator = SixCodesDeepAnnotator()
                                 report = annotator.annotate_article(law_name=lname, article_no=ano, content=content)
@@ -1392,7 +1380,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         
         distill_mode = st.radio(
             "請選擇匯入方式：",
-            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，全考科已收錄 200+ 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
+            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，全庫收錄 550+ 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
             horizontal=True,
             key="distill_import_mode"
         )
@@ -1407,14 +1395,53 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                 cat_summary = "、".join(f"{s} {c} 份" for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1])[:8])
                 st.caption(f"⚡ 目前已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋 {cat_summary} 等全台法學考科）：")
                 
-                sub_list = sorted(list(set(n["subject"] for n in drive_notes)))
+                CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
+                CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
+                PUB_GROUP = ["憲法", "行政法", "公法考古題"]
+                COMM_GROUP = ["商事法", "保險法"]
+                IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+
+                civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
+                crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
+                pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
+                comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
+                ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
+
+                sft_cat_opts = [
+                    f"全部科目 (全庫共 {len(drive_notes)} 份)",
+                    f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
+                    f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
+                    f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
+                    f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
+                    f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
+                ]
+                for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1]):
+                    sft_cat_opts.append(f"【{s}】(共 {c} 份)")
+
                 col_d1, col_d2 = st.columns([1, 2])
                 with col_d1:
-                    filter_sub = st.selectbox("筆記科目篩選：", ["全部科目"] + sub_list, key="sft_filter_sub")
+                    filter_sub_label = st.selectbox("筆記科目篩選：", sft_cat_opts, key="sft_filter_sub")
                 
-                if filter_sub == "全部科目":
+                if "全部科目" in filter_sub_label:
                     sub_notes = drive_notes
+                    filter_sub = "全部科目"
+                elif "民法全輯" in filter_sub_label:
+                    sub_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
+                    filter_sub = "民法全輯"
+                elif "刑法全輯" in filter_sub_label:
+                    sub_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
+                    filter_sub = "刑法全輯"
+                elif "公法全輯" in filter_sub_label:
+                    sub_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
+                    filter_sub = "公法全輯"
+                elif "商事法全輯" in filter_sub_label:
+                    sub_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
+                    filter_sub = "商事法全輯"
+                elif "智財全輯" in filter_sub_label:
+                    sub_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
+                    filter_sub = "智慧財產權法全輯"
                 else:
+                    filter_sub = filter_sub_label.split("【")[1].split("】")[0]
                     sub_notes = [n for n in drive_notes if n["subject"] == filter_sub]
                     
                 with col_d2:
@@ -1426,7 +1453,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                     sel_sft_note = st.selectbox("選擇欲蒸餾之雲端筆記：", note_opts, key="sft_sel_note")
                 
                 if sel_sft_note == all_distill_label:
-                    st.info(f"💡 已選擇【全部分析】！系統將批次遍歷【{filter_sub}】全部 **{len(sub_notes)} 份** 筆記，透過 Gemini 2.0 Flash 多模態神經網路執行高精度手寫辨識、爭點提煉與 SFT 微調語料蒸餾，並即時合併寫入 SFT 微調庫。")
+                    st.info(f"💡 已選擇【全部分析】！系統將批次遍歷【{filter_sub}】全部 **{len(sub_notes)} 份** 筆記，透過 Gemini Flash 多模態神經網路執行高精度手寫辨識、爭點提煉與 SFT 微調語料蒸餾，並即時合併寫入 SFT 微調庫。")
                     c_btn_a1, c_btn_a2 = st.columns([2, 1])
                     with c_btn_a1:
                         if st.button(f"🚀 一鍵啟動全部分析：批次多模態 OCR 蒸餾並入庫 (共 {len(sub_notes)} 份)", type="primary", key="btn_distill_all_drive_sft"):
@@ -1472,7 +1499,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                     c_btn_a1, c_btn_a2 = st.columns([2, 1])
                     with c_btn_a1:
                         if st.button("🚀 啟動此份雲端筆記多模態 OCR 蒸餾並寫入 SFT 微調庫", type="primary", key="btn_distill_drive_sft"):
-                            with st.spinner(f"⚖️ 正在運用 Gemini 2.0 Flash 解析《{target_note['filename']}》手寫法條、爭點肯否二說與實務判例..."):
+                            with st.spinner(f"⚖️ 正在運用 Gemini Flash 解析《{target_note['filename']}》手寫法條、爭點肯否二說與實務判例..."):
                                 try:
                                     new_samples = distill_single_note_file(target_note["path"], max_pages=15)
                                     if new_samples:
@@ -1513,7 +1540,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
             if up_file is not None:
                 st.info(f"📄 已選擇檔案：`{up_file.name}` ({len(up_file.getvalue()) / (1024*1024):.2f} MB)")
                 if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
-                    with st.spinner("⚖️ 正在運用 Gemini 2.0 Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
+                    with st.spinner("⚖️ 正在運用 Gemini Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
                         try:
                             from ingest_user_notes_to_sft import ingest_single_uploaded_file
                             new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
@@ -1548,8 +1575,13 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                 
         if sub_dict:
             all_sub_count = sum(len(nlist) for nlist in sub_dict.values())
+            CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法"]
+            civil_notes = [n for n in all_notes if n["subject"] in CIVIL_GROUP]
+            
             all_choice_label = f"🌟 【全部考科】全部分析 (全庫共 {all_sub_count} 份筆記 / 講義)"
-            sub_options = [all_choice_label] + [
+            civil_choice_label = f"🌟 【民法全輯】(總則/債總/債各/物權/身分 共 {len(civil_notes)} 份)"
+            
+            sub_options = [all_choice_label, civil_choice_label] + [
                 f"【{s}】(共 {len(nlist)} 份筆記 / 講義)" 
                 for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))
             ]
@@ -1557,6 +1589,9 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
             if sel_sub_label == all_choice_label:
                 sel_subject = "全部考科"
                 sub_notes = [n for nlist in sub_dict.values() for n in nlist]
+            elif sel_sub_label == civil_choice_label:
+                sel_subject = "民法全輯"
+                sub_notes = civil_notes
             else:
                 sel_subject = sel_sub_label.split("【")[1].split("】")[0]
                 sub_notes = sub_dict[sel_subject]
@@ -1600,8 +1635,8 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                             
             with c_op2:
                 st.markdown(f"### ⚡ 方案二：全科自動文字提取與 OCR 彙編")
-                st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini 2.0 Flash 辨識並彙整為單一 Markdown 筆記大典。")
-                ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini 2.0 Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
+                st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini Flash 辨識並彙整為單一 Markdown 筆記大典。")
+                ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
                 
                 if st.button(f"⚡ 開始全自動文字提取【{sel_subject}】全科筆記", type="primary", key="btn_run_extract_corpus"):
                     prog_bar = st.progress(0.0)

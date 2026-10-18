@@ -28,18 +28,23 @@ _cache/
 *.bin
 *.pt
 
-# 忽略 data 內的動態暫存目錄
+# 忽略 data 內的動態暫存目錄與本地個人筆記原檔
 data/evaluation_reports/
 data/student_submissions/
 data/checkpoints/
 data/model_weights/
-data/SamsungNotes/_cache/
+data/SamsungNotes/
+
 
 # Jupyter Notebook 快取
 .ipynb_checkpoints/
 
-# 系統隱藏檔
+# 系統隱藏檔與雲端硬碟同步衝突檔
 .DS_Store
 Thumbs.db
 desktop.ini
+* (*).py
+* (*).json
+* (*).md
+
 

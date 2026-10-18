@@ -92,50 +92,155 @@ def get_chapter_sort_key(file_path: Path) -> tuple:
 def compute_hash(text: str) -> str:
     return hashlib.sha256(text.strip().encode("utf-8", errors="ignore")).hexdigest()
 
-def sync_all_drive_notes_to_samsung_notes() -> int:
-    """自動自 G:\\我的雲端硬碟\\資源\\ 動態掃描並同步所有法學考科最新檔案（涵蓋 200+ 份講義筆記）至 SamsungNotes 目錄"""
-    drive = Path(r"G:\我的雲端硬碟")
-    samsung_dir = SAMSUNG_NOTES_DIR
-    samsung_dir.mkdir(parents=True, exist_ok=True)
-    
-    resources_dir = drive / "資源"
-    if not resources_dir.exists():
-        return 0
-
-    valid_exts = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
-    ignore_folders = {"DLCV", "training", "近代物理"}
-
-    copied = 0
-    for folder in resources_dir.iterdir():
-        if not folder.is_dir() or folder.name in ignore_folders or folder.name.startswith("."):
-            continue
+def classify_resource_file(full_path: Path, resources_dir: Path):
+    """
+    智能識別「資源」目錄下檔案之考科、標準化檔名與出處/教授
+    回傳：(subject, normalized_name, author)
+    """
+    try:
+        rel_parts = full_path.relative_to(resources_dir).parts
+    except Exception:
+        rel_parts = (full_path.name,)
         
-        raw_cat = folder.name
-        # 標準化考科名稱
-        if "法理學" in raw_cat:
-            cat = "法理學"
-        elif "債二" in raw_cat:
-            cat = "債各"
-        elif "刑二" in raw_cat:
-            cat = "刑分"
-        else:
-            cat = raw_cat
+    top = rel_parts[0]
+    fname = full_path.name
+    
+    subject = "其他"
+    sub_category = ""
+    author = ""
+
+    if top == "民法":
+        if len(rel_parts) >= 2:
+            folder2 = rel_parts[1]
+            if folder2 in ["身分法", "物權", "民總", "債各"]:
+                subject = folder2
+            elif folder2 in ["債一", "債二"]:
+                subject = "債總"
+            elif folder2 == "民總轉學考":
+                subject = "民總"
+            else:
+                subject = "民法"
             
-        for f in folder.rglob("*"):
-            if f.is_file() and f.suffix.lower() in valid_exts and f.name != "desktop.ini" and not f.name.startswith("."):
-                # 如果原本檔名已包含科目，不重複加前綴
-                if f.name.startswith(f"{cat}_"):
-                    dest_name = f.name
-                else:
-                    dest_name = f"{cat}_{f.name}"
-                dest_path = samsung_dir / dest_name
-                if not dest_path.exists() or dest_path.stat().st_size != f.stat().st_size:
-                    try:
-                        shutil.copy2(f, dest_path)
-                        copied += 1
-                    except Exception as e:
-                        print(f"  [警示] 同步 {f.name} 失敗: {e}")
-    return copied
+            if len(rel_parts) >= 3 and not rel_parts[2].endswith(full_path.suffix):
+                author = rel_parts[2]
+        else:
+            subject = "民法"
+            
+    elif top == "刑總":
+        subject = "刑總"
+        if len(rel_parts) >= 2 and not rel_parts[1].endswith(full_path.suffix):
+            author = rel_parts[1]
+            
+    elif top == "刑分":
+        subject = "刑分"
+        if len(rel_parts) >= 2 and not rel_parts[1].endswith(full_path.suffix):
+            author = rel_parts[1]
+            
+    elif top == "智財":
+        if len(rel_parts) >= 2:
+            f2 = rel_parts[1]
+            if f2 in ["專利法", "商標法", "著作權法"]:
+                subject = f2
+            else:
+                subject = "智慧財產權法"
+        else:
+            subject = "智慧財產權法"
+            
+    elif top == "百題":
+        if len(rel_parts) >= 2 and rel_parts[1] == "民總":
+            subject = "民總"
+            author = "百題爭點"
+        else:
+            subject = "民總"
+            
+    elif top in ["憲法", "憲法轉學考"]:
+        subject = "憲法"
+        if top == "憲法轉學考":
+            sub_category = "轉學考"
+            
+    elif top == "行政法":
+        subject = "行政法"
+    elif top == "商事法":
+        subject = "商事法"
+    elif top == "保險法":
+        subject = "保險法"
+    elif top == "民訴":
+        subject = "民訴"
+    elif top == "法理學錄音":
+        subject = "法理學"
+    elif top == "考古題":
+        if any(k in fname for k in ["民法", "民總", "債", "物權", "身分"]):
+            subject = "民法考古題"
+        elif any(k in fname for k in ["刑法", "刑總", "刑分"]):
+            subject = "刑法考古題"
+        elif any(k in fname for k in ["憲法", "行政法", "公法"]):
+            subject = "公法考古題"
+        elif any(k in fname for k in ["民訴"]):
+            subject = "民訴考古題"
+        else:
+            subject = "法學考古題"
+    elif top == "雜項":
+        subject = "法學實務"
+    else:
+        subject = top
+
+    prefix_parts = [subject]
+    if author and author not in fname:
+        prefix_parts.append(author)
+    if sub_category and sub_category not in fname:
+        prefix_parts.append(sub_category)
+        
+    clean_prefix = "_".join(prefix_parts)
+    
+    if fname.startswith(f"{subject}_"):
+        if author and author not in fname:
+            normalized_name = f"{subject}_{author}_{fname[len(subject)+1:]}"
+        else:
+            normalized_name = fname
+    else:
+        normalized_name = f"{clean_prefix}_{fname}"
+
+    normalized_name = normalized_name.replace("/", "_").replace("\\", "_")
+    return subject, normalized_name, author
+
+def get_resources_dir() -> Optional[Path]:
+    """偵測 Google Drive「資源」資料夾路徑"""
+    for candidate in [
+        Path(r"G:\我的雲端硬碟\資源"),
+        Path(r"G:\My Drive\資源"),
+        Path(DATA_DIR).parent / "資源",
+        Path(DATA_DIR) / "資源"
+    ]:
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+    return None
+
+def sync_all_drive_notes_to_samsung_notes() -> int:
+    """自動自 Google Drive「資源」目錄與 SamsungNotes 動態掃描並同步所有法學考科最新檔案（涵蓋 550+ 份講義筆記）"""
+    drive_notes = get_google_drive_notes_list()
+    manifest_paths = [
+        Path(DATA_DIR) / "drive_notes_manifest.json",
+        Path(__file__).resolve().parent / "data" / "drive_notes_manifest.json"
+    ]
+    manifest_data = []
+    for n in drive_notes:
+        manifest_data.append({
+            "filename": n["filename"],
+            "orig_filename": n.get("orig_filename", n["filename"]),
+            "subject": n["subject"],
+            "author": n.get("author", ""),
+            "size_mb": n["size_mb"],
+            "path": str(n["path"]),
+            "is_cached": n["is_cached"]
+        })
+    for mp in manifest_paths:
+        try:
+            mp.parent.mkdir(parents=True, exist_ok=True)
+            with open(mp, "w", encoding="utf-8") as f:
+                json.dump(manifest_data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    return len(drive_notes)
 
 def merge_subject_pdfs(subject: str, output_path: Optional[Path] = None) -> Dict[str, Any]:
     """
@@ -146,26 +251,56 @@ def merge_subject_pdfs(subject: str, output_path: Optional[Path] = None) -> Dict
     if not samsung_dir.exists():
         samsung_dir.mkdir(parents=True, exist_ok=True)
     
+    all_notes = get_google_drive_notes_list()
+    CIVIL_SUBS = {"民總", "債總", "債各", "物權", "身分法", "民法"}
+    CRIM_SUBS = {"刑總", "刑分"}
+    PUB_SUBS = {"憲法", "行政法"}
+    COMM_SUBS = {"商事法", "保險法"}
+    IP_SUBS = {"專利法", "商標法", "著作權法", "智慧財產權法"}
+
     # 找出該科目所有 PDF，排除已合併之總筆記
     if subject in ["全部考科", "全部"]:
-        all_notes = get_google_drive_notes_list()
         target_files = [
             n["path"] for n in all_notes 
             if n["path"].suffix.lower() == ".pdf"
             and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
         ]
+    elif "民法" in subject:
+        target_files = [
+            n["path"] for n in all_notes 
+            if n["subject"] in CIVIL_SUBS and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+        ]
+    elif "刑法" in subject:
+        target_files = [
+            n["path"] for n in all_notes 
+            if n["subject"] in CRIM_SUBS and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+        ]
+    elif "公法" in subject:
+        target_files = [
+            n["path"] for n in all_notes 
+            if n["subject"] in PUB_SUBS and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+        ]
+    elif "商事" in subject:
+        target_files = [
+            n["path"] for n in all_notes 
+            if n["subject"] in COMM_SUBS and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+        ]
+    elif "智財" in subject:
+        target_files = [
+            n["path"] for n in all_notes 
+            if n["subject"] in IP_SUBS and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+        ]
     else:
         target_files = [
-            f for f in samsung_dir.glob(f"{subject}_*.pdf")
-            if "全科整合" not in f.name and "全科體系" not in f.name
+            n["path"] for n in all_notes 
+            if (n["subject"] == subject or subject in n["subject"]) and n["path"].suffix.lower() == ".pdf"
+            and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
         ]
-        if not target_files:
-            all_notes = get_google_drive_notes_list()
-            target_files = [
-                n["path"] for n in all_notes 
-                if n["subject"] == subject and n["path"].suffix.lower() == ".pdf"
-                and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
-            ]
         
     if not target_files:
         raise ValueError(f"考科【{subject}】未找到任何可供合併之 PDF 筆記檔案。")
@@ -224,6 +359,12 @@ def extract_subject_text_corpus(
     並自動依章節邏輯彙編成一份單一完整 Markdown 全科筆記大典
     """
     all_notes = get_google_drive_notes_list()
+    CIVIL_SUBS = {"民總", "債總", "債各", "物權", "身分法", "民法"}
+    CRIM_SUBS = {"刑總", "刑分"}
+    PUB_SUBS = {"憲法", "行政法"}
+    COMM_SUBS = {"商事法", "保險法"}
+    IP_SUBS = {"專利法", "商標法", "著作權法", "智慧財產權法"}
+
     if subject in ["全部考科", "全部"]:
         sub_notes = [
             n for n in all_notes 
@@ -231,10 +372,50 @@ def extract_subject_text_corpus(
             and "全科體系" not in n["filename"]
             and not n["filename"].endswith("_全科筆記文字總彙編.md")
         ]
+    elif "民法" in subject:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] in CIVIL_SUBS 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
+    elif "刑法" in subject:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] in CRIM_SUBS 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
+    elif "公法" in subject:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] in PUB_SUBS 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
+    elif "商事" in subject:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] in COMM_SUBS 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
+    elif "智財" in subject:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] in IP_SUBS 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
     else:
         sub_notes = [
             n for n in all_notes 
-            if n["subject"] == subject 
+            if (n["subject"] == subject or subject in n["subject"])
             and "全科整合" not in n["filename"] 
             and "全科體系" not in n["filename"]
             and not n["filename"].endswith("_全科筆記文字總彙編.md")
@@ -303,12 +484,19 @@ def extract_subject_text_corpus(
     }
 
 
-def get_google_drive_notes_list() -> List[Dict[str, Any]]:
-    """掃描 SamsungNotes 目錄，回傳所有已歸檔筆記之詳細清單"""
-    if not SAMSUNG_NOTES_DIR.exists():
-        SAMSUNG_NOTES_DIR.mkdir(parents=True, exist_ok=True)
-        sync_all_drive_notes_to_samsung_notes()
-    
+_DRIVE_NOTES_CACHE = None
+_DRIVE_NOTES_CACHE_TIME = 0
+
+def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, Any]]:
+    """
+    全方位動態掃描「資源」目錄與 SamsungNotes 目錄，
+    即時回傳所有法學筆記（涵蓋民法各編、刑總、刑分、公法、商事法、智財等 550+ 份講義與筆記）之詳細清單。
+    若無實體雲端硬碟掛載（如 Streamlit Cloud），自動調用 drive_notes_manifest.json 與 本地 SamsungNotes。
+    """
+    global _DRIVE_NOTES_CACHE, _DRIVE_NOTES_CACHE_TIME
+    if not force_refresh and _DRIVE_NOTES_CACHE is not None and (time.time() - _DRIVE_NOTES_CACHE_TIME < 60):
+        return _DRIVE_NOTES_CACHE
+
     existing_hashes = set()
     if OUT_SFT_FILE.exists():
         try:
@@ -324,27 +512,134 @@ def get_google_drive_notes_list() -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-    notes = []
-    for f in sorted(SAMSUNG_NOTES_DIR.glob("*")):
-        if f.is_file() and f.suffix.lower() in [".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"]:
-            stem = f.stem
-            subject = stem.split("_")[0] if "_" in stem else "其他"
-            cache_file = CACHE_DIR / f"{f.name}.txt"
-            is_cached = cache_file.exists() and cache_file.stat().st_size > 0
-            
-            # 判斷是否已有蒸餾樣本
-            distilled_count = sum(1 for h in existing_hashes if f.stem[:10] in h)
-            
-            notes.append({
-                "filename": f.name,
-                "stem": f.stem,
-                "subject": subject,
-                "size_mb": f.stat().st_size / (1024 * 1024),
-                "path": f,
-                "is_cached": is_cached,
-                "distilled_count": distilled_count
-            })
-    return notes
+    existing_hashes_blob = " ".join(existing_hashes) if existing_hashes else ""
+
+    valid_exts = {".pdf", ".docx", ".doc", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp"}
+    ignore_folders = {"DLCV", "training", "近代物理"}
+    
+    # 預先載入快取檔案名稱清單，避免遠端虛擬硬碟數千次 stat 呼叫
+    existing_caches = set(os.listdir(CACHE_DIR)) if CACHE_DIR.exists() else set()
+    
+    notes_dict = {}
+    resources_dir = get_resources_dir()
+    
+    # 1. 優先掃描 Google Drive「資源」目錄（包含民法、刑總、刑分、智財等所有子目錄）
+    if resources_dir and resources_dir.exists():
+        for root, dirs, files in os.walk(resources_dir):
+            rel = os.path.relpath(root, resources_dir)
+            top = rel.split(os.sep)[0]
+            if top in ignore_folders or top.startswith("."):
+                continue
+            for f in files:
+                if f == "desktop.ini" or f.startswith("."):
+                    continue
+                p = Path(root) / f
+                if p.suffix.lower() in valid_exts:
+                    subject, norm_name, author = classify_resource_file(p, resources_dir)
+                    try:
+                        size_mb = p.stat().st_size / (1024 * 1024)
+                    except Exception:
+                        size_mb = 0.0
+                    
+                    is_cached = (f"{p.name}.txt" in existing_caches) or (f"{norm_name}.txt" in existing_caches)
+                    distilled_count = 1 if (p.stem[:8] in existing_hashes_blob or norm_name[:8] in existing_hashes_blob) else 0
+                    
+                    notes_dict[norm_name] = {
+                        "filename": norm_name,
+                        "orig_filename": p.name,
+                        "stem": Path(norm_name).stem,
+                        "subject": subject,
+                        "author": author,
+                        "size_mb": round(size_mb, 2),
+                        "path": p,
+                        "is_cached": is_cached,
+                        "distilled_count": distilled_count
+                    }
+                    
+    # 2. 補充掃描 SamsungNotes 目錄（納入可能獨立存放或 Samsung Notes 直接匯出之講義筆記）
+    if SAMSUNG_NOTES_DIR.exists():
+        for f in sorted(SAMSUNG_NOTES_DIR.glob("*")):
+            if f.is_file() and f.suffix.lower() in valid_exts and f.name != "desktop.ini" and not f.name.startswith("."):
+                if f.name in notes_dict:
+                    continue
+                orig_found = False
+                for existing_v in notes_dict.values():
+                    if f.name == existing_v.get("orig_filename"):
+                        orig_found = True
+                        break
+                if orig_found:
+                    continue
+                    
+                stem = f.stem
+                subject = stem.split("_")[0] if "_" in stem else "其他"
+                try:
+                    size_mb = f.stat().st_size / (1024 * 1024)
+                except Exception:
+                    size_mb = 0.0
+                is_cached = f"{f.name}.txt" in existing_caches
+                distilled_count = 1 if f.stem[:8] in existing_hashes_blob else 0
+                
+                notes_dict[f.name] = {
+                    "filename": f.name,
+                    "orig_filename": f.name,
+                    "stem": stem,
+                    "subject": subject,
+                    "author": "",
+                    "size_mb": round(size_mb, 2),
+                    "path": f,
+                    "is_cached": is_cached,
+                    "distilled_count": distilled_count
+                }
+
+    # 3. 雲端部署回退（例如 Streamlit Cloud，若實體資料夾檔案有限，由 manifest 補齊檔案清單）
+    manifest_paths = [
+        Path(DATA_DIR) / "drive_notes_manifest.json",
+        Path(__file__).resolve().parent / "data" / "drive_notes_manifest.json"
+    ]
+    if len(notes_dict) < 100:
+        for mp in manifest_paths:
+            if mp.exists():
+                try:
+                    with open(mp, "r", encoding="utf-8") as mf:
+                        m_list = json.load(mf)
+                        for item in m_list:
+                            fname = item.get("filename", "")
+                            if fname and fname not in notes_dict:
+                                local_p = SAMSUNG_NOTES_DIR / fname
+                                alt_p = Path(__file__).resolve().parent / "data" / "SamsungNotes" / fname
+                                p = local_p if local_p.exists() else (alt_p if alt_p.exists() else Path(item.get("path", fname)))
+                                notes_dict[fname] = {
+                                    "filename": fname,
+                                    "orig_filename": item.get("orig_filename", fname),
+                                    "stem": Path(fname).stem,
+                                    "subject": item.get("subject", "其他"),
+                                    "author": item.get("author", ""),
+                                    "size_mb": item.get("size_mb", 0.0),
+                                    "path": p,
+                                    "is_cached": item.get("is_cached", False),
+                                    "distilled_count": 0
+                                }
+                except Exception:
+                    pass
+
+    # 4. 排序規則：民法各編優先排前，其餘章節自然排序
+    subject_order = {
+        "民總": 1, "債總": 2, "債各": 3, "物權": 4, "身分法": 5, "民法": 6, "民法考古題": 7,
+        "刑總": 10, "刑分": 11, "刑法考古題": 12,
+        "憲法": 20, "行政法": 21, "公法考古題": 22,
+        "民訴": 30, "民訴考古題": 31,
+        "商事法": 40, "保險法": 41,
+        "專利法": 50, "商標法": 51, "著作權法": 52, "智慧財產權法": 53,
+        "法理學": 60, "法學考古題": 70, "法學實務": 80, "其他": 99
+    }
+    
+    sorted_notes = sorted(
+        notes_dict.values(),
+        key=lambda n: (subject_order.get(n["subject"], 90), get_chapter_sort_key(n["path"]))
+    )
+    _DRIVE_NOTES_CACHE = sorted_notes
+    _DRIVE_NOTES_CACHE_TIME = time.time()
+    return sorted_notes
 
 def render_pdf_to_images(pdf_path: Path, max_pages: int = 15) -> List[Image.Image]:
     """使用 pypdfium2 高速 C++ 引擎將 PDF 頁面渲染為高品質 PIL 圖片"""
@@ -354,7 +649,6 @@ def render_pdf_to_images(pdf_path: Path, max_pages: int = 15) -> List[Image.Imag
         total = min(len(pdf), max_pages)
         for i in range(total):
             page = pdf[i]
-            # 渲染為 200 DPI 高畫質圖像
             pil_image = page.render(scale=2.0).to_pil()
             images.append(pil_image)
     except Exception as e:
@@ -364,12 +658,31 @@ def render_pdf_to_images(pdf_path: Path, max_pages: int = 15) -> List[Image.Imag
 def read_note_text(file_path: Path, max_pages: int = 15, auto_ocr: bool = True) -> str:
     """高速讀取筆記文字：優先讀取快取；若無快取則自動直讀數位字或調用 Gemini 多模態 OCR 並寫入快取"""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_file = CACHE_DIR / f"{file_path.name}.txt"
-    if cache_file.exists():
-        try:
-            return cache_file.read_text(encoding="utf-8")
-        except Exception:
-            pass
+    cache_candidates = [
+        CACHE_DIR / f"{file_path.name}.txt",
+        CACHE_DIR / f"{file_path.stem}.txt"
+    ]
+    if "_" in file_path.name:
+        cache_candidates.append(CACHE_DIR / f"{file_path.name.split('_', 1)[-1]}.txt")
+        cache_candidates.append(CACHE_DIR / f"{file_path.name.split('_')[-1]}.txt")
+
+    for cf in cache_candidates:
+        if cf.exists() and cf.stat().st_size > 0:
+            try:
+                txt = cf.read_text(encoding="utf-8")
+                if txt.strip():
+                    return txt
+            except Exception:
+                pass
+
+    primary_cache_file = CACHE_DIR / f"{file_path.name}.txt"
+    
+    # 檢查實體檔案是否存在
+    if not file_path.exists():
+        repo_cache = Path(__file__).resolve().parent / "data" / "SamsungNotes" / "_cache" / f"{file_path.name}.txt"
+        if repo_cache.exists():
+            return repo_cache.read_text(encoding="utf-8")
+        return f"[筆記《{file_path.name}》已收錄於 Google Drive 雲端庫]"
 
     ext = file_path.suffix.lower()
     text = ""
@@ -383,7 +696,7 @@ def read_note_text(file_path: Path, max_pages: int = 15, auto_ocr: bool = True) 
                 if t and t.strip():
                     extracted.append(t.strip())
             digital_text = "\n\n".join(extracted)
-            if len(digital_text.strip()) > 300:
+            if len(digital_text.strip()) > 150:
                 text = digital_text
             elif auto_ocr:
                 from doc_parser import ocr_handwritten_images
@@ -418,7 +731,7 @@ def read_note_text(file_path: Path, max_pages: int = 15, auto_ocr: bool = True) 
 
     if text and not text.startswith("["):
         try:
-            cache_file.write_text(text, encoding="utf-8")
+            primary_cache_file.write_text(text, encoding="utf-8")
         except Exception:
             pass
             

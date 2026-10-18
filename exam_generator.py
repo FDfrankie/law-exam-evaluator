@@ -18,7 +18,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
 
 class LawExamGenerator:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
@@ -34,15 +34,21 @@ class LawExamGenerator:
 
     def _call_model(self, prompt: Any, generation_config: Any = None) -> Any:
         models_to_try = [self.model_name]
-        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
+        for m in GEMINI_FALLBACK_MODELS:
             if m not in models_to_try:
                 models_to_try.append(m)
-        last_err = None
+        errors_by_model = {}
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
-                    temp = getattr(generation_config, "temperature", 0.3) if generation_config else 0.3
-                    mime = getattr(generation_config, "response_mime_type", "application/json") if generation_config else "application/json"
+                    temp = 0.3
+                    mime = "application/json"
+                    if isinstance(generation_config, dict):
+                        temp = generation_config.get("temperature", 0.3)
+                        mime = generation_config.get("response_mime_type", "application/json")
+                    elif generation_config is not None:
+                        temp = getattr(generation_config, "temperature", 0.3)
+                        mime = getattr(generation_config, "response_mime_type", "application/json")
                     cfg = genai_types.GenerateContentConfig(
                         temperature=temp,
                         response_mime_type=mime
@@ -53,15 +59,23 @@ class LawExamGenerator:
                         config=cfg
                     )
                 else:
+                    if isinstance(generation_config, dict):
+                        cfg = legacy_genai.types.GenerationConfig(
+                            temperature=generation_config.get("temperature", 0.3),
+                            response_mime_type=generation_config.get("response_mime_type", "application/json")
+                        )
+                    else:
+                        cfg = generation_config
                     mod = legacy_genai.GenerativeModel(model_name=m_name)
-                    return mod.generate_content(prompt, generation_config=generation_config)
+                    return mod.generate_content(prompt, generation_config=cfg)
             except Exception as e:
                 err_str = str(e).lower()
                 if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
                     raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                last_err = e
+                errors_by_model[m_name] = str(e)
                 continue
-        raise RuntimeError(f"所有 Gemini 模型呼叫均失敗: {last_err}")
+        err_details = "; ".join([f"[{k}: {v[:120]}]" for k, v in errors_by_model.items()])
+        raise RuntimeError(f"所有 Gemini 模型呼叫均失敗。詳細紀錄：{err_details}")
 
     def _parse_json_safely(self, text: str) -> Any:
         """安全解析模型返回的 JSON，自動過濾 markdown code fence 與修補微小語法問題"""
@@ -165,10 +179,7 @@ class LawExamGenerator:
 """
             resp = self._call_model(
                 prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.35,
-                    response_mime_type="application/json"
-                )
+                generation_config={"temperature": 0.35, "response_mime_type": "application/json"}
             )
             
             try:
@@ -177,7 +188,7 @@ class LawExamGenerator:
                 # 容錯重試一次
                 resp_retry = self._call_model(
                     prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
-                    generation_config=genai.types.GenerationConfig(temperature=0.2, response_mime_type="application/json")
+                    generation_config={"temperature": 0.2, "response_mime_type": "application/json"}
                 )
                 batch_items = self._parse_json_safely(resp_retry.text)
 
@@ -246,10 +257,7 @@ class LawExamGenerator:
 """
         response = self._call_model(
             prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.35,
-                response_mime_type="application/json"
-            )
+            generation_config={"temperature": 0.35, "response_mime_type": "application/json"}
         )
         return self._parse_json_safely(response.text)
 
@@ -280,9 +288,7 @@ class LawExamGenerator:
 """
         response = self._call_model(
             prompt,
-            generation_config=genai_types.GenerateContentConfig(
-                temperature=0.3
-            ) if USE_MODERN_GENAI else None
+            generation_config={"temperature": 0.3, "response_mime_type": "text/plain"}
         )
         return response.text
 

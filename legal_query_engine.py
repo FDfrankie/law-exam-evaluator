@@ -24,7 +24,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, GEMINI_FALLBACK_MODELS
 
 CATALOG_PATHS = [
     Path(RAW_DATA_DIR) / "precedents_catalog.json",
@@ -121,10 +121,10 @@ class LegalIssueQueryEngine:
 
     def _call_model(self, prompt: str) -> str:
         models_to_try = [self.model_name]
-        for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.1-pro-preview", "gemini-2.0-flash-lite", "gemini-2.5-flash"]:
+        for m in GEMINI_FALLBACK_MODELS:
             if m not in models_to_try:
                 models_to_try.append(m)
-        last_err = None
+        errors_by_model = {}
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
@@ -145,9 +145,13 @@ class LegalIssueQueryEngine:
                     )
                     return resp.text
             except Exception as e:
-                last_err = e
+                err_str = str(e).lower()
+                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
+                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
+                errors_by_model[m_name] = str(e)
                 continue
-        raise RuntimeError(f"Gemini API 查詢調用失敗: {last_err}")
+        err_details = "; ".join([f"[{k}: {v[:120]}]" for k, v in errors_by_model.items()])
+        raise RuntimeError(f"Gemini API 查詢調用失敗。詳細紀錄：{err_details}")
 
     def query_legal_issue(self, query: str, subject: str = "全部科目") -> Dict[str, Any]:
         """
