@@ -14,7 +14,7 @@ Master SFT Training Dataset Unified Merger & Quality Verifier
    - 依著作權法第 9 條第 1 項第 1 款至第 3 款，憲法、法律、法規命令、公文及法院實質裁判書，依法不受著作權保護，屬公共領域資訊。
 2. 私人研析與學術資料（合理使用與私法授權限制）：
    - 個人手寫筆記屬考生個人創作；名師講義與學說爭議涉及學者文獻。
-   - 僅得在著作權法第 52 條教育研習目的及第 65 條「合理使用」基準之必要最小限度內進行個人自律研析與模型評測。
+   - 依著作權法第 52 條及第 65 條，合理使用須依具體利用目的、性質、質與量之比例及對市場影響個案判定，本宣告為工程研發限制提示，非授權判定或法律豁免保證。
    - 本專案資料集與微調權重僅供內部自律學習與答題推論研究，未獲著作權人授權前嚴禁公開散布、出版或商業營利。
 
 【資料集輸出目標】:
@@ -22,7 +22,7 @@ Master SFT Training Dataset Unified Merger & Quality Verifier
    - 100% Authentic, Verified Legal SFT Dataset (Zero synthetic noise)
    - 嚴格去重、欄位正規化為 5 大核心欄位 (id, source_type, instruction, input, output)
 2. law_exam_master_sft_unified.jsonl:
-   - 全量統一大庫 (Verified Authentic + Segregated Synthetic 1M Baseline)
+   - 全量統一大庫 (Verified Authentic 5,082 筆 + Segregated Synthetic 1M Baseline 1,000,000 筆)
    - 採原子串流生成與嚴格失敗回滾機制 (Atomic streaming with rollback on failure)
 """
 import os

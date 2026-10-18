@@ -8,7 +8,20 @@ import io
 from PIL import Image
 import pdfplumber
 import docx
-import google.generativeai as genai
+
+try:
+    from google import genai
+    from google.genai import types
+    NEW_SDK = True
+except ImportError:
+    try:
+        import google.generativeai as genai
+        types = None
+        NEW_SDK = False
+    except ImportError:
+        genai = None
+        types = None
+        NEW_SDK = False
 
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL
 
@@ -26,8 +39,14 @@ def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str]
     if not api_key:
         return "[提示] 未配置 GEMINI_API_KEY，無法執行手寫/影像 OCR 辨識。"
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name=DEFAULT_GEMINI_MODEL)
+    if NEW_SDK:
+        client = genai.Client(api_key=api_key)
+        config = types.GenerateContentConfig(temperature=0.2)
+    elif genai is not None:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=DEFAULT_GEMINI_MODEL)
+    else:
+        return "[提示] 系統未安裝 google-genai 或 google-generativeai 套件，無法執行 OCR。"
 
     prompt = """
 你是一位精通台灣法學與繁體中文手寫辨識的專家與權威法學助理。
@@ -50,12 +69,19 @@ def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str]
         chunk = images[i:i + batch_size]
         contents = [prompt] + chunk
         try:
-            resp = model.generate_content(
-                contents,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.2,
+            if NEW_SDK:
+                resp = client.models.generate_content(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=contents,
+                    config=config
                 )
-            )
+            else:
+                resp = model.generate_content(
+                    contents,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.2,
+                    )
+                )
             if resp and resp.text:
                 results.append(resp.text.strip())
         except Exception as e:

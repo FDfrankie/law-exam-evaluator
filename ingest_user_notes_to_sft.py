@@ -28,7 +28,20 @@ if sys.platform == "win32":
 
 from PIL import Image
 import pypdfium2 as pdfium
-import google.generativeai as genai
+
+try:
+    from google import genai
+    from google.genai import types
+    NEW_SDK = True
+except ImportError:
+    try:
+        import google.generativeai as genai
+        types = None
+        NEW_SDK = False
+    except ImportError:
+        genai = None
+        types = None
+        NEW_SDK = False
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
 from merge_all_sft_datasets import merge_datasets
@@ -62,8 +75,18 @@ def ocr_and_distill_notes(images: List[Image.Image], doc_title: str) -> List[Dic
         print("  [錯誤] 未配置 GEMINI_API_KEY，請確認 .env 設定！")
         return []
 
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(model_name=DEFAULT_GEMINI_MODEL)
+    if NEW_SDK:
+        client = genai.Client(api_key=api_key)
+        config = types.GenerateContentConfig(
+            temperature=0.2,
+            response_mime_type="application/json"
+        )
+    elif genai is not None:
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=DEFAULT_GEMINI_MODEL)
+    else:
+        print("  [錯誤] 系統未安裝 google-genai 套件！")
+        return []
 
     prompt = f"""
 你是一位精通台灣法學與國家考試閱卷命題之權威法學專家。
@@ -91,7 +114,14 @@ def ocr_and_distill_notes(images: List[Image.Image], doc_title: str) -> List[Dic
         chunk = images[i:i+batch_size]
         print(f"  正在辨識與蒸餾手寫筆記第 {i+1} ~ {min(i+batch_size, len(images))} 頁...")
         try:
-            response = model.generate_content([prompt] + chunk)
+            if NEW_SDK:
+                response = client.models.generate_content(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=[prompt] + chunk,
+                    config=config
+                )
+            else:
+                response = model.generate_content([prompt] + chunk)
             resp_text = response.text.strip()
             
             # 提取 JSON 內容

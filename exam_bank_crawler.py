@@ -27,9 +27,18 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
 try:
-    import google.generativeai as genai
+    from google import genai
+    from google.genai import types
+    NEW_SDK = True
 except ImportError:
-    genai = None
+    try:
+        import google.generativeai as genai
+        types = None
+        NEW_SDK = False
+    except ImportError:
+        genai = None
+        types = None
+        NEW_SDK = False
 
 RAW_EXAMS_DIR = Path(DATA_DIR) / "raw_exams"
 PDFS_DIR = RAW_EXAMS_DIR / "pdfs"
@@ -103,14 +112,27 @@ class LawExamBankCrawler:
         if not api_key:
             return "未配置 GEMINI_API_KEY，無法執行 OCR。"
 
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
         prompt = "請精確逐字謄錄這份法學考試試題的題目文字、子題、配分與完整案件事實："
-        resp = model.generate_content([prompt] + images)
-        if resp and resp.text:
-            item["exam_text"] = resp.text.strip()
-            self._save_catalog()
-            return item["exam_text"]
+        try:
+            if NEW_SDK:
+                client = genai.Client(api_key=api_key)
+                resp = client.models.generate_content(
+                    model=DEFAULT_GEMINI_MODEL,
+                    contents=[prompt] + images
+                )
+            elif genai is not None:
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
+                resp = model.generate_content([prompt] + images)
+            else:
+                return "系統未安裝 google-genai 套件，無法執行 OCR。"
+
+            if resp and resp.text:
+                item["exam_text"] = resp.text.strip()
+                self._save_catalog()
+                return item["exam_text"]
+        except Exception as e:
+            print(f"  [警示] 試題 OCR 失敗: {e}")
         return None
 
     def crawl_ntu_graduate_exams(self, max_pages: int = 5) -> int:
