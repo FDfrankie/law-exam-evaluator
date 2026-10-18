@@ -779,20 +779,36 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
         
         ver_file = Path(DATA_DIR) / "training_data" / "law_exam_verified_sft.jsonl"
         mas_file = Path(DATA_DIR) / "training_data" / "law_exam_master_sft_unified.jsonl"
+        bal_file = Path(DATA_DIR) / "training_data" / "law_exam_balanced_weighted_sft.jsonl"
         
         c1, c2, c3 = st.columns(3)
-        c1.metric("高純度核心核實庫", f"{5082:,} 筆" if ver_file.exists() else "建構中")
-        c2.metric("全量百萬微調大庫", f"{1005082:,} 筆" if mas_file.exists() else "建構中")
-        c3.metric("欄位綱要驗證", "100% 5 欄位相容")
+        c1.metric("純核實核心庫 (100% 真跡)", f"{5082:,} 筆" if ver_file.exists() else "建構中")
+        c2.metric("混合加權平衡庫 (推薦)", f"{118650:,} 筆" if bal_file.exists() else "建構中")
+        c3.metric("全量百萬統一大庫", f"{1005082:,} 筆" if mas_file.exists() else "建構中")
         
         st.markdown("""
         #### 🛡️ Hugging Face Arrow 綱要相容保證：
         每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕訓練資料載入與分詞之型別異常：
         - `id`: 樣本唯一識別碼
-        - `source_type`: 資料來源識別（手寫筆記 / 真實判決 / 憲法法庭 / 名師講義 / 模擬題庫）
+        - `source_type`: 資料來源識別（手寫筆記 / 真實判決 / 憲法法庭 / 名師講義 / 模擬題庫 / 合成推理底模）
         - `instruction`: 任務系統指令（IRAC 申論、一試單選、評分診斷）
         - `input`: 案例情境或題目題幹
         - `output`: 上位卷完整解答或標準試題解析
+
+        #### ⚖️ 資料庫組成比例與實證透明度 (Synthesis Ratio Disclosure)：
+        - **純核實核心庫 (5,082 筆)**：100% 取自真實實質裁判、憲法法庭判決、歷年司律真題及考生個人手寫筆記，無合成樣本。
+        - **混合加權平衡庫 (118,650 筆)**：
+          - **78,650 筆 (66.3%)**：真實高價值核心資料科學過採樣（手寫筆記 500x、真題 50x、名師學說 20x、裁判憲法 10x）。
+          - **40,000 筆 (33.7%)**：司法論證結構模板 (`synthesized_judicial_reasoning`)，作為三段論法語法底模以避免顯存過擬合。
+        - **全量百萬統一大庫 (1,005,082 筆)**：5,082 筆核實真跡 + 1,000,000 筆完整司法推理模板基準庫。
+
+        #### 🔄 兩種「續訓」技術模式之嚴謹區別：
+        1. **同環境 Checkpoint 斷點續訓 (In-Session Resumption)**：
+           - 透過 `RESUME_FROM_CHECKPOINT=True`；
+           - **完整恢復**：模型權重 + AdamW 優化器狀態矩陣 + 學習率排程步數 + 亂數種子，無損接續前次中斷點。
+        2. **跨 Session LoRA 熱啟動微調 (Cross-Session Continual Warm Start)**：
+           - 透過 `EXISTING_LORA_PATH` 指定已導出之 LoRA 目錄或 Zip 檔；
+           - **僅繼承權重**：優化器與學習率會重新初始化，展開第二階段增量遷移微調。
 
         #### 📜 資料來源溯源與授權邊界 (Data Provenance & Legal Licensing)：
         - **資料來源合法溯源**：本訓練集涵蓋之實務裁判、憲法法庭判決與全國法規命令，均取自司法院裁判書公開系統、憲法法庭公報及全國法規資料庫公開政府資訊；國家考試題目均為考選部公開真題。
@@ -801,8 +817,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
 
         #### 🚀 Google Colab / Kaggle 雲端微調執行指南：
         1. **Colab 訓練**：開啟專案目錄下 `train_colab.ipynb`，直接掛載 Google Drive 讀取資料集；
-        2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，填入 Google Drive 分享連結極速自動調用（或掛載 Kaggle Input）；
-        3. **中斷接續**：支援 `RESUME_FROM_CHECKPOINT` 自動接續最近 checkpoint，跨 session 支援 `EXISTING_LORA_PATH` 接續微調；
-        4. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
+        2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，內建預設 Google Drive 分享連結極速自動調用；
+        3. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
         """)
 

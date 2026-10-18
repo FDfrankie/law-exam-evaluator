@@ -86,7 +86,7 @@ class LawExamEvaluator:
 
         response = None
         models_to_try = [self.model_name]
-        for m in ["gemini-2.5-flash", "gemini-2.5-pro"]:
+        for m in ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
             if m not in models_to_try:
                 models_to_try.append(m)
 
