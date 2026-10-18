@@ -1,6 +1,6 @@
 """
 司律手寫試卷自動評分核心引擎
-使用 Gemini 2.0 Flash 多模態視覺模型：
+使用官方 Google GenAI SDK (支援 Gemini 3.8 Flash / Flash Latest)：
 1. 繁體手寫辨識與專有名詞校正 (支援圖片、PDF 或 Word 文字)
 2. 司律閱卷級距評分（爭點識別、法學論述/三段論法、學說實務見解、事實涵攝）
 3. 輸出結構化診斷報告與建議
@@ -9,8 +9,15 @@ import os
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
-import google.generativeai as genai
 from PIL import Image
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    USE_MODERN_GENAI = True
+except ImportError:
+    import google.generativeai as legacy_genai
+    USE_MODERN_GENAI = False
 
 from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL
 
@@ -19,11 +26,14 @@ class LawExamEvaluator:
         self.api_key = get_gemini_api_key()
         if not self.api_key:
             raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
-        genai.configure(api_key=self.api_key)
         self.model_name = model_name
         self.reports_dir = Path(REPORTS_DIR)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
-        self.model = genai.GenerativeModel(model_name=self.model_name)
+        if USE_MODERN_GENAI:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            legacy_genai.configure(api_key=self.api_key)
+            self.model = legacy_genai.GenerativeModel(model_name=self.model_name)
 
     def evaluate_submission(
         self,
@@ -79,12 +89,7 @@ class LawExamEvaluator:
             user_content.append("【以下為考生實際手寫作答圖片】：")
             user_content.extend(images)
 
-        gen_config = genai.types.GenerationConfig(
-            temperature=0.2,
-            response_mime_type="application/json"
-        )
-
-        response = None
+        response_text = None
         models_to_try = [self.model_name]
         for m in ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
             if m not in models_to_try:
@@ -93,8 +98,25 @@ class LawExamEvaluator:
         last_err = None
         for m_name in models_to_try:
             try:
-                cur_model = genai.GenerativeModel(model_name=m_name)
-                response = cur_model.generate_content(user_content, generation_config=gen_config)
+                if USE_MODERN_GENAI:
+                    config = genai_types.GenerateContentConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json"
+                    )
+                    resp = self.client.models.generate_content(
+                        model=m_name,
+                        contents=user_content,
+                        config=config
+                    )
+                    response_text = resp.text
+                else:
+                    cur_model = legacy_genai.GenerativeModel(model_name=m_name)
+                    gen_config = legacy_genai.types.GenerationConfig(
+                        temperature=0.2,
+                        response_mime_type="application/json"
+                    )
+                    resp = cur_model.generate_content(user_content, generation_config=gen_config)
+                    response_text = resp.text
                 break
             except Exception as e:
                 err_str = str(e).lower()
@@ -103,19 +125,19 @@ class LawExamEvaluator:
                 last_err = e
                 continue
 
-        if response is None:
+        if response_text is None:
             raise RuntimeError(f"所有 Gemini 模型呼叫均失敗，最後錯誤: {last_err}")
 
         try:
-            result_json = json.loads(response.text)
+            result_json = json.loads(response_text)
         except Exception:
             try:
-                clean_text = response.text.strip().replace("```json", "").replace("```", "")
+                clean_text = response_text.strip().replace("```json", "").replace("```", "")
                 result_json = json.loads(clean_text)
             except Exception:
                 result_json = {
                     "error": "JSON 解析失敗",
-                    "raw_response": response.text[:2000],
+                    "raw_response": response_text[:2000],
                     "total_score": 0,
                     "grade_level": "無法評定"
                 }

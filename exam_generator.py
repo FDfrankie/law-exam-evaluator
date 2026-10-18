@@ -10,7 +10,13 @@
 import json
 import re
 from typing import Dict, Any, List, Optional, Callable
-import google.generativeai as genai
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    USE_MODERN_GENAI = True
+except ImportError:
+    import google.generativeai as legacy_genai
+    USE_MODERN_GENAI = False
 
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL
 
@@ -19,11 +25,14 @@ class LawExamGenerator:
         self.api_key = get_gemini_api_key()
         if not self.api_key:
             raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
-        genai.configure(api_key=self.api_key)
         self.model_name = model_name
-        self.model = genai.GenerativeModel(model_name=model_name)
+        if USE_MODERN_GENAI:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            legacy_genai.configure(api_key=self.api_key)
+            self.model = legacy_genai.GenerativeModel(model_name=model_name)
 
-    def _call_model(self, prompt: Any, generation_config: genai.types.GenerationConfig) -> Any:
+    def _call_model(self, prompt: Any, generation_config: Any = None) -> Any:
         models_to_try = [self.model_name]
         for m in ["gemini-3.8-flash", "gemini-flash-latest", "gemini-2.5-flash", "gemini-2.5-pro"]:
             if m not in models_to_try:
@@ -31,8 +40,21 @@ class LawExamGenerator:
         last_err = None
         for m_name in models_to_try:
             try:
-                mod = genai.GenerativeModel(model_name=m_name)
-                return mod.generate_content(prompt, generation_config=generation_config)
+                if USE_MODERN_GENAI:
+                    temp = getattr(generation_config, "temperature", 0.3) if generation_config else 0.3
+                    mime = getattr(generation_config, "response_mime_type", "application/json") if generation_config else "application/json"
+                    cfg = genai_types.GenerateContentConfig(
+                        temperature=temp,
+                        response_mime_type=mime
+                    )
+                    return self.client.models.generate_content(
+                        model=m_name,
+                        contents=prompt,
+                        config=cfg
+                    )
+                else:
+                    mod = legacy_genai.GenerativeModel(model_name=m_name)
+                    return mod.generate_content(prompt, generation_config=generation_config)
             except Exception as e:
                 err_str = str(e).lower()
                 if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
