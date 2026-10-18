@@ -578,30 +578,103 @@ def get_law_key_regulations(law_name: str) -> List[Dict[str, Any]]:
 
     return enriched_list
 
+INTERPRETATIONS_CATALOG_PATHS = [
+    Path(DATA_DIR) / "national_laws" / "interpretations_catalog.json",
+    Path(__file__).resolve().parent / "data" / "national_laws" / "interpretations_catalog.json",
+    Path(r"G:\我的雲端硬碟\LawExamData\national_laws\interpretations_catalog.json")
+]
+
+_CACHED_MASTER_INTERPRETATIONS: Optional[List[Dict[str, Any]]] = None
+
+def get_all_administrative_rulings() -> List[Dict[str, Any]]:
+    """載入所有行政函釋（全面整合爬取之 600+ 部會函釋與標竿函釋）並標準化欄位"""
+    global _CACHED_MASTER_INTERPRETATIONS
+    if _CACHED_MASTER_INTERPRETATIONS is not None:
+        return _CACHED_MASTER_INTERPRETATIONS
+
+    catalog = []
+    for p in INTERPRETATIONS_CATALOG_PATHS:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    catalog = json.load(f)
+                if catalog:
+                    break
+            except Exception:
+                pass
+
+    unified = []
+    seen = set()
+    
+    # 1. 優先納入標竿函釋
+    for r in LANDMARK_ADMIN_RULINGS:
+        doc_no = r.get("doc_number", "")
+        if doc_no and doc_no not in seen:
+            seen.add(doc_no)
+            unified.append(r)
+            
+    # 2. 納入 interpretations_catalog.json (涵蓋經濟部商工行政爬取之全量函釋與部會令釋)
+    for c in catalog:
+        doc_no = c.get("interpret_id") or c.get("doc_number", "")
+        if doc_no and doc_no not in seen:
+            seen.add(doc_no)
+            raw_target = str(c.get("article_no", ""))
+            art_no_clean = re.sub(r'[第條\s]', '', raw_target).replace('之', '-')
+            entry = {
+                "id": doc_no,
+                "law_name": c.get("law_name", ""),
+                "article_target": raw_target if raw_target.startswith("第") else f"第 {raw_target} 條" if raw_target else "",
+                "article_no_clean": art_no_clean,
+                "articles_cited": c.get("articles_cited", []),
+                "agency": c.get("authority") or c.get("agency", "經濟部商業發展署"),
+                "doc_number": doc_no,
+                "date": c.get("date", ""),
+                "title": c.get("title", ""),
+                "holding": c.get("holding", ""),
+                "content_analysis": c.get("full_text") or c.get("content_analysis") or c.get("holding", ""),
+                "exam_point_hint": c.get("exam_hint") or c.get("exam_point_hint", ""),
+                "source": c.get("source", "主管機關法規檢索系統")
+            }
+            unified.append(entry)
+
+    # 3. 納入動態爬取之快取
+    for cr in load_crawled_admin_rulings():
+        doc_no = cr.get("doc_number") or cr.get("id", "")
+        if doc_no and doc_no not in seen:
+            seen.add(doc_no)
+            unified.append(cr)
+
+    _CACHED_MASTER_INTERPRETATIONS = unified
+    return _CACHED_MASTER_INTERPRETATIONS
+
 def get_admin_rulings_for_article(law_name: str, article_no: str) -> List[Dict[str, Any]]:
-    """獲取特定法典與條號（如公司法 172-1、著作權法 3 條）匹配之權威主管機關函釋"""
+    """獲取特定法典與條號（如公司法 248、公司法 206、著作權法 3 條）匹配之權威主管機關函釋"""
     clean_no = re.sub(r'[第條\s]', '', str(article_no)).replace('之', '-')
-    
-    # 讀取本地動態快取之已爬取函釋
-    cached_crawled = load_crawled_admin_rulings()
-    
-    combined_pool = LANDMARK_ADMIN_RULINGS + cached_crawled
+    all_rulings = get_all_administrative_rulings()
     
     matched = []
-    for r in combined_pool:
+    # 1. 優先完全命中該條號
+    for r in all_rulings:
         r_law = r.get("law_name", "")
         r_clean_no = r.get("article_no_clean", "")
+        r_cited = r.get("articles_cited", [])
         
-        # 1. 完全命中該條號
-        if (r_law == law_name or r_law in law_name or law_name in r_law) and (clean_no and r_clean_no == clean_no):
-            matched.append(r)
-        # 2. 同一法律之重大函釋
-        elif (r_law == law_name or r_law in law_name or law_name in r_law) and (clean_no == "" or r_clean_no == ""):
+        is_law_match = (r_law == law_name or r_law in law_name or law_name in r_law)
+        
+        is_art_match = False
+        if clean_no:
+            if r_clean_no == clean_no:
+                is_art_match = True
+            elif any(f"第{clean_no}條" in c or f"{clean_no}條" in c for c in r_cited):
+                is_art_match = True
+                
+        if is_law_match and is_art_match:
             matched.append(r)
 
-    # 若精確條號無專屬函釋，則返回該法律之所有代表性主管函釋供考生參考
+    # 2. 若精確條號無專屬函釋，則返回該法律之代表性重大函釋（最多 8 筆）
     if not matched:
-        matched = [r for r in combined_pool if r.get("law_name") == law_name or law_name in r.get("law_name", "")]
+        law_rulings = [r for r in all_rulings if r.get("law_name") == law_name or law_name in r.get("law_name", "")]
+        matched = law_rulings[:8]
 
     return matched
 

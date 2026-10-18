@@ -23,6 +23,7 @@ from admin_rulings_engine import (
     get_law_key_regulations,
     get_regulation_full_details,
     get_admin_rulings_for_article,
+    get_all_administrative_rulings,
     crawl_and_synthesize_admin_rulings,
     get_chorder_regulations_map,
     LANDMARK_ADMIN_RULINGS,
@@ -1692,7 +1693,7 @@ elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
 elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)":
     st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")
-    st.write("全面收錄全台 **1,791 部國家法律、法規命令與施行細則，共 60,301 條法定條文**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則**及**考生個人手寫讀書筆記**！")
+    st.write("全面收錄全台 **2,053 部國家法律、法規命令與施行細則，共 62,342 條法定條文，及 600+ 則中央部會權威行政函釋**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則全文點閱**、**主管機關權威函釋**及**考生個人手寫讀書筆記**！")
 
     # 1. 導航選擇列
     col_b, col_l, col_q = st.columns([1, 1, 2])
@@ -1709,17 +1710,36 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             key="six_codes_search_kw"
         )
 
+    # 若當前選擇者為法規命令或細則，提示授權母法並提供快速返回母法按鈕
+    if any(s in selected_law for s in ["辦法", "細則", "準則", "規則", "規程", "標準"]):
+        parent_candidate = None
+        for p_cand in ["公司法", "證券交易法", "民法", "專利法", "商標法", "著作權法", "勞動基準法", "行政程序法", "民事訴訟法", "刑事訴訟法"]:
+            if p_cand in selected_law:
+                parent_candidate = p_cand
+                break
+        if not parent_candidate:
+            if "公司" in selected_law: parent_candidate = "公司法"
+            elif "證券" in selected_law or "董事會" in selected_law: parent_candidate = "公司法"
+            elif "專利" in selected_law: parent_candidate = "專利法"
+            elif "商標" in selected_law: parent_candidate = "商標法"
+            elif "著作" in selected_law: parent_candidate = "著作權法"
+            elif "勞動" in selected_law or "請假" in selected_law: parent_candidate = "勞動基準法"
 
-    # 執行檢索
-    matched_articles = search_articles(keyword=search_kw, selected_law=selected_law, selected_branch=selected_branch)
-
-    st.markdown(f"**📚 當前檢索結果**：共找到 **{len(matched_articles)}** 條條文")
+        if parent_candidate:
+            bc_col1, bc_col2 = st.columns([3, 1])
+            with bc_col1:
+                st.info(f"📘 您目前正在研讀法規命令/施行細則：**《{selected_law}》**（授權母法為【{parent_candidate}】）")
+            with bc_col2:
+                if st.button(f"🔙 返回母法【{parent_candidate}】", use_container_width=True):
+                    st.session_state["six_codes_law"] = parent_candidate
+                    st.session_state["six_codes_search_kw"] = ""
+                    st.rerun()
 
     # 跨部會中央主管機關行政函釋快速檢索專區
-    with st.expander("🏛️ 中央主管機關行政函釋（經濟部/智財局/金管會/法務部/勞動部/財政部）跨部會速查庫", expanded=False):
+    with st.expander("🏛️ 中央主管機關行政函釋（經濟部/智財局/金管會/法務部/勞動部/財政部）跨部會速查庫 (已收錄 600+ 則)", expanded=False):
         st.markdown("全面收錄中央主管機關之具拘束力行政指導、令函與重要解釋。您可直接依主管部會或關鍵字查詢：")
-        all_rulings_pool = LANDMARK_ADMIN_RULINGS + load_crawled_admin_rulings()
-        agencies_filter = ["全部機關", "經濟部商業司", "經濟部智慧財產局", "金融監督管理委員會", "法務部", "勞動部", "財政部賦稅署"]
+        all_rulings_pool = get_all_administrative_rulings()
+        agencies_filter = ["全部機關", "經濟部商業司", "經濟部商業發展署", "經濟部智慧財產局", "金融監督管理委員會", "法務部", "勞動部", "財政部賦稅署"]
         c_a1, c_a2 = st.columns([1, 2])
         with c_a1:
             sel_agency = st.selectbox("主管機關篩選：", agencies_filter, key="browse_agency_filter")
@@ -1750,16 +1770,49 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             ano = art.get("article_no", "")
             content = art.get("content", "")
 
-            anno = get_article_annotations(law_name=lname, article_no=ano)
+            anno = get_article_annotations(law_name=lname, article_no=ano, content=content)
             precedents = anno.get("precedents", [])
             notes = anno.get("notes", [])
-            key_regulations = anno.get("key_regulations", []) or get_law_key_regulations(lname)
+            
+            # 整合預載之核心法規命令與六法中所有關聯命令（包含公司登記辦法、公開發行公司董事會議事辦法等）
+            raw_key_regs = get_law_key_regulations(lname)
+            raw_mapped_orders = anno.get("orders", [])
+            
+            key_regulations = []
+            seen_reg_names = set()
+            for r in raw_key_regs:
+                r_name = r.get("name")
+                if r_name and r_name not in seen_reg_names:
+                    seen_reg_names.add(r_name)
+                    key_regulations.append(r)
+            
+            for o in raw_mapped_orders:
+                o_name = o.get("name")
+                if o_name and o_name not in seen_reg_names:
+                    seen_reg_names.add(o_name)
+                    o_arts = o.get("articles", [])
+                    key_regulations.append({
+                        "name": o_name,
+                        "type": o.get("type", "法規命令"),
+                        "desc": o.get("desc", ""),
+                        "article_count": o.get("articles_count", len(o_arts)),
+                        "articles": o_arts,
+                        "details": {
+                            "name": o_name,
+                            "category": o.get("category", "中央行政部會"),
+                            "modified_date": o.get("modified_date", ""),
+                            "url": "",
+                            "total_articles": len(o_arts),
+                            "articles": [{"no": a.get("article_no", ""), "content": a.get("content", "")} for a in o_arts]
+                        } if o_arts else get_regulation_full_details(o_name)
+                    })
+
             admin_rulings = anno.get("admin_rulings", []) or get_admin_rulings_for_article(lname, ano)
 
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
             badge_orders = f" ｜ 📋 【{len(key_regulations)} 部法規命令】" if key_regulations else ""
             badge_rulings = f" ｜ 📜 【{len(admin_rulings)} 筆主管函釋】" if admin_rulings else ""
-            badge_notes = f" ｜ 📝 【關聯 {len(notes)} 份個人筆記】" if notes else ""
+            badge_notes = f" ｜ 📝 【精準命中 {len(notes)} 份個人筆記】" if notes else ""
 
             with st.expander(f"📖 【{lname} {ano}】{badge_prec}{badge_orders}{badge_rulings}{badge_notes}", expanded=(idx < 2)):
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
@@ -1802,8 +1855,15 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                 if reg.get("key_articles_hint"):
                                     st.info(f"💡 **國考與實務核心考點條文**：\n{reg['key_articles_hint']}")
                                 
-                                if reg_details and reg_details.get("articles"):
-                                    arts = reg_details["articles"]
+                                raw_arts = (reg_details.get("articles") if reg_details else None) or reg.get("articles") or []
+                                arts = []
+                                for a in raw_arts:
+                                    a_no = a.get("no") or a.get("article_no") or ""
+                                    a_c = a.get("content") or ""
+                                    if a_no or a_c:
+                                        arts.append({"no": a_no, "content": a_c})
+
+                                if arts:
                                     st.markdown(f"##### 📖 《{reg_name}》條文全文點閱系統 (共收錄 {len(arts)} 條)")
                                     
                                     read_mode = st.radio(
@@ -1841,8 +1901,20 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                                 st.markdown("---")
                                         else:
                                             st.caption("請輸入關鍵字以即時過濾法規命令條文。")
-                                            
-                                    if reg_details.get("url"):
+                                
+                                # 跳轉與外鏈按鈕列
+                                btn_col1, btn_col2 = st.columns([1, 1])
+                                with btn_col1:
+                                    if st.button(f"📖 在六法主檢索區開啟《{reg_name}》全文", key=f"btn_jump_order_{idx}_{r_idx}", type="primary"):
+                                        st.session_state["six_codes_law"] = reg_name
+                                        for br_name, br_laws in SIX_CODES_TAXONOMY.items():
+                                            if reg_name in br_laws:
+                                                st.session_state["six_codes_branch"] = br_name
+                                                break
+                                        st.session_state["six_codes_search_kw"] = ""
+                                        st.rerun()
+                                with btn_col2:
+                                    if reg_details and reg_details.get("url"):
                                         st.link_button(f"🌐 前往全國法規資料庫官方查看《{reg_name}》", reg_details["url"])
                     else:
                         st.info("此法規母法目前無直接對應之核心法規命令，或直接以母法本體為規範依據。")
@@ -1917,11 +1989,22 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
 
                 with tab_notes:
                     if notes:
-                        st.markdown(f"**考生 Google Drive / SamsungNotes 中關聯此法條考科之講義筆記：**")
-                        for n in notes[:8]:
-                            st.markdown(f"- 📄 **《{n['filename']}》** ({n['size_kb']} KB)")
+                        st.markdown(f"#### 📝 個人讀書筆記精準命中清單（共 {len(notes)} 份高相關筆記）")
+                        st.caption("系統已依據法典編章架構、條號區間與實體法考點關鍵字嚴格過濾，排除非相關章節：")
+                        for n in notes:
+                            reason = n.get("match_reason", "考科編章關聯")
+                            with st.container():
+                                st.markdown(f"**📄 《{n['filename']}》** (`{n.get('size_kb', 0)}` KB)")
+                                st.info(f"🎯 **精準命中依據/章節考點**：{reason}")
+                                st.markdown("---")
                     else:
-                        st.caption("此考科目前尚未在 SamsungNotes 中上傳專屬手寫筆記。")
+                        st.info(f"💡 您的個人讀書筆記庫中，目前無直接對應【{lname} {ano}】之專屬章節筆記。系統已為您嚴格過濾掉其他不相關章節（如身分法、其他各論），確保筆記精準不冗餘。")
+                        # 亦提供考生手動查閱全部該法考科筆記之彈性入口
+                        raw_notes_for_law = get_article_annotations(law_name=lname, article_no="").get("notes", [])
+                        if raw_notes_for_law:
+                            with st.expander(f"📂 展開查閱【{lname}】全部筆記目錄（共 {len(raw_notes_for_law)} 份，手動對照）", expanded=False):
+                                for rn in raw_notes_for_law[:15]:
+                                    st.caption(f"- 📄 《{rn['filename']}》 ({rn.get('size_kb', 0)} KB)")
 
                 with tab_ai:
                     ai_cache_key = f"ai_anno_{lname}_{ano}"

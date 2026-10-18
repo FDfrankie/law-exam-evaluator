@@ -110,18 +110,52 @@ def load_six_codes_data() -> tuple:
     return _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP
 
 def get_laws_in_branch(branch_name: str) -> List[str]:
-    """獲取指定法學門類下的所有法規名稱"""
+    """獲取指定法學門類下的所有法規名稱（核心主法優先，法規命令隨後）"""
     articles, meta, law_map = load_six_codes_data()
-    expected_laws = SIX_CODES_TAXONOMY.get(branch_name, [])
-    # 僅返回實際收錄有條文者
+    expected_laws = list(SIX_CODES_TAXONOMY.get(branch_name, []))
     available = [l for l in expected_laws if l in law_map]
+    
+    # 結合 metadata 中的全量分類
+    meta_tax = meta.get("taxonomy", {})
+    matched_meta_laws = []
+    for br_k, br_list in meta_tax.items():
+        if any(c in br_k for c in ["商事", "公司", "金融"]) and any(c in branch_name for c in ["商事", "財經"]):
+            matched_meta_laws.extend(br_list)
+        elif any(c in br_k for c in ["智慧財產", "勞動"]) and any(c in branch_name for c in ["智慧財產", "勞動"]):
+            matched_meta_laws.extend(br_list)
+        elif br_k == branch_name:
+            matched_meta_laws.extend(br_list)
+
+    for l in matched_meta_laws:
+        if l in law_map and l not in available:
+            available.append(l)
+
     if not available:
-        # 若分類無直接對應，返回該門類關鍵字包含者
         for l in law_map.keys():
             if any(k in l for k in branch_name.replace("🏛️", "").replace("📜", "").replace("⚖️", "").replace("⚔️", "").replace("🛡️", "").replace("🏢", "").replace("💼", "").replace("💡", "").split("與")[0].split("及")[0]):
                 if l not in available:
                     available.append(l)
     return available or list(law_map.keys())[:10]
+
+def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
+    """獲取指定法典或法規命令的全部法定條文全文"""
+    articles, meta, law_map = load_six_codes_data()
+    if law_name in law_map:
+        return law_map[law_name]
+    reg_map = meta.get("regulations_map", {})
+    for parent_l, ords in reg_map.items():
+        for ord_item in ords:
+            if ord_item.get("name") == law_name and ord_item.get("articles"):
+                return [
+                    {
+                        "law_name": law_name,
+                        "article_no": a.get("article_no", ""),
+                        "content": a.get("content", ""),
+                        "category": ord_item.get("category", "")
+                    }
+                    for a in ord_item.get("articles", [])
+                ]
+    return []
 
 def normalize_article_no(ano_str: str) -> str:
     """標準化條號字串，例如 '第 184 條' -> '184', '第 10-1 條' -> '10-1', '第 10 之 1 條' -> '10-1'"""
@@ -229,12 +263,11 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
             key = f"{lname}_第{clean_no}條"
             if key in prec_index:
                 for p in prec_index[key]:
-                    p_text = f"{p.get('title', '')} {p.get('holding', '')} {p.get('sub_category', '')}"
                     if text_kw in p_text:
                         score += 60
                         break
-        elif not raw_kw:
-            # 無搜尋詞時依序瀏覽法典條文
+        elif not text_kw and not target_no:
+            # 無額外文字搜尋詞或純輸入法規名稱時，依序呈現該法規全部條文
             score = 1
             
         if score > 0:
@@ -244,7 +277,336 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     scored_results.sort(key=lambda x: -x[0])
     return [x[1] for x in scored_results[:50]]
 
-def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
+def get_precise_relevant_notes(law_name: str, article_no: str, content: str = "", notes_cat: dict = None) -> List[Dict[str, Any]]:
+    """
+    依據法典編章結構、條號區間與實體法考點關鍵字，精準過濾關聯之個人讀書筆記。
+    嚴格防範「全科全部灌入（例如民法184條灌入離婚親屬筆記）」的問題，只返回高精確度相關之筆記（最多 3~5 篇）。
+    """
+    if not notes_cat:
+        return []
+    
+    # 統整對應考科筆記清單
+    candidate_notes = []
+    if "刑法" in law_name:
+        candidate_notes = notes_cat.get("刑法", []) or notes_cat.get("中華民國刑法", [])
+    elif "民法" in law_name:
+        candidate_notes = notes_cat.get("民法", [])
+    elif "憲法" in law_name:
+        candidate_notes = notes_cat.get("憲法", []) or notes_cat.get("中華民國憲法", [])
+    elif "公司法" in law_name:
+        candidate_notes = notes_cat.get("公司法", [])
+    elif "保險法" in law_name:
+        candidate_notes = notes_cat.get("保險法", [])
+    elif "證券交易法" in law_name or "證交法" in law_name:
+        candidate_notes = notes_cat.get("證券交易法", [])
+    elif "民事訴訟法" in law_name or "民訴" in law_name:
+        candidate_notes = notes_cat.get("民事訴訟法", [])
+    else:
+        candidate_notes = notes_cat.get(law_name, [])
+
+    if not candidate_notes:
+        return []
+
+    # 提取條號數值
+    m = re.search(r'\d+', str(article_no))
+    art_num = int(m.group(0)) if m else None
+
+    scored = []
+    for n in candidate_notes:
+        fn = n.get("filename", "")
+        score = 0
+        match_reason = ""
+
+        # ------------------ 民法過濾規則 ------------------
+        if "民法" in law_name and art_num is not None:
+            # 1. 民總 (1~152 條)
+            if 1 <= art_num <= 152:
+                if "身分法_" in fn or "債各_" in fn or "債編" in fn:
+                    continue  # 嚴格排除身分法與債各筆記
+                if "民總_" in fn:
+                    score += 50
+                    if 1 <= art_num <= 24 and ("自然人" in fn or "權利主體" in fn):
+                        score += 150
+                        match_reason = "民法總則：權利主體（自然人）專題"
+                    elif 66 <= art_num <= 70 and ("物" in fn or "權利客體" in fn):
+                        score += 150
+                        match_reason = "民法總則：權利客體（物）專題"
+                    elif 71 <= art_num <= 118 and "法律行為" in fn:
+                        score += 120
+                        match_reason = "民法總則：法律行為專題"
+                        if 86 <= art_num <= 98 and "意思表示" in fn:
+                            score += 80
+                            match_reason = "民法總則：意思表示專題"
+                        elif (12 <= art_num <= 15 or 99 <= art_num <= 102) and ("行為能力" in fn or "條件" in fn):
+                            score += 80
+                            match_reason = "民法總則：行為能力與條件期限"
+                    elif 103 <= art_num <= 118 and "代理" in fn:
+                        score += 180
+                        match_reason = "民法總則：代理與無權處分專題"
+                    elif 125 <= art_num <= 147 and "消滅時效" in fn:
+                        score += 180
+                        match_reason = "民法總則：消滅時效專題"
+
+            # 2. 債編 (153~756 條)
+            elif 153 <= art_num <= 756:
+                if "身分法_" in fn or "民總_" in fn:
+                    continue  # 嚴格排除身分法與民總筆記
+                if "債" in fn:
+                    score += 50
+                    if 184 <= art_num <= 198:  # 侵權行為
+                        if "債總二" in fn:
+                            score += 150
+                            match_reason = "民法債編：債總二（侵權行為損害賠償專題）"
+                        elif "侵權" in fn:
+                            score += 180
+                            match_reason = "民法債編：侵權行為責任專題"
+                    elif 179 <= art_num <= 183:  # 不當得利
+                        if "債總二" in fn or "不當得利" in fn:
+                            score += 150
+                            match_reason = "民法債編：不當得利專題"
+                    elif 345 <= art_num <= 756:  # 債各
+                        if "債各" in fn:
+                            score += 150
+                            match_reason = "民法債編各論課輔與各契約專題"
+
+            # 3. 物權編 (757~966 條)
+            elif 757 <= art_num <= 966:
+                if "身分法_" in fn or "民總_" in fn or "債各_" in fn:
+                    continue
+                if "物權" in fn:
+                    score += 150
+                    match_reason = "民法物權編體系"
+
+            # 4. 身分法親屬編 (967~1137 條)
+            elif 967 <= art_num <= 1137:
+                if "民總_" in fn or "債各_" in fn:
+                    continue  # 嚴格排除民總與債各
+                if "身分法_" in fn:
+                    score += 40
+                    if 972 <= art_num <= 979 and "婚約" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：婚約專題"
+                    elif 980 <= art_num <= 1003 and "三、婚姻" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：婚姻成立與效力專題"
+                    elif 1004 <= art_num <= 1048 and "夫妻財產制" in fn:
+                        score += 180
+                        match_reason = "身分法親屬編：夫妻財產制與剩餘財產差額分配專題"
+                    elif 1049 <= art_num <= 1058 and "離婚" in fn:
+                        score += 180
+                        match_reason = "身分法親屬編：離婚與法律效果專題"
+                    elif 1059 <= art_num <= 1070 and "自然血親" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：父母子女與自然血親專題"
+                    elif 1072 <= art_num <= 1083 and "收養" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：收養制度專題"
+                    elif 1084 <= art_num <= 1090 and "父母子女" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：親權行使與權利義務專題"
+                    elif 1091 <= art_num <= 1113 and "監護" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：監護與輔助專題"
+                    elif 1114 <= art_num <= 1121 and "扶養" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：扶養義務專題"
+                    elif 1122 <= art_num <= 1128 and "家" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：家長家屬專題"
+                    elif 1129 <= art_num <= 1137 and "親屬會議" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：親屬會議專題"
+                    elif 967 <= art_num <= 971 and "親屬總論" in fn:
+                        score += 160
+                        match_reason = "身分法親屬編：親屬編通則專題"
+
+            # 5. 身分法繼承編 (1138~1225 條)
+            elif 1138 <= art_num <= 1225:
+                if "民總_" in fn or "債各_" in fn:
+                    continue
+                if "身分法_" in fn:
+                    score += 40
+                    if art_num == 1140 and "代位繼承" in fn:
+                        score += 200
+                        match_reason = "身分法繼承編：代位繼承專題"
+                    elif art_num in [1141, 1142, 1143, 1144] and "應繼分" in fn:
+                        score += 200
+                        match_reason = "身分法繼承編：法定應繼分計算專題"
+                    elif art_num == 1145 and "喪失繼承權" in fn:
+                        score += 200
+                        match_reason = "身分法繼承編：喪失繼承權要件專題"
+                    elif art_num == 1146 and "繼承回復請求權" in fn:
+                        score += 200
+                        match_reason = "身分法繼承編：繼承回復請求權專題"
+                    elif 1147 <= art_num <= 1153 and ("效力" in fn or "概括與拋棄" in fn):
+                        score += 160
+                        match_reason = "身分法繼承編：繼承效力與限定責任專題"
+                    elif 1151 <= art_num <= 1163 and "共同繼承" in fn:
+                        score += 180
+                        match_reason = "身分法繼承編：共同繼承與遺產公同共有"
+                    elif 1174 <= art_num <= 1185 and "拋棄繼承" in fn:
+                        score += 180
+                        match_reason = "身分法繼承編：拋棄繼承要件與程序專題"
+                    elif 1186 <= art_num <= 1222 and "遺囑" in fn:
+                        score += 180
+                        match_reason = "身分法繼承編：遺囑之方式與效力專題"
+                    elif 1200 <= art_num <= 1208 and "遺贈" in fn:
+                        score += 180
+                        match_reason = "身分法繼承編：遺贈專題"
+                    elif 1223 <= art_num <= 1225 and ("特留分" in fn or "扣減" in fn):
+                        score += 200
+                        match_reason = "身分法繼承編：特留分與扣減權專題"
+                    elif 1138 <= art_num <= 1146 and ("繼承總論" in fn or "遺產繼承人" in fn):
+                        score += 150
+                        match_reason = "身分法繼承編：法定繼承人順位專題"
+
+        # ------------------ 刑法過濾規則 ------------------
+        elif "刑法" in law_name and art_num is not None:
+            if 1 <= art_num <= 100:
+                if "刑分_" in fn or "各論" in fn:
+                    continue  # 排除分則
+                if "刑總_" in fn:
+                    score += 50
+                    if 28 <= art_num <= 31 and ("正犯" in fn or "共犯" in fn or "身分犯" in fn):
+                        score += 180
+                        match_reason = "刑法總則：正犯與共犯專題"
+                    elif art_num == 14 and "過失" in fn:
+                        score += 180
+                        match_reason = "刑法總則：過失犯專題"
+                    elif 25 <= art_num <= 27 and "未遂" in fn:
+                        score += 180
+                        match_reason = "刑法總則：未遂犯理論專題"
+                    elif art_num == 15 and "不作為" in fn:
+                        score += 180
+                        match_reason = "刑法總則：不作為犯專題"
+                    elif art_num == 16 and "錯誤" in fn:
+                        score += 180
+                        match_reason = "刑法總則：錯誤理論專題"
+                    elif 50 <= art_num <= 55 and "競合" in fn:
+                        score += 180
+                        match_reason = "刑法總則：競合理論專題"
+            elif 101 <= art_num <= 363:
+                if "刑總_" in fn:
+                    continue  # 排除總則
+                if "刑分_" in fn or "各論" in fn:
+                    score += 50
+                    if 271 <= art_num <= 276 and ("殺人" in fn or "生命" in fn):
+                        score += 180
+                        match_reason = "刑法分則：侵害生命法益（殺人罪章）"
+                    elif 277 <= art_num <= 287 and ("傷害" in fn or "身體" in fn):
+                        score += 180
+                        match_reason = "刑法分則：侵害身體健康法益（傷害罪章）"
+                    elif 288 <= art_num <= 292 and "墮胎" in fn:
+                        score += 180
+                        match_reason = "刑法分則：墮胎罪章"
+                    elif 293 <= art_num <= 295 and "遺棄" in fn:
+                        score += 180
+                        match_reason = "刑法分則：遺棄罪章"
+                    elif 296 <= art_num <= 308 and ("妨害自由" in fn or "自由" in fn):
+                        score += 180
+                        match_reason = "刑法分則：妨害自由罪章"
+                    elif 315 <= art_num <= 319 and "妨害秘密" in fn:
+                        score += 180
+                        match_reason = "刑法分則：妨害秘密罪章"
+
+        # ------------------ 保險法過濾規則 ------------------
+        elif "保險法" in law_name and art_num is not None:
+            if "保險法_" in fn:
+                score += 30
+                if 14 <= art_num <= 20 and "保險利益" in fn:
+                    score += 180
+                    match_reason = "保險利益專題"
+                elif 21 <= art_num <= 28 and "保險費" in fn:
+                    score += 180
+                    match_reason = "保險費義務專題"
+                elif 29 <= art_num <= 34 and "保險人之義務" in fn:
+                    score += 180
+                    match_reason = "保險人之義務專題"
+                elif 35 <= art_num <= 42 and "複保險" in fn:
+                    score += 180
+                    match_reason = "複保險與再保險專題"
+                elif 55 <= art_num <= 69 and "要保人之義務" in fn:
+                    score += 180
+                    match_reason = "要保人之義務與告知義務專題"
+                elif art_num == 53 and "保險代位" in fn:
+                    score += 200
+                    match_reason = "保險代位權專題"
+                elif art_num == 65 and "消滅時效" in fn:
+                    score += 200
+                    match_reason = "保險法消滅時效專題"
+                elif art_num in [54, 54-1] and "契約條款" in fn:
+                    score += 180
+                    match_reason = "保險契約條款解釋原則"
+                elif 70 <= art_num <= 99 and "損害保險" in fn:
+                    score += 150
+                    match_reason = "損害保險總論"
+                elif 90 <= art_num <= 95 and "責任保險" in fn:
+                    score += 180
+                    match_reason = "責任保險專題"
+                elif 95 <= art_num <= 98 and "保證保險" in fn:
+                    score += 180
+                    match_reason = "保證保險專題"
+
+        # ------------------ 公司法過濾規則 ------------------
+        elif "公司法" in law_name and art_num is not None:
+            if "商事法" in fn:
+                score += 30
+                if 1 <= art_num <= 97 and "商事法一、二" in fn:
+                    score += 160
+                    match_reason = "公司法總則、負責人與設立"
+                elif (98 <= art_num <= 113 or 370 <= art_num <= 386) and "有限公司" in fn:
+                    score += 160
+                    match_reason = "有限公司與外國公司"
+                elif 128 <= art_num <= 245 and "股份有限公司" in fn:
+                    score += 160
+                    match_reason = "股份有限公司專題"
+                elif 246 <= art_num <= 276 and ("公司債" in fn or "新股發行" in fn):
+                    score += 180
+                    match_reason = "公司債與新股發行"
+                elif 356 <= art_num <= 357 and "閉鎖性" in fn:
+                    score += 190
+                    match_reason = "閉鎖性股份有限公司專題"
+
+        # ------------------ 憲法過濾規則 ------------------
+        elif "憲法" in law_name and art_num is not None:
+            if "憲法" in fn:
+                score += 30
+                if 1 <= art_num <= 6 and ("導論" in fn or "基本原則" in fn):
+                    score += 160
+                    match_reason = "憲法總綱與憲法基本原則"
+                elif 7 <= art_num <= 24 and "基本權" in fn:
+                    score += 180
+                    match_reason = "基本權利保障與限制合憲審查"
+                elif 25 <= art_num <= 106 and "權力分立" in fn:
+                    score += 180
+                    match_reason = "國家機關組織與權力分立原則"
+                elif 171 <= art_num <= 175 and ("釋字" in fn or "修憲" in fn):
+                    score += 180
+                    match_reason = "司法院大法官解釋與違憲審查"
+
+        # 內文關鍵字精準加分
+        if content:
+            keywords_to_check = [
+                '侵權行為', '消滅時效', '意思表示', '代理', '代位繼承', '夫妻財產',
+                '剩餘財產', '特留分', '不當得利', '正犯', '共犯', '未遂', '過失',
+                '保險代位', '告知義務', '善意受讓', '利益迴避'
+            ]
+            for kw in keywords_to_check:
+                if kw in content and kw in fn:
+                    score += 100
+                    if not match_reason:
+                        match_reason = f"命中條文法理關鍵字【{kw}】"
+
+        if score >= 100:
+            n_copy = dict(n)
+            n_copy["match_reason"] = match_reason
+            n_copy["score"] = score
+            scored.append(n_copy)
+
+    scored.sort(key=lambda x: -x["score"])
+    return scored[:5]
+
+def get_article_annotations(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、個人筆記）"""
     articles, meta, law_map = load_six_codes_data()
     
@@ -268,9 +630,14 @@ def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
         key_regs = []
         admin_rulings = []
     
-    # 個人讀書筆記
+    # 個人讀書筆記 (改採精準編章考點過濾，嚴防全科灌入)
     notes_cat = meta.get("notes_catalog", {})
-    matched_notes = notes_cat.get(law_name, [])
+    if not content:
+        for a in law_map.get(law_name, []):
+            if normalize_article_no(a.get("article_no", "")) == normalize_article_no(article_no):
+                content = a.get("content", "")
+                break
+    matched_notes = get_precise_relevant_notes(law_name=law_name, article_no=article_no, content=content, notes_cat=notes_cat)
 
     return {
         "law_name": law_name,
@@ -281,6 +648,7 @@ def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
         "admin_rulings": admin_rulings,
         "notes": matched_notes
     }
+
 
 class SixCodesDeepAnnotator:
     """呼叫 Gemini 2.0 Flash 針對特定法條進行深度立法理由、函釋與爭點實戰釋析"""
