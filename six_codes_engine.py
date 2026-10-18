@@ -259,6 +259,15 @@ def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
     reg_map = meta.get("regulations_map", {})
     matched_orders = reg_map.get(law_name, [])
     
+    # 結合行政命令全文大庫與主管機關函釋引擎
+    try:
+        from admin_rulings_engine import get_law_key_regulations, get_admin_rulings_for_article
+        key_regs = get_law_key_regulations(law_name)
+        admin_rulings = get_admin_rulings_for_article(law_name, clean_no)
+    except Exception:
+        key_regs = []
+        admin_rulings = []
+    
     # 個人讀書筆記
     notes_cat = meta.get("notes_catalog", {})
     matched_notes = notes_cat.get(law_name, [])
@@ -268,6 +277,8 @@ def get_article_annotations(law_name: str, article_no: str) -> Dict[str, Any]:
         "article_no": article_no,
         "precedents": matched_precedents,
         "orders": matched_orders,
+        "key_regulations": key_regs,
+        "admin_rulings": admin_rulings,
         "notes": matched_notes
     }
 
