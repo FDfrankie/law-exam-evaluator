@@ -526,7 +526,7 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
 # ----------------- 模式 2: 司律出題 -----------------
 elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)":
-    st.header("🎯 司律考試模擬命題系統（全面比照 300 題模擬題庫規格）")
+    st.header("🎯 司律考試模擬命題系統（一試選擇 / 二試申論實例題）")
     st.write("可放入個人手寫/打字讀書筆記、指定考科與考點，由法學大模型為您量身打造司律一試選擇題或二試實例申論題。")
 
     stage = st.radio("選擇考試階段：", ["一試 (選擇題 / 單選題)", "二試 (申論實例題)"], horizontal=True)
@@ -1550,40 +1550,6 @@ elif app_mode == "📖 高分權威擬答生成":
 elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
     st.header("🔍 AI 爭點查詢與權威判解・學說速查中心")
     st.write("輸入法學爭點、核心關鍵字或案例事實，AI 智慧法學引擎將即刻引出**核心法條構成要件**、**最高司法權威見解（憲法法庭判決/最高法院大法庭裁定/精選裁判）**、**學說肯否二說**與**二試上位卷 IRAC 開標示範**，並支援一鍵帶入試卷評分或擬答生成！")
-
-    # 快捷範例按鈕列
-    st.markdown("##### 💡 司律必考核心重大爭點快捷速查：")
-    preset_cols = st.columns(4)
-    preset_query = None
-    with preset_cols[0]:
-        if st.button("⚖️ 借名登記處分效力", use_container_width=True):
-            preset_query = "借名登記之出名人未經同意將不動產處分移轉予第三人，效力為何？"
-    with preset_cols[1]:
-        if st.button("⚖️ 原因自由行為責任", use_container_width=True):
-            preset_query = "刑法第19條第3項原因自由行為之責任能力判定標準與過失自陷處罰界限"
-    with preset_cols[2]:
-        if st.button("⚖️ 保險詐欺與除斥期間", use_container_width=True):
-            preset_query = "要保人惡意詐欺違反告知義務逾2年，保險人能否依民法第92條撤銷？"
-    with preset_cols[3]:
-        if st.button("⚖️ 純粹經濟上損失", use_container_width=True):
-            preset_query = "民法第184條第1項前段侵權責任所保護之權利是否包含純粹經濟上損失？"
-
-    preset_cols2 = st.columns(4)
-    with preset_cols2[0]:
-        if st.button("⚖️ 毒品販賣既遂標準", use_container_width=True):
-            preset_query = "販賣毒品罪之既遂標準究竟以買賣契約合致為準，抑或須以毒品交付為準？"
-    with preset_cols2[1]:
-        if st.button("⚖️ 警察強制採尿取證", use_container_width=True):
-            preset_query = "司法警察依刑事訴訟法第205條之2強制採尿取證是否牴觸法官保留原則與身心權？"
-    with preset_cols2[2]:
-        if st.button("⚖️ 不真正連帶時效利益", use_container_width=True):
-            preset_query = "不真正連帶債務中一人時效完成者，他債務人能否類推適用民法第276條第2項免責？"
-    with preset_cols2[3]:
-        if st.button("⚖️ 傳聞證據擬制同意", use_container_width=True):
-            preset_query = "當事人於準備程序未對傳聞證據異議，於審判期日能否再行撤回擬制同意？"
-
-    if preset_query:
-        st.session_state["ai_query_input_text"] = preset_query
 
     st.divider()
 
