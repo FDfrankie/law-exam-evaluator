@@ -63,14 +63,67 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
     with col1:
         st.subheader("1. 題目與標準")
+        if "question_text_content" not in st.session_state:
+            st.session_state.question_text_content = ""
+
+        q_input_mode = st.radio(
+            "題目提供方式：",
+            ["✍️ 手動輸入題目文字", "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)"],
+            horizontal=True
+        )
+
+        new_extracted_q = None
+        if q_input_mode == "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)":
+            q_tab_cam, q_tab_file = st.tabs(["📸 即時拍照", "📁 上傳照片 / PDF"])
+            with q_tab_cam:
+                cam_pic = st.camera_input("使用相機拍攝試題：", key="camera_question_input")
+                if cam_pic is not None:
+                    try:
+                        pil_cam = Image.open(cam_pic)
+                        with st.spinner("🔍 正在使用 Gemini 多模態神經網路辨識試題照片..."):
+                            new_extracted_q = ocr_handwritten_images(
+                                [pil_cam],
+                                prompt_hint="這是一份國家考試或法學考試之試題題幹，請精準辨識並謄錄其案件事實、當事人主張與問題子題。"
+                            )
+                    except Exception as ce:
+                        st.error(f"相機照片辨識失敗: {ce}")
+            with q_tab_file:
+                q_up = st.file_uploader(
+                    "選取試題照片或 PDF 檔：",
+                    type=["jpg", "jpeg", "png", "webp", "pdf", "docx"],
+                    key="uploader_question_input"
+                )
+                if q_up is not None:
+                    try:
+                        with st.spinner("🔍 正在解析試題檔案與執行 OCR 辨識..."):
+                            txt_q, imgs_q = parse_document(q_up.read(), q_up.name, auto_ocr_handwriting=True)
+                            if txt_q and len(txt_q.strip()) > 20:
+                                new_extracted_q = txt_q.strip()
+                            elif imgs_q:
+                                new_extracted_q = ocr_handwritten_images(
+                                    imgs_q,
+                                    prompt_hint="這是一份法學考試試卷題目，請精確謄錄案件事實、問題與子題配分。"
+                                )
+                    except Exception as qfe:
+                        st.error(f"試題檔案解析失敗: {qfe}")
+
+            if new_extracted_q:
+                if new_extracted_q != st.session_state.get("last_extracted_q"):
+                    st.session_state.question_text_content = new_extracted_q
+                    st.session_state.last_extracted_q = new_extracted_q
+                    st.success("✅ 題目已成功辨識！內容已自動填入下方，您可直接檢視或微調：")
+
         question_text = st.text_area(
-            "請輸入考試題目內容：",
-            height=200,
+            "請輸入或確認考試題目內容：",
+            value=st.session_state.question_text_content,
+            height=180,
             placeholder="例如：甲向乙借款新臺幣1000萬元，並將其所有之A屋設定普通抵押權予乙以供擔保..."
         )
+        st.session_state.question_text_content = question_text
+
         rubric_text = st.text_area(
             "評分標準 / 參考擬答 (選填，留空則由 AI 自律法學知識庫推導)：",
-            height=120,
+            height=110,
             placeholder="可貼入補習班爭點、評分大綱或最高法院判決字號..."
         )
 
