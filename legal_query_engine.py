@@ -24,7 +24,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, GEMINI_FALLBACK_MODELS
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
 
 CATALOG_PATHS = [
     Path(RAW_DATA_DIR) / "precedents_catalog.json",
@@ -81,10 +81,11 @@ def search_local_precedents(query: str, subject: str = "", top_k: int = 6) -> Li
             score += 10
 
         # 科目匹配加成
-        if subject and subject != "全部科目":
+        if subject and "全部" not in subject:
             item_sub = item.get("subject", "")
-            if any(k in item_sub for k in subject.split("（")[0].split("【")[0].split("/")):
-                score += 8
+            sub_keywords = [w.strip() for w in re.split(r'[\s（）()【】/・、,，]+', subject) if len(w.strip()) >= 2]
+            if any(k in item_sub or k in item.get("title", "") for k in sub_keywords):
+                score += 12
 
         # 關鍵字命中計分
         for tok in tokens:
@@ -120,11 +121,8 @@ class LegalIssueQueryEngine:
             self.model = legacy_genai.GenerativeModel(model_name=model_name)
 
     def _call_model(self, prompt: str) -> str:
-        models_to_try = [self.model_name]
-        for m in GEMINI_FALLBACK_MODELS:
-            if m not in models_to_try:
-                models_to_try.append(m)
-        errors_by_model = {}
+        models_to_try = get_gemini_models_to_try(self.model_name)
+        last_err = None
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
@@ -145,13 +143,9 @@ class LegalIssueQueryEngine:
                     )
                     return resp.text
             except Exception as e:
-                err_str = str(e).lower()
-                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
-                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                errors_by_model[m_name] = str(e)
+                last_err = e
                 continue
-        err_details = "; ".join([f"[{k}: {v[:120]}]" for k, v in errors_by_model.items()])
-        raise RuntimeError(f"Gemini API 查詢調用失敗。詳細紀錄：{err_details}")
+        raise RuntimeError(f"Gemini API 查詢調用失敗: {last_err}")
 
     def query_legal_issue(self, query: str, subject: str = "全部科目") -> Dict[str, Any]:
         """

@@ -24,7 +24,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
+from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 # 八大法學門類體系分類
 SIX_CODES_TAXONOMY: Dict[str, List[str]] = {
@@ -238,11 +238,8 @@ class SixCodesDeepAnnotator:
 ### 五、✍️ 國考申論作答開標與涵攝示範 (IRAC)
 - 示範一段漂亮俐落之二試答題開標與三段論法涵攝
 """
-        models_to_try = [self.model_name]
-        for m in GEMINI_FALLBACK_MODELS:
-            if m not in models_to_try:
-                models_to_try.append(m)
-        errors_by_model = {}
+        models_to_try = get_gemini_models_to_try(self.model_name)
+        last_err = None
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
@@ -258,11 +255,6 @@ class SixCodesDeepAnnotator:
                     )
                     return resp.text
             except Exception as e:
-                err_str = str(e).lower()
-                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
-                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                errors_by_model[m_name] = str(e)
+                last_err = e
                 continue
-        err_details = "; ".join([f"[{k}: {v[:120]}]" for k, v in errors_by_model.items()])
-        raise RuntimeError(f"條文深度註釋生成失敗。詳細紀錄：{err_details}")
-
+        raise RuntimeError(f"條文深度註釋生成失敗: {last_err}")

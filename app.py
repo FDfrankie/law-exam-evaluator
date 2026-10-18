@@ -29,6 +29,146 @@ st.set_page_config(
 
 init_directories()
 
+
+# 司律考科學門體系分類表
+LAW_DOMAIN_TAXONOMY = {
+    "🌟 全部學門 (全考科自選)": [
+        "民法 (總則/債編/物權/身分)",
+        "民事訴訟法 (含家事/強制執行)",
+        "刑法 (總則/分則)",
+        "刑事訴訟法",
+        "憲法與人權保障",
+        "行政法 (程序/行政罰/執行/爭訟)",
+        "公司法與證券交易法",
+        "保險法與票據法",
+        "智慧財產權法與營業秘密",
+        "勞動法與社會保障法",
+        "稅法與納稅者權利",
+        "公平交易法",
+        "金融消費者保護法與銀行法",
+        "海商法",
+        "國際私法與國際公法",
+        "國民法官法與實務專題",
+        "其他自訂學門"
+    ],
+    "⚖️ 民事實體與程序法學門": [
+        "民法 (總則/債編/物權/身分)",
+        "民事訴訟法 (含家事/強制執行)"
+    ],
+    "⚔️ 刑事實體與程序法學門": [
+        "刑法 (總則/分則)",
+        "刑事訴訟法",
+        "國民法官法與實務專題"
+    ],
+    "🏛️ 公法與憲政行政法學門": [
+        "憲法與人權保障",
+        "行政法 (程序/行政罰/執行/爭訟)",
+        "國際私法與國際公法"
+    ],
+    "💼 商事法與財經法學門": [
+        "公司法與證券交易法",
+        "保險法與票據法",
+        "公平交易法",
+        "金融消費者保護法與銀行法"
+    ],
+    "🌐 選試與專業法規學門": [
+        "智慧財產權法與營業秘密",
+        "勞動法與社會保障法",
+        "稅法與納稅者權利",
+        "海商法",
+        "其他自訂學門"
+    ]
+}
+
+# 司律高頻核心爭點與熱門考點分類表
+CORE_ISSUES_TAXONOMY = {
+    "民法": {
+        "【民法總則・處分權限】借名登記契約性質與出名人無權處分效力（108台上大字1719）": "借名登記契約性質、出名人處分效力與買受人善惡意受讓（108台上大字1719大法庭）",
+        "【民法總則・意思表示】意思表示錯誤（第88條）與受詐欺撤銷（第92條）之競合與選擇": "意思表示錯誤要件、無過失要件與受詐欺意思表示撤銷之競合與權利行使",
+        "【民法總則・消滅時效】時效完成之抗辯權與民法第144條第2項之自然債務": "消滅時效抗辯權性質、時效完成後之承認、時效抗辯後債權抵銷之容許性",
+        "【民法總則・行為能力】限制行為能力人無權處分與第801條善意受讓之適用": "限制行為能力人無權處分他人之物，第三人得否主張善意受讓所有權",
+        "【民法債編・不完全給付】物之瑕疵擔保責任與不完全給付之競合（77年第7次決議）": "買受人物之瑕疵擔保與不完全給付加害給付之請求權競合要件與消滅時效",
+        "【民法債編・租賃抵押】買賣不破租賃（第425條）於抵押權設定後租賃之除去": "租賃契約成立於抵押權設定後，拍賣程序中執行法院除去租賃權之法定要件",
+        "【民法債編・侵權責任】侵權行為第184條第1項前段、後段與純粹經濟損失保護": "民法第184條各項保護客體分際、純粹經濟上損失之保護要件與過失相抵",
+        "【民法債編・不當得利】非給付型不當得利之「權益歸屬說」與違法轉租利得": "非給付型不當得利之成立要件、權益歸屬侵害與所受利益之計算標準",
+        "【民法債編・違約定金】違約定金之性質與民法第252條違約金酌減之類推適用": "損害賠償預額性違約金與懲罰性違約金之區辨，違約定金過高之酌減",
+        "【民法物權・抵押權】抵押權之物上代位性與查封扣押時點之關係": "抵押權物上代位性之行使要件、保險金或補償金扣押時點與實行程序",
+        "【民法物權・法定地上權】民法第876條法定地上權之成立要件與房屋所有權變動": "土地與房屋同屬一人後設定抵押權、嗣後轉讓時法定地上權之成立判斷",
+        "【民法物權・共有物處分】土地法第34條之1共有人處分與他共有人優先購買權": "多數決處分共有物之程序、通知義務與他共有人優先購買權之債權效力",
+        "【民法身分・剩餘財產】剩餘財產分配請求權（第1030條之1）扣除債務與追加": "法定財產制消滅時剩餘財產之計算、慰撫金/贈與物之扣除與追加計算",
+        "【民法身分・代位繼承】代位繼承之性質（固有權說）與被代位人欠缺繼承權": "代位繼承之法律性質、代位人得否繼承被代位人喪失繼承權時之應繼分",
+        "【民法身分・特留分】特留分扣減權之性質（形成權說）與消滅時效": "特留分扣減之標的、先扣遺贈後扣應繼分之次序與扣減權行使"
+    },
+    "民事訴訟法": {
+        "【程序主體】形式當事人與實質當事人、法定訴訟擔當之主觀效力": "訴訟擔當之類型、當事人適格之判斷與確定判決對實質權利人之既判力主觀範圍",
+        "【訴訟標的】舊訴訟標的理論 vs 新訴訟標的理論之實戰辨析": "訴之聲明與原因事實之特定、實體法請求權競合於判決既判力客觀範圍之遮斷",
+        "【既判力】既判力客觀範圍、遮斷效（失權效）與爭點效之適用": "既判力客觀範圍限於主文、理由中實質爭點判斷之爭點效要件與前訴遮斷效",
+        "【重複起訴】民事訴訟法第253條重複起訴禁止於反訴與後訴之判斷": "同一事件之判斷標準（當事人、訴訟標的、訴之聲明相同或相反）",
+        "【舉證責任】舉證責任分配法則（規範說）與危險領域說、消保事件轉換": "權利發生、障礙、消滅事實之舉證責任分配與醫療過失舉證責任減輕",
+        "【抗辯爭點】抵銷抗辯之既判力（第400條第2項）與抵銷順位之確定": "被告主張抵銷之成立要件、反對抗辯與抵銷額度之既判力發生時點"
+    },
+    "刑法": {
+        "【刑法總則・可罰性】原因自由行為之處罰基礎與主客觀要件（第19條第3項）": "原因自由行為之例外模式與構成要件模式、故意與過失原因自由行為之論處",
+        "【刑法總則・未遂犯】中止犯「出於己意」與自動性判斷（Frank公式與客觀悔悟）": "障礙未遂與中止未遂之界限、放棄犯行與積極防止結果發生之真摯努力",
+        "【刑法總則・正犯共犯】共同正犯脫離與共犯關係解消（著手前後之區分）": "著手前後脫離之認定標準、物理與心理因果關係之切斷與既遂歸責",
+        "【刑法總則・不作為犯】不作為犯之保證人地位與假設因果關係之認定": "作為義務之來源（危險前行為、特定保護關係）、假設因果關係之高度或然性",
+        "【刑法分則・財產法益】詐欺罪「陷於錯誤」與民事債務不履行詐欺之界限": "民事債信詐欺與刑事詐欺之區別、傳遞不實資訊與處分財產之因果關係",
+        "【刑法分則・財產法益】強盜罪「至使不能抗拒」與恐嚇取財罪之區辨": "客觀至使不能抗拒標準、抑制被害人意思決定自由之程度比較",
+        "【刑法分則・加重詐欺】加重詐欺罪（第339條之4）三人以上與冒用公務員名義": "詐欺車手、收簿手與機房成員之共同正犯定性與加重要件該當性",
+        "【刑法分則・文書法益】使公務員登載不實罪（第214條）實質審查與形式審查": "公務員實質審查權限之界限（例如戶政、地政、公司設立登記）",
+        "【刑法分則・侵害財產】業務侵占罪與背信罪之競合與補充關係": "身分犯侵占持有他人之物與違反善良管理人任務損害本人利益之法條競合"
+    },
+    "刑事訴訟法": {
+        "【強制處分】羈押要件、卷證獲知權與防禦權保障（釋字737、憲判字）": "偵查中羈押審查程序之卷證獲知權、比例原則與替代羈押處分",
+        "【強制處分】搜索扣押令狀原則之例外（附帶搜索、急迫搜索、同意搜索）": "附帶搜索之範圍（身體及隨手可及處）、同意搜索之自願性審查",
+        "【證據法則】傳聞法則（第159條）之適用範圍與傳聞例外之嚴格審查": "審判外陳述之傳聞定性、第159條之1至之5法定傳聞例外之操作",
+        "【證據法則】違法取證之證據排除法則（第158條之4）利益權衡機制": "違反法定程序取得證據之權衡法則（人權侵害程度、違背情節、急迫性）",
+        "【審判程序】公訴不可分原則與法院得否變更起訴法條（第300條）": "起訴效力所及範圍、犯罪事實之同一性判斷與罪名變更前之防禦權告知"
+    },
+    "行政法": {
+        "【核心法理】層級化法律保留原則（釋字第443號）與授權明確性要求": "干涉行政與給付行政之法律保留密度、法規命令授權明確性要件",
+        "【公私法性質】公私法區分標準（二階理論、修正規律說）與政府採購爭議": "追繳押標金之定性、公立大學教師聘任契約之法律性質與爭訟途徑",
+        "【行政行為】行政處分之附款要件（期限、條件、負擔）與獨立救濟": "附款之容許性與合法性、負擔之獨立撤銷訴訟要件",
+        "【行政行為】行政契約與私法契約之辨識、公法給付約定之違約金效力": "行政契約之識別標準（契約標的說、目的說）、行政程序法第149條準用",
+        "【行政裁量】行政裁量瑕疵（逾越、濫用、怠惰）與裁量收縮至零": "裁量瑕疵之司法審查密度、不確定法律概念與判斷餘地之審查界限",
+        "【撤銷廢止】違法處分撤銷與信賴保護原則（行政程序法第117~120條）": "信賴不值得保護之消極要件、信賴利益補償與授益處分廢止（第123條）",
+        "【行政救濟】課予義務訴訟與一般給付訴訟之訴訟類型選定": "拒絕處分訴訟與怠為處分訴訟之差別、訴願前置主義之遵守",
+        "【行政救濟】行政訴訟停止執行之發動要件與難以回復損害之審查": "行政訴訟法第116條原處分合法性顯有疑義與重大公共利益之權衡",
+        "【國家責任】國家賠償法第2條第2項怠於執行職務與公有公共設施責任": "公務員裁量收縮之怠於行使職務國賠責任、設施瑕疵之無過失責任"
+    },
+    "憲法": {
+        "【人身自由】憲法第8條正當法律程序與法官保留原則（釋字384、憲判字）": "限制人身自由處分之法官保留、正當法律程序之實質保障",
+        "【言論自由】事前限制之禁止與雙軌理論（內容管制與非內容管制）": "政治性言論與商業性言論之審查基準、違憲審查之比例原則嚴格審查",
+        "【隱私權利】資訊自主權與科技偵查、GPS追蹤之憲法審查（憲判字）": "憲法第22條隱私權核心、強制採取DNA與科技偵查之法律保留與法官保留",
+        "【權力分立】總統職權、行政院對立法院負責與責任政治運作": "行政院院長之任免、覆議制度之運作與行政立法制衡之界限",
+        "【權力分立】國會調查權之邊界與政府官員備詢之義務範圍": "立法院調查權之權限邊界、司法特權與行政特權之保護",
+        "【憲法訴訟】裁判憲法審查制度之受理要件與法規範審查分際": "憲法訴訟法第59條人民聲請裁判憲法審查之要件與基本權侵害之具體性"
+    },
+    "公司法與證券交易法": {
+        "【公司法】董事之忠實義務與善良管理人注意義務（第23條第1項）": "董事責任之規範基礎、商業判斷法則（Business Judgment Rule）之適用",
+        "【公司法】股東會決議瑕疵之類型（第189條得撤銷 vs 第191條無效）": "召集程序瑕疵、決議內容違反法令或章程之救濟與提訴期間",
+        "【公司法】表決權拘束契約與表決權信託之效力（第175條之1）": "股東協議之容許性與邊界、閉鎖性公司與非閉鎖性公司之適用差異",
+        "【證券交易法】證券詐欺（第20條第1項、第20條之1）與交易因果關係": "財報不實之重大性認定、詐欺市場理論與損害賠償計算方法",
+        "【證券交易法】內線交易（第157條之1）重大消息明確時點與實際知悉判斷": "重大消息成立之明確時點（重大性＋明確性）與主觀知悉之舉證"
+    },
+    "保險法與票據法": {
+        "【保險法】保險法第64條據實說明義務與保險事故因果關係之抗辯": "說明義務之主客觀要件、危險估計之影響與因果關係不存在之舉證責任",
+        "【保險法】複保險之適用範圍（第35~38條）是否及於人身保險之爭議": "定額給付保險與損害填補保險之區分、釋字第576號解釋意旨",
+        "【票據法】票據之無因性與原因關係抗辯（票據法第13條人之抗辯）": "直接前後手間之原因關係抗辯、惡意取得票據與重大過失取得之抗辯"
+    }
+}
+
+def get_subject_topics_taxonomy(subject_name: str) -> dict:
+    for k, v in CORE_ISSUES_TAXONOMY.items():
+        if k in subject_name or subject_name in k:
+            return v
+    return {
+        "【核心法理】實體法構成要件該當性與法律效果分析": "核心法條構成要件之法律涵攝、阻卻違法與阻卻責任事由",
+        "【實務爭議】最高法院具體裁判與大法庭裁定爭議要點": "最高司法機關權威判旨、通說與有力學說之見解對立與折衝",
+        "【程序救濟】法定救濟途徑、當事人適格與訴訟類型選定": "原告適格、管轄權歸屬、救濟期間與權利保護必要性"
+    }
+
+
 # 側邊欄
 with st.sidebar:
     st.title("⚖️ 司律 AI 助手")
@@ -242,35 +382,44 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
 
     stage = st.radio("選擇考試階段：", ["一試 (選擇題 / 單選題)", "二試 (申論實例題)"], horizontal=True)
 
-    col_sub1, col_sub2 = st.columns(2)
+    col_sub1, col_sub2 = st.columns([1, 1])
     with col_sub1:
-        subjects_list = [
-            "民法 (總則/債編/物權/身分)",
-            "民事訴訟法 (含家事/強制執行)",
-            "刑法 (總則/分則)",
-            "刑事訴訟法",
-            "憲法與人權保障",
-            "行政法 (程序/行政罰/執行/爭訟)",
-            "公司法與證券交易法",
-            "保險法與票據法",
-            "智慧財產權法與營業秘密",
-            "勞動法與社會保障法",
-            "稅法與納稅者權利",
-            "公平交易法",
-            "金融消費者保護法與銀行法",
-            "海商法",
-            "國際私法與國際公法",
-            "國民法官法與實務專題",
-            "其他自訂學門"
-        ]
-        subject_choice = st.selectbox("考試科目：", subjects_list)
+        st.markdown("##### 🏛️ 第一步：選擇考試學門與科目")
+        domain_choice = st.selectbox(
+            "考科學門體系分類篩選：",
+            list(LAW_DOMAIN_TAXONOMY.keys()),
+            key="sel_exam_domain_filter"
+        )
+        subjects_list = LAW_DOMAIN_TAXONOMY[domain_choice]
+        subject_choice = st.selectbox("考試科目：", subjects_list, key="sel_exam_subject_choice")
         if subject_choice == "其他自訂學門":
             subject = st.text_input("請輸入自訂科目名稱：", value="民事法學")
         else:
             subject = subject_choice.split(" ")[0]
 
     with col_sub2:
-        topic = st.text_input("出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：", placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...")
+        st.markdown("##### 🎯 第二步：設定核心考點爭點（支援分類快選）")
+        available_topics_map = get_subject_topics_taxonomy(subject)
+        topic_options = ["-- 請選擇司律高頻考點爭點（點選自動帶入） --"] + list(available_topics_map.keys())
+        sel_preset_topic = st.selectbox(
+            f"依【{subject}】分類快選高頻考點：",
+            topic_options,
+            key=f"sel_topic_preset_{subject}"
+        )
+        
+        default_topic_text = ""
+        if sel_preset_topic and sel_preset_topic != "-- 請選擇司律高頻考點爭點（點選自動帶入） --":
+            default_topic_text = available_topics_map[sel_preset_topic]
+            
+        topic = st.text_input(
+            "出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：",
+            value=default_topic_text,
+            placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...",
+            key=f"exam_topic_input_{subject}"
+        )
+        if default_topic_text:
+            st.caption(f"💡 已自動選定高頻爭點：`{default_topic_text}`（您可直接修改或補充自訂關鍵字）")
+
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
     
@@ -582,10 +731,10 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
             st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
 
-            c300_col1, c300_col2 = st.columns(2)
+            c300_col1, c300_col2, c300_col3 = st.columns([1, 1, 1])
             with c300_col1:
                 part_choice = st.selectbox(
-                    "選擇題庫範圍：",
+                    "選擇篇章大類：",
                     [
                         "全卷 300 題隨機抽考",
                         "第一篇：核心法理、公私法性質、依法行政與裁量 (第 1~90 題)",
@@ -594,6 +743,24 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     ]
                 )
             with c300_col2:
+                cat_300_categories = [
+                    "全部考點分類 (不限)",
+                    "⚖️ [依法行政原則與法源]",
+                    "🏛️ [公私法性質與雙階理論]",
+                    "📜 [不確定法律概念與行政裁量]",
+                    "📑 [行政處分之定性與實例]",
+                    "📌 [行政處分之附款與效力]",
+                    "📝 [行政契約與事實行為]",
+                    "📜 [行政命令與地方法規]",
+                    "🌐 [行政法關係與權利義務]",
+                    "🧩 [第 241~300 題：綜合實務題組題]"
+                ]
+                cat_300_choice = st.selectbox(
+                    "🎯 考點分類專題篩選：",
+                    cat_300_categories,
+                    key="sel_cat_300_choice"
+                )
+            with c300_col3:
                 count_300_choice = st.selectbox(
                     "抽題題數：",
                     ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
@@ -607,19 +774,60 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             if st.button("🚀 從 300 題庫抽取試題開始測驗", type="primary", use_container_width=True):
                 bank_file = Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json"
                 if not bank_file.exists():
+                    candidate_p = Path(__file__).resolve().parent.parent / "raw_exams" / "admin_law_300_mcqs.json"
+                    if candidate_p.exists():
+                        bank_file = candidate_p
+                if not bank_file.exists():
                     st.error("找不到 300 題庫檔案，請確認 raw_exams/admin_law_300_mcqs.json 是否存在。")
                 else:
                     import random
+                    import unicodedata
                     with open(bank_file, "r", encoding="utf-8") as f:
                         bank_data = json.load(f)
                     
                     pool = bank_data.get("questions", [])
+                    # 1. 篇章過濾
                     if part_choice.startswith("第一篇"):
                         pool = [q for q in pool if 1 <= q.get("question_no", 0) <= 90]
                     elif part_choice.startswith("第二篇"):
                         pool = [q for q in pool if 91 <= q.get("question_no", 0) <= 240]
                     elif part_choice.startswith("第三篇"):
                         pool = [q for q in pool if 241 <= q.get("question_no", 0) <= 300]
+
+                    # 2. 考點分類過濾
+                    if cat_300_choice != "全部考點分類 (不限)":
+                        def match_cat_filter(q_item, chosen_cat):
+                            q_cat = unicodedata.normalize("NFKC", q_item.get("category", "")).strip("[]")
+                            q_no = q_item.get("question_no", 0)
+                            if "依法行政" in chosen_cat or "法源" in chosen_cat:
+                                return "依法行政" in q_cat or "法源" in q_cat
+                            elif "公私法" in chosen_cat or "雙階" in chosen_cat:
+                                return "公私法" in q_cat or "雙階" in q_cat or "採購" in q_cat
+                            elif "行政裁量" in chosen_cat or "不確定法律概念" in chosen_cat:
+                                return "裁量" in q_cat or "不確定法律概念" in q_cat
+                            elif "行政處分之定性" in chosen_cat:
+                                return "行政處分" in q_cat and "附款" not in q_cat and "效力" not in q_cat
+                            elif "附款" in chosen_cat or "效力" in chosen_cat:
+                                return "附款" in q_cat or "效力" in q_cat
+                            elif "行政契約" in chosen_cat or "事實行為" in chosen_cat:
+                                return "行政契約" in q_cat or "事實行為" in q_cat or "自願執行" in q_cat
+                            elif "行政命令" in chosen_cat or "地方法規" in chosen_cat:
+                                return "命令" in q_cat or "法規" in q_cat
+                            elif "行政法關係" in chosen_cat:
+                                return "行政法關係" in q_cat or "特別權力" in q_cat
+                            elif "題組" in chosen_cat:
+                                return 241 <= q_no <= 300 or "題組" in q_cat
+                            return True
+
+                        filtered_pool = [q for q in pool if match_cat_filter(q, cat_300_choice)]
+                        if filtered_pool:
+                            pool = filtered_pool
+                        else:
+                            st.warning(f"在篇章【{part_choice[:10]}】中未篩得【{cat_300_choice}】題目，已擴展至全卷相同考點抽取。")
+                            pool = [q for q in bank_data.get("questions", []) if match_cat_filter(q, cat_300_choice)]
+
+                    if not pool:
+                        pool = bank_data.get("questions", [])
 
                     selected_qs = random.sample(pool, min(take_count, len(pool)))
                     # 重新編排題號
@@ -633,14 +841,15 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         new_answer_key[str(i)] = ans
                         reindexed_qs.append(q_copy)
 
+                    cat_tag = f"・{cat_300_choice}" if cat_300_choice != "全部考點分類 (不限)" else ""
                     st.session_state["stage1_exam_data"] = {
                         "subject": "行政法",
-                        "topic": f"300題模擬題庫精選（{part_choice[:10]}）",
+                        "topic": f"300題模擬題庫精選（{part_choice[:10]}{cat_tag}）",
                         "total_count": len(reindexed_qs),
                         "questions": reindexed_qs,
                         "answer_key": new_answer_key
                     }
-                    st.success(f"已成功從題庫中抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
+                    st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
@@ -661,15 +870,36 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         with key_cols[c_idx]:
                             st.info(f"**第 {q_num} 題**：`({answer_key.get(str(q_num), 'A')})`")
 
+            # 統計本卷所有試題考點分類
+            raw_cats = [q.get("category", "").strip() for q in questions if q.get("category")]
+            clean_cats = sorted(list(set(raw_cats)))
+
             st.divider()
-            st.subheader(f"📝 【第一部分：全真試題區】（盲測情境實力）")
-            st.caption("提示：題幹已全面隱匿法條條號與裁判字號，請直接依具體事實判斷最正確選項。")
+            col_sec_head, col_sec_cat = st.columns([2, 1])
+            with col_sec_head:
+                st.subheader(f"📝 【第一部分：全真試題區】（盲測情境實力）")
+                st.caption("提示：題幹已全面隱匿法條條號與裁判字號，請直接依具體事實判斷最正確選項。")
+            with col_sec_cat:
+                if clean_cats:
+                    view_cat_filter = st.selectbox(
+                        "🏷️ 依試題考點分類過濾瀏覽：",
+                        ["🌟 顯示全卷考點試題 (共 %d 題)" % len(questions)] + [f"{c} ({raw_cats.count(c)} 題)" for c in clean_cats],
+                        key="stage1_exam_category_filter"
+                    )
+                else:
+                    view_cat_filter = "🌟 顯示全卷考點試題"
 
             user_answers = {}
             for q in questions:
                 q_no = q.get("question_no")
                 cat = q.get("category", "")
                 cat_display = f" `{cat}`" if cat else ""
+                
+                # 若有選定分類過濾，且不符合當前分類，則跳過顯示
+                if view_cat_filter != "🌟 顯示全卷考點試題" and not view_cat_filter.startswith("🌟 顯示全卷"):
+                    chosen_cat = view_cat_filter.split(" (")[0].strip()
+                    if cat.strip() != chosen_cat:
+                        continue
                 
                 st.markdown(f"#### 第 {q_no} 題{cat_display}")
                 if q.get("case_facts"):
@@ -697,14 +927,8 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             col_submit, col_export = st.columns([1, 1])
             with col_submit:
                 if st.button("🏁 交卷立即線上批改評分", type="primary"):
-                    score = 0
-                    for q_num_str, correct_ans in answer_key.items():
-                        if user_answers.get(q_num_str) == correct_ans:
-                            score += 1
-                    total_q = len(questions)
-                    pct = int(score / total_q * 100) if total_q > 0 else 0
-                    st.balloons()
-                    st.success(f"測驗批改完成！答對：{score} / {total_q} 題（得分率：{pct}%）")
+                    st.session_state["stage1_graded"] = True
+                    st.session_state["stage1_user_answers"] = user_answers
 
             with col_export:
                 md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
@@ -714,6 +938,52 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
                     mime="text/markdown"
                 )
+
+            # 批改結果與考點分類實力診斷
+            if st.session_state.get("stage1_graded"):
+                u_answers = st.session_state.get("stage1_user_answers", user_answers)
+                score = 0
+                for q_num_str, correct_ans in answer_key.items():
+                    if u_answers.get(q_num_str) == correct_ans:
+                        score += 1
+                total_q = len(questions)
+                pct = int(score / total_q * 100) if total_q > 0 else 0
+                st.balloons()
+                st.success(f"🎉 測驗批改完成！總成績：{score} / {total_q} 題（得分率：{pct}%）")
+
+                # 考點分類實力診斷與弱點分析報告
+                st.markdown("#### 🎯 考點分類實力診斷與弱點分析報告")
+                cat_stats = {}
+                for q in questions:
+                    c = q.get("category", "綜合實務考點").strip()
+                    if not c:
+                        c = "綜合實務考點"
+                    if c not in cat_stats:
+                        cat_stats[c] = {"total": 0, "correct": 0, "missed": []}
+                    cat_stats[c]["total"] += 1
+                    q_no_str = str(q.get("question_no"))
+                    if u_answers.get(q_no_str) == answer_key.get(q_no_str):
+                        cat_stats[c]["correct"] += 1
+                    else:
+                        cat_stats[c]["missed"].append(q.get("question_no"))
+
+                diag_cols = st.columns(min(len(cat_stats), 4) if cat_stats else 1)
+                for idx_c, (c_name, stats) in enumerate(cat_stats.items()):
+                    with diag_cols[idx_c % len(diag_cols)]:
+                        c_rate = int(stats["correct"] / stats["total"] * 100) if stats["total"] > 0 else 0
+                        if c_rate == 100:
+                            badge = "🌟 精熟達標"
+                        elif c_rate >= 60:
+                            badge = "👍 掌握良好"
+                        else:
+                            badge = "⚠️ 建議複習加強"
+                        st.metric(
+                            label=f"{c_name[:14]}",
+                            value=f"{stats['correct']}/{stats['total']} 題 ({c_rate}%)",
+                            delta=badge
+                        )
+                        if stats["missed"]:
+                            st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
 
             st.divider()
             st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
@@ -1008,19 +1278,22 @@ elif app_mode == "📖 高分權威擬答生成":
                             ev = LawExamEvaluator()
                             if hasattr(ev, "client") and ev.client:
                                 prompt = "請將此張試卷照片或截圖中的完整題目文字逐字謄錄為繁體中文，保持原本標號、事實情境與子題配分。直接輸出題目文字，勿加入額外寒暄。"
-                                for m_name in [DEFAULT_GEMINI_MODEL] + [m for m in GEMINI_FALLBACK_MODELS if m != DEFAULT_GEMINI_MODEL]:
+                                from config import get_gemini_models_to_try
+                                r = None
+                                for m_ocr in get_gemini_models_to_try():
                                     try:
                                         r = ev.client.models.generate_content(
-                                            model=m_name,
+                                            model=m_ocr,
                                             contents=[img, prompt]
                                         )
                                         if r and r.text:
-                                            transcribed = r.text.strip()
                                             break
                                     except Exception:
                                         continue
-                                if not transcribed:
-                                    transcribed = "[多模態視覺辨識失敗，請檢查 API Key 或網路連線]"
+                                if r and r.text:
+                                    transcribed = r.text.strip()
+                                else:
+                                    transcribed = "[無法調用視覺模型辨識圖片，請確認 API Key 與模型設定]"
                             else:
                                 transcribed = "[無法調用視覺模型，請確認 API Key]"
                         elif ext == "pdf":

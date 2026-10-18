@@ -20,19 +20,31 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
-# 現代化 Gemini 模型後備階梯（依序降級，全面防禦單一模型額度耗盡或服務變更）
+# 現代化 Gemini 3.x 模型後備階梯（依序降級，全面防禦單一模型額度耗盡或服務變更）
 GEMINI_FALLBACK_MODELS = [
+    "gemini-3.8-flash",
     "gemini-3.7-flash",
     "gemini-3.5-flash",
     "gemini-3.6-flash",
-    "gemini-3.8-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
+    "gemini-flash-latest",
+    "gemini-pro-latest",
     "gemini-3.1-pro-preview"
 ]
+
+def get_gemini_models_to_try(primary_model: str = None) -> list:
+    """Return prioritized list of Gemini model candidates for resilient fallback."""
+    models = []
+    if primary_model and primary_model not in models:
+        models.append(primary_model)
+    if DEFAULT_GEMINI_MODEL not in models:
+        models.append(DEFAULT_GEMINI_MODEL)
+    for m in GEMINI_FALLBACK_MODELS:
+        if m not in models:
+            models.append(m)
+    return models
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")

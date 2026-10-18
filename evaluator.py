@@ -19,7 +19,7 @@ except ImportError:
     import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
+from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 class LawExamEvaluator:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
@@ -100,12 +100,8 @@ class LawExamEvaluator:
             user_content.extend(images)
 
         response_text = None
-        models_to_try = [self.model_name]
-        for m in GEMINI_FALLBACK_MODELS:
-            if m not in models_to_try:
-                models_to_try.append(m)
-
-        errors_by_model = {}
+        models_to_try = get_gemini_models_to_try(self.model_name)
+        last_err = None
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
@@ -132,12 +128,11 @@ class LawExamEvaluator:
                 err_str = str(e).lower()
                 if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
                     raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                errors_by_model[m_name] = str(e)
+                last_err = e
                 continue
 
         if response_text is None:
-            err_details = "; ".join([f"[{k}: {v[:120]}]" for k, v in errors_by_model.items()])
-            raise RuntimeError(f"所有 Gemini 模型評分調用均失敗。詳細紀錄：{err_details}")
+            raise RuntimeError(f"所有 Gemini 模型呼叫均失敗，最後錯誤: {last_err}")
 
         try:
             result_json = json.loads(response_text)
