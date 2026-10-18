@@ -143,17 +143,25 @@ def merge_subject_pdfs(subject: str, output_path: Optional[Path] = None) -> Dict
         samsung_dir.mkdir(parents=True, exist_ok=True)
     
     # 找出該科目所有 PDF，排除已合併之總筆記
-    target_files = [
-        f for f in samsung_dir.glob(f"{subject}_*.pdf")
-        if "全科整合" not in f.name and "全科體系" not in f.name
-    ]
-    if not target_files:
+    if subject in ["全部考科", "全部"]:
         all_notes = get_google_drive_notes_list()
         target_files = [
             n["path"] for n in all_notes 
-            if n["subject"] == subject and n["path"].suffix.lower() == ".pdf"
+            if n["path"].suffix.lower() == ".pdf"
             and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
         ]
+    else:
+        target_files = [
+            f for f in samsung_dir.glob(f"{subject}_*.pdf")
+            if "全科整合" not in f.name and "全科體系" not in f.name
+        ]
+        if not target_files:
+            all_notes = get_google_drive_notes_list()
+            target_files = [
+                n["path"] for n in all_notes 
+                if n["subject"] == subject and n["path"].suffix.lower() == ".pdf"
+                and "全科整合" not in n["filename"] and "全科體系" not in n["filename"]
+            ]
         
     if not target_files:
         raise ValueError(f"考科【{subject}】未找到任何可供合併之 PDF 筆記檔案。")
@@ -212,18 +220,26 @@ def extract_subject_text_corpus(
     並自動依章節邏輯彙編成一份單一完整 Markdown 全科筆記大典
     """
     all_notes = get_google_drive_notes_list()
-    sub_notes = [
-        n for n in all_notes 
-        if n["subject"] == subject 
-        and "全科整合" not in n["filename"] 
-        and "全科體系" not in n["filename"]
-        and not n["filename"].endswith("_全科筆記文字總彙編.md")
-    ]
+    if subject in ["全部考科", "全部"]:
+        sub_notes = [
+            n for n in all_notes 
+            if "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
+    else:
+        sub_notes = [
+            n for n in all_notes 
+            if n["subject"] == subject 
+            and "全科整合" not in n["filename"] 
+            and "全科體系" not in n["filename"]
+            and not n["filename"].endswith("_全科筆記文字總彙編.md")
+        ]
     
     if not sub_notes:
         raise ValueError(f"考科【{subject}】查無任何筆記檔案。")
         
-    sorted_notes = sorted(sub_notes, key=lambda n: get_chapter_sort_key(n["path"]))
+    sorted_notes = sorted(sub_notes, key=lambda n: (n.get("subject", ""), get_chapter_sort_key(n["path"])))
     
     chapters_extracted = []
     total_notes = len(sorted_notes)

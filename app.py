@@ -307,15 +307,59 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     filtered_notes = [n for n in drive_notes if n["subject"] == sel_note_sub]
                 
                 with col_sel2:
-                    note_labels = [f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "") for n in filtered_notes]
+                    all_notes_label = f"🌟 【全部分析】載入此分類全部筆記 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
+                    note_labels = [all_notes_label] + [
+                        f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "") 
+                        for n in filtered_notes
+                    ]
                     sel_note_label = st.selectbox(
                         "選擇 Google Drive 筆記檔案：",
                         note_labels,
                         key="sel_drive_note_file"
                     )
                 
-                if sel_note_label:
-                    sel_idx = note_labels.index(sel_note_label)
+                if sel_note_label == all_notes_label:
+                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{sel_note_sub}】全部 **{len(filtered_notes)} 份** 雲端筆記，優先調用本機高速快取；手寫或掃描 PDF 自動調用 Gemini 2.0 Flash 進行多模態辨識，彙編成完整法學爭點大典以供客製命題。")
+                    c_btn1, c_btn2 = st.columns([2, 1])
+                    with c_btn1:
+                        load_all_btn = st.button(f"🚀 一鍵分析並載入全部筆記 (共 {len(filtered_notes)} 份)", type="primary", key="btn_load_all_drive_notes")
+                    with c_btn2:
+                        sync_btn = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes")
+                        if sync_btn:
+                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                st.success(f"同步完成！新增/更新了 {c} 份筆記。")
+                                st.rerun()
+
+                    session_all_key = f"cached_all_notes_text_{sel_note_sub}_{len(filtered_notes)}"
+                    if load_all_btn or (session_all_key in st.session_state):
+                        if load_all_btn:
+                            prog_bar = st.progress(0.0)
+                            status_txt = st.empty()
+                            all_texts = []
+                            for idx_n, n_item in enumerate(filtered_notes, 1):
+                                status_txt.text(f"正在分析筆記 [{idx_n}/{len(filtered_notes)}]: 《{n_item['filename'][:25]}...》")
+                                prog_bar.progress(idx_n / len(filtered_notes))
+                                try:
+                                    t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
+                                    if t_part and not t_part.startswith("["):
+                                        all_texts.append(f"### 《{n_item['filename']}》（科目：{n_item['subject']}）\n{t_part}")
+                                except Exception as n_err:
+                                    pass
+                            combined_all = "\n\n---\n\n".join(all_texts)
+                            st.session_state[session_all_key] = combined_all
+                            prog_bar.progress(1.0)
+                            status_txt.text("✅ 全部分析與文字提取完成！")
+                            st.balloons()
+                        
+                        combined_all = st.session_state.get(session_all_key, "")
+                        if combined_all:
+                            notes_from_drive = combined_all
+                            st.success(f"🎉 成功全部分析【{sel_note_sub}】共 {len(filtered_notes)} 份筆記，累計取得 {len(combined_all):,} 字元！已自動帶入下方命題引擎。")
+                            with st.expander("🔍 檢視已解析之全部分類筆記重點與爭點摘要", expanded=False):
+                                st.text_area("全部分析筆記內容彙整（已用於客製命題）：", value=combined_all, height=220, key="preview_drive_all_notes")
+                elif sel_note_label:
+                    sel_idx = note_labels.index(sel_note_label) - 1
                     chosen_note = filtered_notes[sel_idx]
                     
                     c_btn1, c_btn2 = st.columns([2, 1])
@@ -393,10 +437,15 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 if not cw_sub_list:
                     cw_sub_list = cw_list
                 
-                cw_options = [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
+                all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
+                cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
                 sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
-                if sel_cw:
-                    sel_idx = cw_options.index(sel_cw)
+                if sel_cw == all_cw_label:
+                    st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
+                    if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
+                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
+                elif sel_cw:
+                    sel_idx = cw_options.index(sel_cw) - 1
                     chosen_item = cw_sub_list[sel_idx]
                     st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
                     st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
@@ -1012,11 +1061,55 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                     sub_notes = [n for n in drive_notes if n["subject"] == filter_sub]
                     
                 with col_d2:
-                    note_opts = [f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (f" 🎯已提煉 {n['distilled_count']} 筆" if n['distilled_count'] > 0 else "") for n in sub_notes]
+                    all_distill_label = f"🌟 【全部分析】批次分析並蒸餾此分類全部筆記 (共 {len(sub_notes)} 份)"
+                    note_opts = [all_distill_label] + [
+                        f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (f" 🎯已提煉 {n['distilled_count']} 筆" if n['distilled_count'] > 0 else "") 
+                        for n in sub_notes
+                    ]
                     sel_sft_note = st.selectbox("選擇欲蒸餾之雲端筆記：", note_opts, key="sft_sel_note")
                 
-                if sel_sft_note:
-                    sel_note_idx = note_opts.index(sel_sft_note)
+                if sel_sft_note == all_distill_label:
+                    st.info(f"💡 已選擇【全部分析】！系統將批次遍歷【{filter_sub}】全部 **{len(sub_notes)} 份** 筆記，透過 Gemini 2.0 Flash 多模態神經網路執行高精度手寫辨識、爭點提煉與 SFT 微調語料蒸餾，並即時合併寫入 SFT 微調庫。")
+                    c_btn_a1, c_btn_a2 = st.columns([2, 1])
+                    with c_btn_a1:
+                        if st.button(f"🚀 一鍵啟動全部分析：批次多模態 OCR 蒸餾並入庫 (共 {len(sub_notes)} 份)", type="primary", key="btn_distill_all_drive_sft"):
+                            prog_bar_dist = st.progress(0.0)
+                            status_dist = st.empty()
+                            total_new_samples = []
+                            success_files = 0
+                            failed_files = 0
+                            
+                            for idx_d, d_note in enumerate(sub_notes, 1):
+                                status_dist.text(f"正在蒸餾 [{idx_d}/{len(sub_notes)}]: 《{d_note['filename'][:25]}...》")
+                                prog_bar_dist.progress(idx_d / len(sub_notes))
+                                try:
+                                    cur_samples = distill_single_note_file(d_note["path"], max_pages=15)
+                                    if cur_samples:
+                                        total_new_samples.extend(cur_samples)
+                                        success_files += 1
+                                except Exception as e_dist_single:
+                                    failed_files += 1
+                            
+                            prog_bar_dist.progress(1.0)
+                            status_dist.text("✅ 全選筆記批次蒸餾完成！")
+                            st.balloons()
+                            st.success(f"🎉 全部分析蒸餾完成！共處理 {len(sub_notes)} 份筆記（成功 {success_files} 份，失敗 {failed_files} 份），成功提煉出 **{len(total_new_samples)} 組** 高品質 SFT 法學微調樣本！")
+                            if total_new_samples:
+                                with st.expander("🔍 檢視本次全部分析提煉之 SFT 樣本預覽 (前 10 組)", expanded=True):
+                                    for s_idx, s in enumerate(total_new_samples[:10], 1):
+                                        st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
+                                        st.caption(f"指令 (Instruction): {s.get('instruction')}")
+                                        st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
+                                        st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
+                                        st.divider()
+                    with c_btn_a2:
+                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
+                            with st.spinner("正在同步..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                st.success(f"同步完成！新增/更新 {c} 份筆記。")
+                                st.rerun()
+                elif sel_sft_note:
+                    sel_note_idx = note_opts.index(sel_sft_note) - 1
                     target_note = sub_notes[sel_note_idx]
                     
                     c_btn_a1, c_btn_a2 = st.columns([2, 1])
@@ -1097,13 +1190,22 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                 sub_dict.setdefault(n["subject"], []).append(n)
                 
         if sub_dict:
-            sub_options = [f"【{s}】(共 {len(nlist)} 份筆記 / 講義)" for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))]
+            all_sub_count = sum(len(nlist) for nlist in sub_dict.values())
+            all_choice_label = f"🌟 【全部考科】全部分析 (全庫共 {all_sub_count} 份筆記 / 講義)"
+            sub_options = [all_choice_label] + [
+                f"【{s}】(共 {len(nlist)} 份筆記 / 講義)" 
+                for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))
+            ]
             sel_sub_label = st.selectbox("請選擇欲處理的法學考科：", sub_options, key="merge_sub_select")
-            sel_subject = sel_sub_label.split("【")[1].split("】")[0]
-            sub_notes = sub_dict[sel_subject]
+            if sel_sub_label == all_choice_label:
+                sel_subject = "全部考科"
+                sub_notes = [n for nlist in sub_dict.values() for n in nlist]
+            else:
+                sel_subject = sel_sub_label.split("【")[1].split("】")[0]
+                sub_notes = sub_dict[sel_subject]
             
             with st.expander(f"📋 展開檢視【{sel_subject}】所收錄的 {len(sub_notes)} 份章節檔案清單（已依體系順序排列）", expanded=False):
-                sorted_sub_notes = sorted(sub_notes, key=lambda x: get_chapter_sort_key(x["path"]))
+                sorted_sub_notes = sorted(sub_notes, key=lambda x: (x.get("subject", ""), get_chapter_sort_key(x["path"])))
                 for s_idx, sn in enumerate(sorted_sub_notes, 1):
                     badge = "⚡ 已快取" if sn["is_cached"] else "📄 待提取"
                     dist_badge = f" ｜ 🎯 已提煉 {sn['distilled_count']} 組 SFT" if sn["distilled_count"] > 0 else ""
