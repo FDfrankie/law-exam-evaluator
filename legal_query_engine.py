@@ -50,8 +50,36 @@ def get_precedents_catalog() -> List[Dict[str, Any]]:
                 pass
     return []
 
+LAWBANK_COMMON_CASE_WORDS = [
+    "全部字別 (不限)",
+    "憲判", "憲裁", "台上大", "台抗大", "台聲大", "台上", "台抗", "台再", "台聲", "台非",
+    "重上", "上易", "保險上", "勞上", "金上", "海商上", "家上",
+    "上更（一）", "上更（二）", "重上更（一）", "重上更（二）",
+    "訴", "重訴", "金訴", "上訴", "上重訴", "金上訴", "智訴", "矚訴",
+    "交訴", "交易", "選訴", "易", "簡", "簡上", "抗", "自"
+]
+
+LAWBANK_COURTS_TAXONOMY = {
+    "全部法院 (全體司法體系)": [],
+    "🏛️ 憲法法院系統": ["憲法法庭", "司法院大法官", "司法院公報"],
+    "🏛️ 最高法院 (終審法院)": ["最高法院", "最高法院民事庭", "最高法院刑事庭", "最高法院民事大法庭", "最高法院刑事大法庭"],
+    "🏛️ 最高行政法院": ["最高行政法院", "最高行政法院大法庭"],
+    "🏛️ 高等法院及各分院 (二審事實審)": ["臺灣高等法院", "臺灣高等法院臺中分院", "臺灣高等法院臺南分院", "臺灣高等法院高雄分院", "臺灣高等法院花蓮分院", "福建高等法院金門分院"],
+    "🏛️ 高等行政法院 (公法事實審)": ["臺北高等行政法院", "臺中高等行政法院", "高雄高等行政法院"],
+    "🏛️ 智慧財產及商業法院": ["智慧財產及商業法院", "智慧財產法院"],
+    "🏛️ 懲戒法院 (公務員暨司法人員)": ["懲戒法院", "公務員懲戒委員會"],
+    "🏛️ 地方法院 (一審事實審)": [
+        "臺灣臺北地方法院", "臺灣新北地方法院", "臺灣士林地方法院", "臺灣桃園地方法院",
+        "臺灣新竹地方法院", "臺灣苗栗地方法院", "臺灣臺中地方法院", "臺灣彰化地方法院",
+        "臺灣南投地方法院", "臺灣雲林地方法院", "臺灣嘉義地方法院", "臺灣臺南地方法院",
+        "臺灣高雄地方法院", "臺灣橋頭地方法院", "臺灣屏東地方法院", "臺灣臺東地方法院",
+        "臺灣花蓮地方法院", "臺灣宜蘭地方法院", "臺灣基隆地方法院", "臺灣澎湖地方法院",
+        "福建金門地方法院", "福建連江地方法院"
+    ]
+}
+
 def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, str]:
-    """生成通往七法、法源、月旦與司法院 30 年法院判決資料庫的即時直連查詢連結（七法/法源多庫矩陣）"""
+    """生成通往法源、法律人、七法、司法院與憲法法庭等外部權威法學資料庫的即時直連查詢連結"""
     import urllib.parse
     clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
     tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
@@ -59,13 +87,166 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
     encoded_k = urllib.parse.quote(search_keyword)
 
     return {
-        "⚖️ 七法 Lawsnote 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
-        "🏛️ 司法院 30 年裁判書全文檢索 (全台地院/高院/最高院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
         "📚 法源法律網 LawBank 裁判與法規檢索": f"https://www.lawbank.com.tw/treatise/pl_search.aspx?keyword={encoded_k}",
+        "⚡ 法律人 LawPlayer 智慧法學搜尋": f"https://lawplayer.com/search?keyword={encoded_k}",
+        "🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
         "📜 憲法法庭裁判與司法院大法官解釋系統": f"https://cons.judicial.gov.tw/jcc/zh-tw/jep01?q={encoded_k}",
+        "📖 全國法規資料庫 (法務部法規命令與沿革)": f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={encoded_k}",
+        "⚖️ 七法 Lawsnote 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
+        "🏛️ 立法院法律系統 (法條立法沿革與對照)": "https://lis.ly.gov.tw/lglawc/lglawkm",
         "🎓 月旦知識庫 法學論文與期刊論著索引": f"http://lawdata.com.tw/anglelaw/lawdata_search.aspx?keyword={encoded_k}",
-        "🏢 智慧財產及商業法院裁判全文檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
+        "🏢 智慧財產及商業法院裁判檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
+
+def search_precedents_lawbank_style(
+    court_system: str = "全部法院 (全體司法體系)",
+    jud_year: str = "",
+    jud_word: str = "全部字別 (不限)",
+    jud_no: str = "",
+    case_cause: str = "",        # 裁判案由 (jt)
+    main_holding: str = "",      # 裁判主文/心證 (jmain/txtopinion)
+    argument_issue: str = "",    # 案件爭點 (txtargument)
+    cited_laws: str = "",        # 相關法條 (lc1a/lc1b)
+    case_type: str = "全部",     # 裁判類別 (判決/裁定/全部)
+    subject: str = "全部科目",
+    top_k: int = 50
+) -> List[Dict[str, Any]]:
+    """
+    法源法律網 (LawBank) 規格多維度司法裁判專業檢索：
+    支援：法院層級體系、民國年度 (jud_year)、常用字別 (sel_judword)、裁判字號 (jud_no)、
+    裁判案由 (jt)、主文/心證 (jmain/txtopinion)、案件爭點 (txtargument)、相關法條 (lc1a/lc1b)
+    """
+    catalog = get_precedents_catalog()
+    if not catalog:
+        return []
+
+    results = []
+    clean_year = jud_year.strip().replace("年", "").replace("度", "")
+    clean_word = jud_word.strip() if jud_word != "全部字別 (不限)" else ""
+    clean_no = jud_no.strip().replace("號", "").replace("字", "")
+    clean_cause = case_cause.strip()
+    clean_holding = main_holding.strip()
+    clean_issue = argument_issue.strip()
+    clean_laws = cited_laws.strip()
+    law_nums = re.findall(r'\d+', clean_laws)
+    target_courts = LAWBANK_COURTS_TAXONOMY.get(court_system, [])
+
+    for item in catalog:
+        score = 0
+        cid = item.get("case_id", "")
+        ct = item.get("court", "")
+        lvl = item.get("level", "")
+        tit = item.get("title", "")
+        sub_c = item.get("sub_category", "")
+        hold = item.get("holding", "")
+        iss = item.get("issue", "")
+        sch = item.get("scholarly_views", "")
+        laws = " ".join(item.get("laws_cited", []))
+        item_sub = item.get("subject", "")
+
+        # 1. 法院體系過濾
+        if target_courts:
+            if not any(tc in ct or tc in lvl or tc in cid for tc in target_courts):
+                continue
+            score += 10
+        elif court_system and "全部" not in court_system:
+            if court_system not in ct and court_system not in lvl and court_system not in cid:
+                continue
+            score += 10
+
+        # 2. 民國年度 (jud_year)
+        if clean_year:
+            year_patterns = [f"{clean_year}年度", f"{clean_year}年", f" {clean_year} ", f"_{clean_year}_", clean_year]
+            if any(yp in cid for yp in year_patterns):
+                score += 35
+            else:
+                continue
+
+        # 3. 常用字別 (sel_judword)
+        if clean_word:
+            if clean_word in cid:
+                score += 35
+            else:
+                continue
+
+        # 4. 案號數字 (jud_no)
+        if clean_no:
+            no_patterns = [f"第{clean_no}號", f"字第{clean_no}", f" {clean_no} ", f"_{clean_no}_", clean_no]
+            if any(np in cid for np in no_patterns):
+                score += 50
+            else:
+                continue
+
+        # 5. 裁判類別 (判決/裁定/全部)
+        if case_type != "全部":
+            if case_type == "判決":
+                if not ("判決" in lvl or "判決" in cid or "憲判" in cid or "判" in cid):
+                    continue
+            elif case_type == "裁定":
+                if not ("裁定" in lvl or "裁定" in cid or "憲裁" in cid or "裁" in cid):
+                    continue
+            elif case_type == "大法官解釋":
+                if not ("釋字" in cid or "解釋" in lvl):
+                    continue
+            score += 5
+
+        # 6. 裁判案由 (jt)
+        if clean_cause:
+            cause_tokens = [t for t in re.split(r'[\s,，、]+', clean_cause) if len(t) >= 2] or [clean_cause]
+            matched_c = sum(1 for tok in cause_tokens if tok in tit or tok in sub_c or tok in iss)
+            if matched_c == 0:
+                continue
+            score += 25 * matched_c
+
+        # 7. 裁判主文 / 法院心證 (jmain / txtopinion)
+        if clean_holding:
+            h_tokens = [t for t in re.split(r'[\s,，、。]+', clean_holding) if len(t) >= 2] or [clean_holding]
+            matched_h = sum(1 for tok in h_tokens if tok in hold or tok in sch)
+            if matched_h == 0:
+                continue
+            score += 20 * matched_h
+
+        # 8. 案件爭點 (txtargument)
+        if clean_issue:
+            i_tokens = [t for t in re.split(r'[\s,，、。]+', clean_issue) if len(t) >= 2] or [clean_issue]
+            matched_i = sum(1 for tok in i_tokens if tok in iss or tok in tit or tok in sub_c)
+            if matched_i == 0:
+                continue
+            score += 20 * matched_i
+
+        # 9. 相關法條 (lc1a / lc1b)
+        if clean_laws:
+            matched_l = False
+            for tok in [t for t in re.split(r'[\s,，、]+', clean_laws) if len(t) >= 2]:
+                if tok in laws:
+                    matched_l = True
+                    score += 25
+            for num in law_nums:
+                if any(num in law for law in item.get("laws_cited", [])):
+                    matched_l = True
+                    score += 20
+            if not matched_l:
+                continue
+
+        # 10. 科目領域匹配
+        if subject and "全部" not in subject:
+            sub_kws = [k for k in re.split(r'[\s（）()【】/・、,，]+', subject) if len(k) >= 2]
+            if any(k in item_sub or k in tit for k in sub_kws):
+                score += 15
+
+        if "大法庭" in lvl:
+            score += 15
+        elif "憲法" in lvl:
+            score += 10
+
+        results.append((score, item))
+
+    # 若未指定任何具體條件但點選查詢，預設回傳熱門代表性裁判
+    if not (clean_year or clean_word or clean_no or clean_cause or clean_holding or clean_issue or clean_laws or target_courts or (court_system and "全部" not in court_system)):
+        return catalog[:top_k]
+
+    results.sort(key=lambda x: -x[0])
+    return [r[1] for r in results[:top_k]]
 
 def search_local_precedents(
     query: str,
