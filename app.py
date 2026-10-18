@@ -428,11 +428,11 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             with qcol2:
                 q_count_option = st.selectbox(
                     "出題題數：",
-                    ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "自訂題數"],
+                    ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "50 題 (半套模考卷)", "100 題 (全真一試大卷)", "自訂題數"],
                     key="ai_q_count_select"
                 )
                 if q_count_option == "自訂題數":
-                    q_count = st.number_input("請輸入自訂題數 (1~50 題)：", min_value=1, max_value=50, value=5, key="ai_custom_q_count")
+                    q_count = st.number_input("請輸入自訂題數 (1~100 題)：", min_value=1, max_value=100, value=10, key="ai_custom_q_count")
                 else:
                     q_count = int(q_count_option.split(" ")[0])
 
@@ -857,28 +857,112 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
 # ----------------- 模式 4: 擬答生成 -----------------
 elif app_mode == "📖 高分權威擬答生成":
     st.header("📖 司律二試 - 高分示範擬答生成器")
-    st.write("針對二試爭議題目，自動撰寫具備榜首水準的開標、大前提、實務學說對比與事實涵攝完美擬答。")
+    st.write("針對二試爭議題目，自動撰寫具備榜首水準的開標、大前提、實務學說對比與事實涵攝完美擬答。支援直接貼入文字，或拍照、上傳試卷 PDF/Word 自動轉錄！")
+
+    m4_input_mode = st.radio(
+        "題目提供方式：",
+        ["📝 直接貼上文字", "📸 拍照或上傳試卷檔案 (JPG/PNG/PDF/Word)"],
+        horizontal=True,
+        key="m4_input_mode_radio"
+    )
+
+    if "m4_target_question" not in st.session_state:
+        st.session_state["m4_target_question"] = ""
+
+    # 若由真題庫帶入，優先使用
+    if "question_text_content" in st.session_state and st.session_state["question_text_content"]:
+        if not st.session_state["m4_target_question"]:
+            st.session_state["m4_target_question"] = st.session_state["question_text_content"]
+
+    if "📸" in m4_input_mode:
+        m4_up_file = st.file_uploader(
+            "請上傳二試申論題題目檔案（支援手機拍照圖、PDF 試卷或 Word 題稿）：",
+            type=["png", "jpg", "jpeg", "webp", "pdf", "docx"],
+            key="m4_question_file_uploader"
+        )
+        if m4_up_file is not None:
+            st.info(f"📄 已選擇檔案：`{m4_up_file.name}` ({len(m4_up_file.getvalue()) / (1024*1024):.2f} MB)")
+            if st.button("🔍 辨識並自動帶入題目文字", key="btn_m4_ocr"):
+                with st.spinner("正在使用 Gemini 2.0 Flash 多模態神經網路自動辨識並轉錄題目全文..."):
+                    try:
+                        ext = m4_up_file.name.split(".")[-1].lower()
+                        transcribed = ""
+                        if ext in ["png", "jpg", "jpeg", "webp"]:
+                            from PIL import Image
+                            img = Image.open(m4_up_file)
+                            from evaluator import LawExamEvaluator
+                            ev = LawExamEvaluator()
+                            if hasattr(ev, "client") and ev.client:
+                                prompt = "請將此張試卷照片或截圖中的完整題目文字逐字謄錄為繁體中文，保持原本標號、事實情境與子題配分。直接輸出題目文字，勿加入額外寒暄。"
+                                r = ev.client.models.generate_content(
+                                    model="gemini-2.0-flash",
+                                    contents=[img, prompt]
+                                )
+                                transcribed = r.text.strip()
+                            else:
+                                transcribed = "[無法調用視覺模型，請確認 API Key]"
+                        elif ext == "pdf":
+                            import pdfplumber, io
+                            with pdfplumber.open(io.BytesIO(m4_up_file.getvalue())) as p:
+                                p_text = "\n".join([page.extract_text() or "" for page in p.pages]).strip()
+                            if len(p_text) >= 50:
+                                transcribed = p_text
+                            else:
+                                from ingest_user_notes_to_sft import read_note_text
+                                import tempfile
+                                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+                                    tf.write(m4_up_file.getvalue())
+                                    tf_path = Path(tf.name)
+                                transcribed = read_note_text(tf_path, max_pages=5, auto_ocr=True)
+                        elif ext == "docx":
+                            from docx import Document
+                            import io
+                            doc = Document(io.BytesIO(m4_up_file.getvalue()))
+                            transcribed = "\n".join([p.text for p in doc.paragraphs if p.text.strip()]).strip()
+                        
+                        if transcribed:
+                            st.session_state["m4_target_question"] = transcribed
+                            st.success("✅ 題目辨識並謄錄成功！已自動帶入下方編輯框：")
+                        else:
+                            st.warning("未能從上傳檔案中提取到題目文字。")
+                    except Exception as e:
+                        st.error(f"題目解析失敗: {e}")
+
+    col_m4_sub, col_m4_clear = st.columns([3, 1])
+    with col_m4_sub:
+        m4_subject = st.selectbox(
+            "考科領域（有助模型精準鎖定最新裁判與實務爭點）：",
+            ["民法與民事訴訟法", "刑法與刑事訴訟法", "憲法與行政法", "公司法、保險法與證券交易法", "智慧財產法", "勞動社會法", "財稅法", "海商法與海洋法", "其他法學綜合實例題"],
+            key="m4_subject_select"
+        )
+    with col_m4_clear:
+        if st.button("✖️ 清空題目", key="btn_m4_clear"):
+            st.session_state["m4_target_question"] = ""
+            st.rerun()
 
     target_q = st.text_area(
-        "請貼上申論題題目：",
+        "請確認申論題題目（可直接修改或補充）：",
+        value=st.session_state.get("m4_target_question", ""),
         height=200,
-        placeholder="請貼入完整的二試題目..."
+        placeholder="請貼入完整的二試題目，或由上方拍照/上傳自動辨識帶入...",
+        key="m4_text_area_input"
     )
 
     if st.button("✨ 生成極致高分擬答", type="primary"):
         if not target_q.strip():
-            st.warning("請先輸入題目！")
+            st.warning("請先輸入或上傳題目！")
         else:
-            with st.spinner("法學專家正在撰寫嚴謹三段論法擬答..."):
+            with st.spinner(f"法學大模型正在為【{m4_subject}】撰寫具備榜首水準的開標、大前提、實務學說對比與事實涵攝完美擬答..."):
                 try:
                     gen = LawExamGenerator()
-                    ans = gen.generate_model_answer(question=target_q)
+                    ans = gen.generate_model_answer(question=target_q, subject=m4_subject)
+                    st.markdown("### 🏆 示範擬答全文 (IRAC)：")
                     st.markdown(ans)
                     st.divider()
                     if st.button("📝 將此題與示範擬答帶入【試卷評分】批改 (自動帶入題目與評分標準)"):
                         st.session_state["question_text_content"] = target_q
                         st.session_state["rubric_text_content"] = ans
-                        st.session_state["imported_from_bank_label"] = "二試申論題（含榜首示範擬答標準）"
+                        st.session_state["imported_from_bank_label"] = f"二試申論題【{m4_subject}】（含榜首示範擬答標準）"
                         st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
                         st.rerun()
                 except Exception as e:
