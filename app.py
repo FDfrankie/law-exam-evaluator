@@ -2486,11 +2486,19 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                 if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
                     with st.spinner("⚖️ 正在運用 Gemini Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
                         try:
+                            # 1. 建立獨立檔案永久典藏至社群筆記庫，並實時連動注入六法註記大典
+                            arch_res = archive_uploaded_note(
+                                file_bytes=up_file.getvalue(),
+                                filename=up_file.name,
+                                subject="法學筆記",
+                                summary=f"考生上傳之《{up_file.name}》"
+                            )
+
                             from ingest_user_notes_to_sft import ingest_single_uploaded_file
                             new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
                             if new_samples:
                                 st.balloons()
-                                st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
+                                st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動新建獨立檔案 `{arch_res.get('archive_filename', up_file.name)}` 永久典藏至社群筆記庫與六法大典！")
                                 with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
                                     for s_idx, s in enumerate(new_samples, 1):
                                         st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
@@ -2499,9 +2507,39 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                                         st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
                                         st.divider()
                             else:
-                                st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。")
+                                st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。但該檔案已成功新建獨立檔案典藏至社群庫！")
                         except Exception as de:
                             st.error(f"蒸餾處理失敗: {de}")
+
+            # 社群考生共享講義與讀書筆記寶庫
+            st.divider()
+            comm_notes_all = load_community_notes()
+            st.markdown(f"#### 👥 全民共享講義筆記寶庫（已永久典藏 {len(comm_notes_all)} 份社群筆記）")
+            st.caption("所有考生手動上傳之手寫/PDF筆記均新建獨立檔案永久保存，供後人研讀並實時注入六法條文註記：")
+            if comm_notes_all:
+                for c_note in comm_notes_all:
+                    c_n_title = c_note.get("filename", "法學筆記")
+                    c_n_sub = c_note.get("subject", "法學")
+                    c_n_uploader = c_note.get("uploader", "社群考生")
+                    c_n_time = c_note.get("uploaded_at", "")
+                    c_n_path = c_note.get("file_path", "")
+                    c_n_size = c_note.get("size_kb", 0)
+
+                    with st.expander(f"📄 【{c_n_sub}】《{c_n_title}》 ｜ 👤 {c_n_uploader} ｜ 📅 {c_n_time} ({c_n_size} KB)"):
+                        st.caption(f"檔案路徑：`{c_note.get('relative_path')}`")
+                        if c_n_path and Path(c_n_path).exists():
+                            try:
+                                with open(c_n_path, "rb") as bf:
+                                    st.download_button(
+                                        label=f"💾 下載此份筆記檔案 ({c_n_size} KB)",
+                                        data=bf.read(),
+                                        file_name=c_n_title,
+                                        key=f"dl_cn_{c_note.get('note_id')}"
+                                    )
+                            except Exception:
+                                pass
+            else:
+                st.info("💡 目前社群筆記寶庫中暫無外部上傳檔案。您在此上傳的任何講義或手寫筆記，系統都將建立獨立檔案典藏入庫！")
 
     with sft_tab2:
         st.subheader("📚 全考科整合：依體系合併為單一完整 PDF 與全科文字自動提取")
