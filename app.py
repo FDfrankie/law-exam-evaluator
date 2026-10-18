@@ -1757,10 +1757,14 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             for r in filtered_rulings:
                 st.markdown(f"**🏢 【{r.get('agency')}】`{r.get('doc_number')}` ｜ {r.get('law_name')} {r.get('article_target', '')}**")
                 st.markdown(f"**🌟 {r.get('title')}** (📅 {r.get('date')})")
-                st.info(f"**核心要旨：**\n{r.get('holding')}")
                 if r.get('exam_point_hint'):
                     st.caption(f"✍️ **國考作答提示：** {r.get('exam_point_hint')}")
                 st.markdown("---")
+
+    # 執行檢索
+    matched_articles = search_articles(keyword=search_kw, selected_law=selected_law, selected_branch=selected_branch)
+
+    st.markdown(f"**📚 當前檢索結果**：共找到 **{len(matched_articles)}** 條條文")
 
     if not matched_articles:
         st.info("查無符合條文，請嘗試更換條號數字或搜尋關鍵字。")
