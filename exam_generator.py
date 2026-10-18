@@ -277,7 +277,7 @@ class LawExamGenerator:
 5. 【結論明確】一錘定音，直接俐落回應題目所有提問。
 
 請直接以排版工整之 Markdown 格式輸出擬答全文。
-\"\"\"
+"""
         response = self._call_model(
             prompt,
             generation_config=genai_types.GenerateContentConfig(

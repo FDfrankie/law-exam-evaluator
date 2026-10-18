@@ -18,6 +18,7 @@ from evaluator import LawExamEvaluator
 from exam_generator import LawExamGenerator
 from exam_bank_crawler import LawExamBankCrawler
 from legal_query_engine import LegalIssueQueryEngine, search_local_precedents
+from six_codes_engine import SIX_CODES_TAXONOMY, get_laws_in_branch, search_articles, get_article_annotations, SixCodesDeepAnnotator
 
 # 設定頁面配置
 st.set_page_config(
@@ -39,6 +40,7 @@ with st.sidebar:
         "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
         "📖 高分權威擬答生成",
         "🔍 AI 爭點查詢 (法條・判解・學說速查)",
+        "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)",
         "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
     ]
     if "app_mode" not in st.session_state or st.session_state["app_mode"] not in mode_options:
@@ -1150,7 +1152,148 @@ elif app_mode == "🔍 AI 爭點查詢 (法條・判解・學說速查)":
                 st.session_state["app_mode"] = "📖 高分權威擬答生成"
                 st.rerun()
 
-# ----------------- 模式 6: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
+# ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
+elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)":
+    st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")
+    st.write("全面收錄全台 **61 部核心司律考科法規、10,183 條法定條文**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則**及**考生個人手寫讀書筆記**！")
+
+    # 1. 導航選擇列
+    col_b, col_l, col_q = st.columns([1, 1, 2])
+    with col_b:
+        branch_options = list(SIX_CODES_TAXONOMY.keys())
+        selected_branch = st.selectbox("1. 選擇法學門類：", branch_options, key="six_codes_branch")
+    with col_l:
+        available_laws = get_laws_in_branch(selected_branch)
+        selected_law = st.selectbox("2. 選擇法典名稱：", available_laws, key="six_codes_law")
+    with col_q:
+        search_kw = st.text_input(
+            "3. 搜尋條號（如 184、19、64、759-1）或條文關鍵字：",
+            placeholder="輸入條號或法理關鍵字（如：純粹經濟、借名登記、原因自由行為）...",
+            key="six_codes_search_kw"
+        )
+
+    # 快捷核心考條按鈕
+    st.markdown("##### 📌 司律核心高頻爭點條文直達：")
+    q_btn_cols = st.columns(6)
+    quick_jump = None
+    with q_btn_cols[0]:
+        if st.button("民法 第 184 條", use_container_width=True):
+            quick_jump = ("民法", "184")
+    with q_btn_cols[1]:
+        if st.button("民法 第 759-1 條", use_container_width=True):
+            quick_jump = ("民法", "759-1")
+    with q_btn_cols[2]:
+        if st.button("刑法 第 19 條", use_container_width=True):
+            quick_jump = ("中華民國刑法", "19")
+    with q_btn_cols[3]:
+        if st.button("刑訴 第 159-5 條", use_container_width=True):
+            quick_jump = ("刑事訴訟法", "159-5")
+    with q_btn_cols[4]:
+        if st.button("保險法 第 64 條", use_container_width=True):
+            quick_jump = ("保險法", "64")
+    with q_btn_cols[5]:
+        if st.button("公司法 第 185 條", use_container_width=True):
+            quick_jump = ("公司法", "185")
+
+    if quick_jump:
+        selected_law = quick_jump[0]
+        search_kw = quick_jump[1]
+
+    # 執行檢索
+    matched_articles = search_articles(keyword=search_kw, selected_law=selected_law, selected_branch=selected_branch)
+
+    st.markdown(f"**📚 當前檢索結果**：共找到 **{len(matched_articles)}** 條條文")
+
+    if not matched_articles:
+        st.info("查無符合條文，請嘗試更換條號數字或搜尋關鍵字。")
+    else:
+        for idx, art in enumerate(matched_articles[:30]):
+            lname = art.get("law_name", "")
+            ano = art.get("article_no", "")
+            content = art.get("content", "")
+            
+            anno = get_article_annotations(law_name=lname, article_no=ano)
+            precedents = anno.get("precedents", [])
+            orders = anno.get("orders", [])
+            notes = anno.get("notes", [])
+
+            badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
+            badge_notes = f" ｜ 📝 【關聯 {len(notes)} 份個人筆記】" if notes else ""
+            
+            with st.expander(f"📖 【{lname} {ano}】{badge_prec}{badge_notes}", expanded=(idx < 2)):
+                st.markdown(f"> **📜 條文全文**：\n> {content}")
+
+                tab_prec, tab_orders, tab_notes, tab_ai = st.tabs([
+                    f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
+                    f"📋 相關命令與細則 ({len(orders)} 筆)",
+                    f"📝 關聯個人讀書筆記 ({len(notes)} 份)",
+                    "🤖 AI 深度釋析與主管函釋補強"
+                ])
+
+                with tab_prec:
+                    if precedents:
+                        for p in precedents:
+                            st.markdown(f"**【{p.get('level')}】`{p.get('case_id')}`** ｜ **{p.get('title')}**")
+                            st.info(f"**核心要旨/主文：**\n{p.get('holding')}")
+                            if p.get('scholarly_views'):
+                                st.caption(f"📚 **學說實務對比：** {p.get('scholarly_views')}")
+                            if p.get('exam_application_hint'):
+                                st.success(f"✍️ **國考作答指示：** {p.get('exam_application_hint')}")
+                            st.markdown("---")
+                    else:
+                        st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可點擊第 4 個分頁由 AI 進行歷審精選裁判與學說補強。")
+
+                with tab_orders:
+                    if orders:
+                        st.markdown(f"**【{lname}】之關聯法規命令、施行法與施行細則：**")
+                        for ord_item in orders:
+                            st.markdown(f"- **{ord_item['name']}** (`{ord_item['type']}`)：{ord_item['desc']}")
+                    else:
+                        st.caption("此法規無額外施行細則登記或直接以母法規範。")
+
+                with tab_notes:
+                    if notes:
+                        st.markdown(f"**考生 Google Drive / SamsungNotes 中關聯此法條考科之講義筆記：**")
+                        for n in notes[:8]:
+                            st.markdown(f"- 📄 **《{n['filename']}》** ({n['size_kb']} KB)")
+                    else:
+                        st.caption("此考科目前尚未在 SamsungNotes 中上傳專屬手寫筆記。")
+
+                with tab_ai:
+                    ai_cache_key = f"ai_anno_{lname}_{ano}"
+                    if st.button(f"✨ 啟動 AI 深度釋析（立法理由、主管機關函釋、通說有力說）", key=f"btn_run_anno_{idx}"):
+                        with st.spinner(f"正在由 Gemini 2.0 Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
+                            try:
+                                annotator = SixCodesDeepAnnotator()
+                                report = annotator.annotate_article(law_name=lname, article_no=ano, content=content)
+                                st.session_state[ai_cache_key] = report
+                            except Exception as ee:
+                                st.error(f"生成註釋失敗: {ee}")
+
+                    if ai_cache_key in st.session_state:
+                        st.markdown(st.session_state[ai_cache_key])
+
+                st.divider()
+                act1, act2, act3 = st.columns(3)
+                with act1:
+                    if st.button(f"📝 帶入試卷評分標準", key=f"btn_pass_eval_{idx}", use_container_width=True):
+                        st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano}\n\n【條文內容】：\n{content}"
+                        st.session_state["rubric_text_content"] = f"【評分指標與法規依據】：\n1. 正確引述 {lname} {ano} 之構成要件與法律效果。\n2. 參酌相關實務見解與立法理由進行涵攝。"
+                        st.session_state["imported_from_bank_label"] = f"六法條文【{lname} {ano}】"
+                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                        st.rerun()
+                with act2:
+                    if st.button(f"🔍 帶入爭點查詢深入分析", key=f"btn_pass_query_{idx}", use_container_width=True):
+                        st.session_state["ai_query_input_text"] = f"{lname} {ano} 相關核心爭點與實務裁判"
+                        st.session_state["app_mode"] = "🔍 AI 爭點查詢 (法條・判解・學說速查)"
+                        st.rerun()
+                with act3:
+                    if st.button(f"📖 針對此法條出題/擬答", key=f"btn_pass_ans_{idx}", use_container_width=True):
+                        st.session_state["m4_target_question"] = f"請針對【{lname} {ano}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：{content}"
+                        st.session_state["app_mode"] = "📖 高分權威擬答生成"
+                        st.rerun()
+
+# ----------------- 模式 7: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
 elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
     st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
     st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
