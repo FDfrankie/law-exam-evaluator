@@ -264,6 +264,114 @@ TRACK_COURT_TAXONOMY = [
     ('抗', '最高法院'),
 ]
 
+# 常用法院簡稱與標準法院全稱對照表（支援最高行、北高行、最高院、高院、智財法院、各地院等）
+COURT_ABBREVIATIONS = {
+    # 最高行政法院
+    "最高行": "最高行政法院",
+    "最高行政法院": "最高行政法院",
+    "最高行政": "最高行政法院",
+    "最行": "最高行政法院",
+    # 高等行政法院
+    "北高行": "臺北高等行政法院",
+    "台北高等行政法院": "臺北高等行政法院",
+    "臺北高等行政法院": "臺北高等行政法院",
+    "中高行": "臺中高等行政法院",
+    "台中高等行政法院": "臺中高等行政法院",
+    "臺中高等行政法院": "臺中高等行政法院",
+    "高高行": "高雄高等行政法院",
+    "高雄高等行政法院": "高雄高等行政法院",
+    "高行": "高等行政法院",
+    # 最高法院
+    "最高院": "最高法院",
+    "最高法院": "最高法院",
+    "最高法": "最高法院",
+    "最高": "最高法院",
+    # 臺灣高等法院及各分院
+    "高院": "臺灣高等法院",
+    "臺灣高等法院": "臺灣高等法院",
+    "台灣高等法院": "臺灣高等法院",
+    "臺高院": "臺灣高等法院",
+    "台高院": "臺灣高等法院",
+    "台中高分院": "臺灣高等法院臺中分院",
+    "臺中高分院": "臺灣高等法院臺中分院",
+    "中高分院": "臺灣高等法院臺中分院",
+    "中高分": "臺灣高等法院臺中分院",
+    "台南高分院": "臺灣高等法院臺南分院",
+    "臺南高分院": "臺灣高等法院臺南分院",
+    "南高分院": "臺灣高等法院臺南分院",
+    "南高分": "臺灣高等法院臺南分院",
+    "高雄高分院": "臺灣高等法院高雄分院",
+    "高高分院": "臺灣高等法院高雄分院",
+    "高高分": "臺灣高等法院高雄分院",
+    "花蓮高分院": "臺灣高等法院花蓮分院",
+    "花高分院": "臺灣高等法院花蓮分院",
+    "金門高分院": "福建高等法院金門分院",
+    "金高分院": "福建高等法院金門分院",
+    # 智慧財產及商業法院
+    "智財法院": "智慧財產及商業法院",
+    "智財高院": "智慧財產及商業法院",
+    "智商法院": "智慧財產及商業法院",
+    "智財": "智慧財產及商業法院",
+    "智慧財產法院": "智慧財產及商業法院",
+    "智慧財產及商業法院": "智慧財產及商業法院",
+    # 憲法法庭與大法官
+    "憲法法庭": "憲法法庭",
+    "憲法庭": "憲法法庭",
+    "憲判": "憲法法庭",
+    "大法官": "司法院大法官",
+    # 懲戒法院
+    "懲戒法院": "懲戒法院",
+    "公懲會": "公務員懲戒委員會",
+    # 地方法院簡稱
+    "北院": "臺灣臺北地方法院",
+    "台北地院": "臺灣臺北地方法院",
+    "臺北地院": "臺灣臺北地方法院",
+    "士院": "臺灣士林地方法院",
+    "士林地院": "臺灣士林地方法院",
+    "板院": "臺灣新北地方法院",
+    "新北地院": "臺灣新北地方法院",
+    "桃院": "臺灣桃園地方法院",
+    "桃園地院": "臺灣桃園地方法院",
+    "竹院": "臺灣新竹地方法院",
+    "新竹地院": "臺灣新竹地方法院",
+    "苗院": "臺灣苗栗地方法院",
+    "苗栗地院": "臺灣苗栗地方法院",
+    "中院": "臺灣臺中地方法院",
+    "台中地院": "臺灣臺中地方法院",
+    "臺中地院": "臺灣臺中地方法院",
+    "彰院": "臺灣彰化地方法院",
+    "彰化地院": "臺灣彰化地方法院",
+    "投院": "臺灣南投地方法院",
+    "南投地院": "臺灣南投地方法院",
+    "雲院": "臺灣雲林地方法院",
+    "雲林地院": "臺灣雲林地方法院",
+    "嘉院": "臺灣嘉義地方法院",
+    "嘉義地院": "臺灣嘉義地方法院",
+    "南院": "臺灣臺南地方法院",
+    "台南地院": "臺灣臺南地方法院",
+    "臺南地院": "臺灣臺南地方法院",
+    "雄院": "臺灣高雄地方法院",
+    "高雄地院": "臺灣高雄地方法院",
+    "橋院": "臺灣橋頭地方法院",
+    "橋頭地院": "臺灣橋頭地方法院",
+    "屏院": "臺灣屏東地方法院",
+    "屏東地院": "臺灣屏東地方法院",
+    "東院": "臺灣臺東地方法院",
+    "台東地院": "臺灣臺東地方法院",
+    "花院": "臺灣花蓮地方法院",
+    "花蓮地院": "臺灣花蓮地方法院",
+    "宜院": "臺灣宜蘭地方法院",
+    "宜蘭地院": "臺灣宜蘭地方法院",
+    "基院": "臺灣基隆地方法院",
+    "基隆地院": "臺灣基隆地方法院",
+    "澎院": "臺灣澎湖地方法院",
+    "澎湖地院": "臺灣澎湖地方法院",
+    "金院": "福建金門地方法院",
+    "金門地院": "福建金門地方法院",
+    "連院": "福建連江地方法院",
+    "連江地院": "福建連江地方法院"
+}
+
 def normalize_citation_track(s: str) -> str:
     """
     正規化裁判字軌：
@@ -315,6 +423,10 @@ def normalize_court_case_citation(s: str) -> str:
 def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
     """
     智慧解析案號縮寫：
+    - 最高行110上15 -> 最高行政法院 110 年度上字第 15 號判決
+    - 北高行109訴567 -> 臺北高等行政法院 109 年度訴字第 567 號判決
+    - 最高院108台上1719 -> 最高法院 108 年度台上字第 1719 號判決
+    - 智財法院111民專上2 -> 智慧財產及商業法院 111 年度民專上字第 2 號判決
     - 108台上908 -> 108年度台上字第908號判決/裁定
     - 108台上908民 -> 108年度台上字第908號民事判決
     - 108台上908民決 -> 108年度台上字第908號民事判決
@@ -326,13 +438,14 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
     - 111憲判1 -> 憲法法庭111年憲判字第1號判決
     - 重上更一15 / 重上更(一)15 -> 重上更(一)字第15號
     - 109家上12 / 109加上12 -> 109年度家上字第12號
-    - 109民著上12 -> 109年度民著上字第12號
-    - 110行專上5 -> 110年度行專上字第5號
+    - 110最高行上15 -> 最高行政法院 110 年度上字第 15 號判決
     """
     q = query.strip()
     raw_q = q
     info = {
         "raw": raw_q,
+        "court": None,         # 正式法院全銜 (如 最高行政法院、最高法院、臺北高等行政法院)
+        "court_abbr": None,    # 使用者輸入或比對之法院簡稱 (如 最高行、北高行)
         "year": None,
         "track": None,
         "no": None,
@@ -340,6 +453,22 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
         "doc_type": None,     # 判決 / 裁定 / 判例 / 解釋
         "clean_norm": normalize_court_case_citation(raw_q)
     }
+
+    # 0. 識別法院前綴或年份後之法院簡稱 (如 "最高行110上15" 或 "110最高行上15")
+    # 先依照簡稱長度由長至短排序比對，避免前綴衝突（例如 "臺北高等行政法院" 比 "北高行" 比 "高行"）
+    sorted_court_abbrs = sorted(COURT_ABBREVIATIONS.keys(), key=lambda x: len(x), reverse=True)
+    
+    # 情況 A: 法院簡稱在最開頭，如 "最高行 110 上 15" 或 "北院 110 訴 10"
+    for abbr in sorted_court_abbrs:
+        pattern_prefix = rf'^{re.escape(abbr)}\s*'
+        if re.match(pattern_prefix, q):
+            info["court_abbr"] = abbr
+            info["court"] = COURT_ABBREVIATIONS[abbr]
+            q = re.sub(pattern_prefix, '', q)
+            # 若為行政法院系列，預設性質為 "行"
+            if "行政" in info["court"]:
+                info["nature"] = "行"
+            break
 
     # 1. 書類尾綴判定 (例 / 判例 / 決 / 判決 / 裁 / 裁定)
     if q.endswith(('判例', '例')):
@@ -363,6 +492,22 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
         info["nature"] = "行"
         q = re.sub(r'(?:行政|行)$', '', q)
 
+    # 情況 B: 法院簡稱在年份之後，如 "110最高行上15"、"109北高行訴567"
+    if not info.get("court"):
+        m_yr_court = re.match(r'^(\d{1,3})\s*(?:年|年度)?\s*([a-zA-Z\u4e00-\u9fa5]+)', q)
+        if m_yr_court:
+            yr_candidate = m_yr_court.group(1)
+            rest_candidate = m_yr_court.group(2)
+            for abbr in sorted_court_abbrs:
+                if rest_candidate.startswith(abbr):
+                    info["court_abbr"] = abbr
+                    info["court"] = COURT_ABBREVIATIONS[abbr]
+                    if "行政" in info["court"]:
+                        info["nature"] = "行"
+                    # 將 q 替換為 去掉法院簡稱的字串：如 "110最高行上15" -> "110上15"
+                    q = q[:m_yr_court.start(2)] + rest_candidate[len(abbr):] + q[m_yr_court.end(2):]
+                    break
+
     # 3. 司法院院字、院解字、釋字、憲判
     m_special = re.search(r'^(?:司法院)?\s*(\d{1,3})?\s*(?:年|年度)?\s*(院解字|院解|院字|釋字|憲判(?:字)?)(?:第)?\s*(\d+)(?:號)?$', q)
     if m_special:
@@ -376,8 +521,10 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
         info["no"] = m_special.group(3)
         if '憲判' in tr:
             info["doc_type"] = info["doc_type"] or "判決"
+            info["court"] = "憲法法庭"
         else:
             info["doc_type"] = info["doc_type"] or "解釋"
+            info["court"] = "司法院大法官"
         return info
 
     # 4. 常見格式: [年度] [字軌] [號數]
@@ -415,6 +562,23 @@ def match_case_abbreviation(parsed_info: dict, case_record: dict) -> bool:
     title = case_record.get("title", "")
     full_str = f"{cid} {court} {level} {title}"
     full_norm = normalize_court_case_citation(full_str)
+
+    # 0. 法院比對 (若 query 明確指定法院或法院簡稱)
+    if parsed_info.get("court"):
+        expected_court = parsed_info["court"]
+        # 檢查 full_str 中是否符合目標法院，或比對簡稱
+        court_match = False
+        if expected_court in full_str or expected_court in court:
+            court_match = True
+        elif parsed_info.get("court_abbr") and parsed_info["court_abbr"] in full_str:
+            court_match = True
+        else:
+            # 兼容地方法院/高等法院/最高法院關鍵字
+            court_core = expected_court.replace("臺灣", "").replace("福建", "").replace("高等行政法院", "高行")
+            if court_core in full_str or court_core in court:
+                court_match = True
+        if not court_match:
+            return False
 
     # 1. 號數比對
     if parsed_info.get("no"):
@@ -503,30 +667,42 @@ def construct_standard_citation_from_parsed(info: dict) -> str:
         c_digit = rev_map.get(digit, digit)
         display_track = re.sub(r'更\d+', f"更({c_digit})", display_track)
 
-    court = "最高法院"
-    for track_key, ct in sorted(TRACK_COURT_TAXONOMY, key=lambda x: len(x[0]), reverse=True):
-        if track_key in raw_track:
-            court = ct
-            break
-    if '重上' in raw_track or '更' in raw_track:
-        court = "臺灣高等法院"
+    # 優先採用 parsed_info 中已解析出的法院全銜
+    court = info.get("court")
+    if not court:
+        court = "最高法院"
+        for track_key, ct in sorted(TRACK_COURT_TAXONOMY, key=lambda x: len(x[0]), reverse=True):
+            if track_key in raw_track:
+                court = ct
+                break
+        if '重上' in raw_track or '更' in raw_track:
+            court = "臺灣高等法院"
 
-    nat_str = "民事" if nature == "民" else ("刑事" if nature == "刑" else ("行政" if nature == "行" else ""))
-    if any(k in raw_track for k in ["著", "專", "商"]):
-        nat_str = "行政" if "行" in raw_track else "民事"
-    elif "家" in raw_track:
-        nat_str = "家事"
+    # 若為行政法院或智慧財產法院，性質細緻處理
+    is_admin_court = "行政" in court
+    
+    if is_admin_court:
+        nat_str = ""  # 行政法院裁判通常直接稱「判決」或「裁定」，不贅述「行政判決」
+    else:
+        nat_str = "民事" if nature == "民" else ("刑事" if nature == "刑" else ("行政" if nature == "行" else ""))
+        if any(k in raw_track for k in ["著", "專", "商"]):
+            nat_str = "行政" if "行" in raw_track else "民事"
+        elif "家" in raw_track:
+            nat_str = "家事"
 
     if doc_type == "判例":
         year_str = f"{year} 年" if year else ""
         return f"{court} {year_str}{display_track}字第 {no} 號判例"
-    elif "大法庭" in display_track or "大" in display_track:
+    elif "大法庭" in display_track or display_track in ["大", "大裁"]:
         year_str = f"{year} 年度" if year else ""
-        return f"{court} {year_str}{display_track}字第 {no} 號{nat_str}大法庭裁定"
+        track_disp = "大" if display_track in ["大", "大裁"] else display_track
+        chamber_type = "行政大法庭" if is_admin_court else (f"{nat_str}大法庭" if nat_str else "大法庭")
+        return f"{court} {year_str}{track_disp}字第 {no} 號{chamber_type}裁定"
     else:
         year_str = f"{year} 年度" if year else ""
         nat_tail = f"{nat_str}{doc_type}" if nat_str else doc_type
         return f"{court} {year_str}{display_track}字第 {no} 號{nat_tail}"
+
 
 def lookup_case_by_abbreviation(query: str) -> Dict[str, Any]:
     """
