@@ -107,7 +107,66 @@ def inspect_and_index():
         
     print(f"  Summary saved to {summary_path}")
 
+CORE_EXAM_KEYWORDS = [
+    "民法", "刑法", "民事訴訟法", "刑事訴訟法", "憲法", "行政程序法", "行政訴訟法", "行政罰法",
+    "訴願法", "國家賠償法", "公司法", "證券交易法", "保險法", "票據法", "銀行法", "消費者保護法",
+    "金融消費者保護法", "海商法", "勞動基準法", "勞動事件法", "工會法", "勞工保險條例", "全民健康保險法",
+    "稅捐稽徵法", "所得稅法", "加值型及非加值型營業稅法", "納稅者權利保護法", "涉外民事法律適用法",
+    "著作權法", "專利法", "商標法", "公平交易法", "營業秘密法", "國民法官法", "家事事件法",
+    "強制執行法", "少年事件處理法", "土地法"
+]
+
+def build_corpus():
+    """解析 ChLaw.json 與 ChOrder.json 提取核心考點條文與 SFT 樣本"""
+    ch_law_path = OUTPUT_DIR / "ChLaw.json"
+    ch_order_path = OUTPUT_DIR / "ChOrder.json"
+    training_dir = Path(DATA_DIR) / "training_data"
+    training_dir.mkdir(parents=True, exist_ok=True)
+
+    if not ch_law_path.exists():
+        print(f"[提示] 下載最新法規庫...")
+        download_and_extract(CH_LAW_URL, "ChLaw")
+    if not ch_order_path.exists():
+        download_and_extract(CH_ORDER_URL, "ChOrder")
+
+    print("\n[STEP 1/3] 解析 ChLaw.json (全國法律條文)...")
+    with open(ch_law_path, "r", encoding="utf-8-sig") as f:
+        statutes_data = json.load(f)
+    statutes = statutes_data.get("Laws", [])
+
+    core_exam_articles = []
+    for law in statutes:
+        law_name = law.get("LawName", "")
+        law_category = law.get("LawCategory", "")
+        pcode = law.get("PCode", "")
+        articles = law.get("LawArticles", [])
+        is_core = any(k in law_name for k in CORE_EXAM_KEYWORDS)
+
+        for art in articles:
+            art_no = art.get("ArticleNo", "")
+            art_content = art.get("ArticleContent", "")
+            if not art_content:
+                continue
+            clean_content = re.sub(r'[\r\n\t]+', '\n', art_content).strip()
+            item = {
+                "law_name": law_name,
+                "category": law_category,
+                "pcode": pcode,
+                "article_no": art_no,
+                "content": clean_content,
+                "type": "statute"
+            }
+            if is_core:
+                core_exam_articles.append(item)
+
+    core_corpus_path = OUTPUT_DIR / "core_exam_laws_articles.json"
+    with open(core_corpus_path, "w", encoding="utf-8") as f:
+        json.dump(core_exam_articles, f, ensure_ascii=False, indent=2)
+    print(f"  [完成] 核心司律考科條文庫已儲存: {core_corpus_path} ({len(core_exam_articles)} 條)")
+    return len(core_exam_articles)
+
 if __name__ == "__main__":
     download_and_extract(CH_LAW_URL, "ChLaw")
     download_and_extract(CH_ORDER_URL, "ChOrder")
     inspect_and_index()
+    build_corpus()

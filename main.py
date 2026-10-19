@@ -15,7 +15,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
 
 from config import init_directories, GOOGLE_DRIVE_DATA_DIR, RAW_DATA_DIR
 from evaluator import LawExamEvaluator
-from crawler import MoexCrawler
+from exam_bank_crawler import MoexCrawler
 
 def print_banner():
     print("=" * 65)

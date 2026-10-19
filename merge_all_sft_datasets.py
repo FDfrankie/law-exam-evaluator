@@ -180,5 +180,63 @@ def merge_datasets(include_synthetic: bool = True):
     print(f"  Target File: {out_unified_jsonl}")
     print("=" * 70)
 
+def build_weighted_dataset(
+    note_mult: int = 500,
+    exam_mult: int = 50,
+    coursework_mult: int = 20,
+    court_mult: int = 10,
+    synthetic_samples: int = 40000,
+    random_seed: int = 3407
+):
+    """司法官律師微調大庫 - 多源動態權重平衡產生器"""
+    import random
+    random.seed(random_seed)
+    verified_file = TRAINING_DIR / "law_exam_verified_sft.jsonl"
+    out_weighted_file = TRAINING_DIR / "law_exam_balanced_weighted_sft.jsonl"
+
+    if not verified_file.exists():
+        print(f"  [提示] 核實庫尚未生成，先執行 merge_datasets(include_synthetic=False)...")
+        merge_datasets(include_synthetic=False)
+
+    print("=" * 70)
+    print("  [啟動] 司法官律師微調大庫 多源動態權重平衡建構")
+    print("=" * 70)
+
+    groups = {"notes": [], "exams": [], "coursework": [], "courts": [], "other": []}
+    with open(verified_file, "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            stype = item.get("source_type", "")
+            if "note" in stype:
+                groups["notes"].append(item)
+            elif "exam" in stype:
+                groups["exams"].append(item)
+            elif "coursework" in stype or "theor" in stype:
+                groups["coursework"].append(item)
+            elif "judgment" in stype or "court" in stype or "constitutional" in stype:
+                groups["courts"].append(item)
+            else:
+                groups["other"].append(item)
+
+    final_samples = []
+    final_samples.extend(groups["notes"] * note_mult)
+    final_samples.extend(groups["exams"] * exam_mult)
+    final_samples.extend(groups["coursework"] * coursework_mult)
+    final_samples.extend(groups["courts"] * court_mult)
+    final_samples.extend(groups["other"] * 5)
+
+    random.shuffle(final_samples)
+    with open(out_weighted_file, "w", encoding="utf-8") as f_out:
+        for s in final_samples:
+            f_out.write(json.dumps(s, ensure_ascii=False) + "\n")
+
+    print(f"  ✅ 成功生成加權平衡資料集：{out_weighted_file} ({len(final_samples):,} 筆樣本)")
+    return len(final_samples)
+
 if __name__ == "__main__":
-    merge_datasets()
+    if "--weighted" in sys.argv:
+        build_weighted_dataset()
+    else:
+        merge_datasets()

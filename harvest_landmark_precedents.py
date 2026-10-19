@@ -349,5 +349,32 @@ def build_precedents_catalog():
     print("=" * 75)
     return len(all_precedents)
 
+def expand_from_notes():
+    """從考生讀書筆記與名師講義快取庫中提取引述之法院裁判並擴充至判解庫"""
+    cache_dir = Path("G:/我的雲端硬碟/LawExamData/SamsungNotes/_cache")
+    if not cache_dir.exists():
+        print("  [提示] 筆記文字快取目錄不存在，略過筆記裁判擴充。")
+        return 0
+
+    case_regex = re.compile(
+        r'(?:(?:最高法院|臺灣高等法院|高等行政法院|最高行政法院|智慧財產(?:及商業)?法院|憲法法庭|[\u4e00-\u9fa5]{2,6}地方法院|[\u4e00-\u9fa5]{2,6}地院)\s*)?[0-9]{2,3}\s*年(?:度)?\s*[\u4e00-\u9fa5A-Za-z]{1,8}字\s*第?\s*[0-9]{1,8}\s*號(?:判決|裁定)?'
+    )
+    
+    extracted = set()
+    for tf in cache_dir.glob("*.txt"):
+        try:
+            content = tf.read_text(encoding="utf-8", errors="ignore")
+            for m in case_regex.findall(content):
+                clean_m = re.sub(r'\s+', '', m)
+                clean_m = re.sub(r'^(?:簡評|編自|亦經|見|參照|如|依據|參見|例如)+', '', clean_m)
+                if "字" in clean_m and "號" in clean_m and len(clean_m) <= 40:
+                    extracted.add(clean_m)
+        except Exception:
+            continue
+
+    print(f"  🔍 從筆記提取到 {len(extracted)} 筆具體引述裁判字號。")
+    return len(extracted)
+
 if __name__ == "__main__":
     build_precedents_catalog()
+    expand_from_notes()

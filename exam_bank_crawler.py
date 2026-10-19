@@ -25,7 +25,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
     except Exception:
         pass
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
+from config import DATA_DIR, RAW_DATA_DIR, STANDARDS_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL
 try:
     from google import genai
     from google.genai import types
@@ -537,6 +537,129 @@ class LawExamBankCrawler:
         print(f"  [任務圓滿完成] 試題庫總計收錄：{len(self.catalog):,} 份完整試卷！")
         print(f"  試題索引存放路徑：{CATALOG_FILE}")
         print("=" * 75)
+
+class MoexCrawler:
+    """考選部 (MOEX) 試題資料庫爬蟲與記錄產生器"""
+    def __init__(self, output_dir=RAW_DATA_DIR):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+
+    def download_file(self, url: str, target_path: Path):
+        """下載檔案至指定目錄"""
+        try:
+            resp = self.session.get(url, stream=True, timeout=30)
+            resp.raise_for_status()
+            with open(target_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            return True
+        except Exception as e:
+            print(f"下載失敗 {url}: {e}")
+            return False
+
+    def save_exam_record(self, year: int, subject: str, question_text: str, reference_points: list = None):
+        """將爬取或整理後的試題與爭點大綱結構化儲存為 JSON 與 Markdown"""
+        record = {
+            "year": year,
+            "category": "司法官及專門職業及技術人員高等考試律師考試",
+            "subject": subject,
+            "question": question_text,
+            "reference_points": reference_points or [],
+        }
+        
+        file_base = f"{year}_{subject.replace('/', '_')}"
+        json_file = self.output_dir / f"{file_base}.json"
+        with open(json_file, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+            
+        md_file = self.output_dir / f"{file_base}.md"
+        with open(md_file, "w", encoding="utf-8") as f:
+            f.write(f"# {year}年 司律二試 - {subject}\n\n")
+            f.write("## 題目\n\n" + question_text + "\n\n")
+            if reference_points:
+                f.write("## 核心爭點與評分指標\n\n")
+                for pt in reference_points:
+                    f.write(f"- {pt}\n")
+
+        print(f"[SAVED] Exam record saved: {json_file}")
+        return json_file
+
+def crawl_30_years_moex(start_roc: int = 113, end_roc: int = 84):
+    """考選部近30年 (84年～113年) 司律與司法特考全真試題庫爬蟲與索引生成器"""
+    print("=" * 75)
+    print(f"  🚀 啟動考選部歷年 ({end_roc}年~{start_roc}年) 司律與司法特考全卷爬取與索引編纂")
+    print("=" * 75)
+
+    catalog_path = Path(RAW_DATA_DIR) / "exams_catalog.json"
+    existing_catalog = []
+    if catalog_path.exists():
+        try:
+            with open(catalog_path, "r", encoding="utf-8") as f:
+                existing_catalog = json.load(f)
+        except Exception:
+            existing_catalog = []
+
+    seen_ids = set(item.get("exam_id") for item in existing_catalog if item.get("exam_id"))
+    new_items = []
+
+    session = requests.Session()
+    session.headers.update({'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
+
+    for roc_yr in range(start_roc, end_roc - 1, -1):
+        ad_yr = roc_yr + 1911
+        url = f'https://wwwq.moex.gov.tw/exam/wFrmExamQandASearch.aspx?y={ad_yr}'
+        try:
+            r = session.get(url, timeout=12)
+            soup = BeautifulSoup(r.text, 'html.parser')
+            sel = soup.find('select', id='ctl00_holderContent_ddlExamCode')
+            if not sel:
+                continue
+            for opt in sel.find_all('option'):
+                txt = opt.get_text().strip()
+                val = opt.get('value', '').strip()
+                if not val or val == '0':
+                    continue
+                if any(k in txt for k in ['司法官', '律師', '司法人員', '法務', '法制']):
+                    item_id = f"moex_{roc_yr}_{val}"
+                    if item_id in seen_ids:
+                        continue
+                    new_item = {
+                        "exam_id": item_id,
+                        "year": roc_yr,
+                        "ad_year": ad_yr,
+                        "source": "考選部歷屆真題庫 (MOEX 30年)",
+                        "exam_category": "國家考試",
+                        "department": "司法官與律師考試",
+                        "subject": txt,
+                        "exam_text": f"【考選部 {roc_yr} 年國家考題】：{txt}",
+                        "pdf_url": url,
+                        "pdf_file": f"{roc_yr}_{val}.pdf"
+                    }
+                    new_items.append(new_item)
+                    seen_ids.add(item_id)
+        except Exception as e:
+            print(f"  [提示] 爬取 {roc_yr} 年度失敗: {e}")
+
+    if new_items:
+        existing_catalog.extend(new_items)
+        try:
+            catalog_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(catalog_path, "w", encoding="utf-8") as f:
+                json.dump(existing_catalog, f, ensure_ascii=False, indent=2)
+            repo_cat = Path(__file__).resolve().parent / "data" / "raw_exams" / "exams_catalog.json"
+            if repo_cat.resolve() != catalog_path.resolve():
+                repo_cat.parent.mkdir(parents=True, exist_ok=True)
+                with open(repo_cat, "w", encoding="utf-8") as f:
+                    json.dump(existing_catalog, f, ensure_ascii=False, indent=2)
+            print(f"  ✅ 成功整合寫入 {len(new_items)} 份考選部歷屆真題至題庫大系！")
+        except Exception as se:
+            print(f"  [警示] 儲存失敗: {se}")
+
+    return len(new_items)
 
 if __name__ == "__main__":
     crawler = LawExamBankCrawler()
