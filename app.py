@@ -3659,29 +3659,37 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 
     # 分支 A：資料庫成功命中 (Found in Database)
     if matched_doc and matched_doc.get("found"):
-        st.success(f"🎉 資料庫成功命中：【{matched_doc['title']}】！已自動載入案由、主文心證與完整論理。")
+        st.success(f"🎉 **【資料庫權威收錄命中】**：成功比對本機裁判庫【{matched_doc['title']}】！已即時載入案由爭點、主文心證與歷審完整論理。")
 
         with st.container(border=True):
-            m_c1, m_c2, m_c3 = st.columns([2, 2, 3])
-            m_c1.markdown(f"**🏛️ 機關/審理法院**：  \n`{matched_doc.get('court_or_agency', '司法/行政機關')}`")
+            m_c1, m_c2, m_c3 = st.columns([2.2, 1.8, 3])
+            m_c1.markdown(f"**🏛️ 機關 / 審理法院**：  \n`{matched_doc.get('court_or_agency', '司法/行政機關')}`")
             m_c2.markdown(f"**📜 文書類型**：  \n`{matched_doc.get('doc_type', '權威判解')}`")
-            laws_str = "、".join(matched_doc.get("laws_cited", [])) if matched_doc.get("laws_cited") else "涉及實體法與程序法關鍵法理"
-            m_c3.markdown(f"**🎯 涉及主要法條**：  \n`{laws_str}`")
+            laws_str = "、".join(matched_doc.get("laws_cited", [])) if matched_doc.get("laws_cited") else "涉及實體法與程序法關鍵爭點法理"
+            m_c3.markdown(f"**🎯 關聯重點法條**：  \n`{laws_str}`")
 
             if matched_doc.get("holding_snippet"):
-                st.markdown(f"**💡 裁判/函釋核心要旨節錄**：  \n> {matched_doc.get('holding_snippet')}")
+                st.markdown(f"**💡 裁判 / 函釋核心要旨節錄**：  \n> {matched_doc.get('holding_snippet')}")
 
-        with st.expander(f"👁️ 檢視或增修自動載入之全文內容（共 {len(matched_doc.get('text', ''))} 字）", expanded=False):
+        # 官方權威外部資料庫即時查閱
+        if matched_doc.get("search_urls"):
+            with st.expander("🌐 官方與法學權威資料庫直通查閱（司法院判決書開放系統・法學資料庫・憲法法庭）", expanded=False):
+                u_cols = st.columns(min(len(matched_doc["search_urls"]), 4))
+                for idx, (label, u_link) in enumerate(list(matched_doc["search_urls"].items())[:4]):
+                    with u_cols[idx]:
+                        st.link_button(label, u_link, use_container_width=True)
+
+        with st.expander(f"👁️ 檢視或增修自動載入之裁判全文內容（共 {len(matched_doc.get('text', ''))} 字）", expanded=False):
             loaded_text = st.text_area(
                 "可直接在此檢視或微調載入之內文：",
                 value=matched_doc.get("text", ""),
-                height=220,
+                height=240,
                 key="txt_loaded_hit_text"
             )
 
         col_act1, col_act2 = st.columns([3, 1])
         with col_act1:
-            if st.button("⚡ 一鍵啟動 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_from_hit"):
+            if st.button("⚡ 一鍵啟動 AI 核心要旨深度精鍊（提煉六大標準化精髓與 IRAC 金句）", type="primary", use_container_width=True, key="btn_run_from_hit"):
                 to_summarize_text = loaded_text or matched_doc.get("text", "")
                 to_summarize_type = matched_doc.get("doc_type", "裁判書")
                 to_summarize_title = matched_doc.get("title", citation_input.strip())
@@ -3692,24 +3700,29 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                 st.session_state.pop("last_ai_sum_res", None)
                 st.rerun()
 
-    # 分支 B：若輸入字號但資料庫未直接收錄 (Not Found in Database -> 引導輸入全文)
+    # 分支 B：若輸入字號但資料庫未直接收錄 (Not Found in Database -> 顯示標準公文案號與精準直連導引)
     elif citation_input.strip():
-        st.info(f"💡 本地資料庫未直接收錄【{citation_input.strip()}】之既有全文。\n請在下方直接貼上裁判書或長篇函釋全文（或上傳文字檔案），AI 將即刻為您深度精鍊六大核心要旨！")
+        std_name = matched_doc.get("standard_title") if matched_doc else citation_input.strip()
+        parsed_p = matched_doc.get("parsed_info", {}) if matched_doc else {}
+        court_identified = parsed_p.get("court") or ("最高法院" if "台上" in std_name else "各級法院")
+        
+        st.warning(f"🔍 **案號已完成標準化辨識**：【{std_name}】（隸屬：{court_identified}）")
+        st.caption("💡 提示：本機裁判庫尚未收錄此案之本機全文，但系統已為您自動組裝**標準法定公文全銜**與**官方司法院裁判書開放系統精準查詢直連**！請點擊下方直通按鈕複製全文，或直接貼於下方：")
 
+        # 呈現直通檢索卡
         if matched_doc and matched_doc.get("search_urls"):
-            st.markdown("##### 🌐 點擊以下官方或權威法學資料庫，一鍵查找並複製全文：")
+            st.markdown("##### 🌐 點擊以下權威官方資料庫，一鍵查找並複製全文：")
             u_cols = st.columns(min(len(matched_doc["search_urls"]), 4))
             for idx, (label, u_link) in enumerate(list(matched_doc["search_urls"].items())[:4]):
                 with u_cols[idx]:
                     st.link_button(label, u_link, use_container_width=True)
 
         st.divider()
-        st.subheader("📝 第二步：請貼上裁判書或長篇函釋全文")
+        st.subheader(f"📝 請貼上【{std_name}】之裁判全文或函釋內容")
 
         col_nf1, col_nf2 = st.columns([3, 1])
         with col_nf1:
-            suggested_title = matched_doc.get("standard_title") if matched_doc else citation_input.strip()
-            manual_title_in = st.text_input("文書名稱 / 案號字號：", value=st.session_state.get("sum_input_title", suggested_title), key="txt_manual_title_nf")
+            manual_title_in = st.text_input("文書名稱 / 案號全銜（已自動代入標準名稱）：", value=st.session_state.get("sum_input_title", std_name), key="txt_manual_title_nf")
         with col_nf2:
             type_options = ["🏛️ 最高法院/高院裁判書", "📜 憲法法庭判決/釋字", "📑 中央部會行政函釋 (經濟部/金管會)", "📋 行政訴願決定書", "🎓 法學期刊名家評釋論文"]
             suggested_type = matched_doc.get("doc_type") if matched_doc else type_options[0]
@@ -3739,19 +3752,19 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
             "請在此貼上裁判全文、大法庭裁定理由或主管機關行政函釋全文：",
             value=pasted_text,
             height=300,
-            placeholder="在此貼上數千至數萬字之法學裁判或公報釋令全文...",
+            placeholder=f"在此貼上【{std_name}】之裁判書全文、主文或事實與理由段落，AI 即刻為您解析...",
             key="txt_manual_full_text_nf"
         )
 
         b_nf1, b_nf2 = st.columns([3, 1])
         with b_nf1:
-            if st.button("⚡ 啟動專業級 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_from_manual_nf"):
+            if st.button("⚡ 啟動專業級 AI 核心要旨深度精鍊（提煉六大標準化精髓與 IRAC 金句）", type="primary", use_container_width=True, key="btn_run_from_manual_nf"):
                 if not manual_full_text.strip():
                     st.warning("請先貼上裁判全文或行政函釋！")
                 else:
                     to_summarize_text = manual_full_text
                     to_summarize_type = manual_type_in
-                    to_summarize_title = manual_title_in or citation_input.strip()
+                    to_summarize_title = manual_title_in or std_name
                     trigger_summarize = True
         with b_nf2:
             if st.button("✖️ 清除內容", use_container_width=True, key="btn_clear_manual_nf"):

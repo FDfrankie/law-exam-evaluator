@@ -363,8 +363,12 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
     """生成通往司法院裁判書開放系統、法學資料檢索系統、憲法法庭與立法院等官方權威法學資料庫的即時直連查詢連結"""
     import urllib.parse
     clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
-    tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
-    search_keyword = " ".join(tokens[:3]) if tokens else clean_q[:20]
+    # 若為判決字號或公文字號（包含年度、號、判決或英數代號），保留完整案號精準檢索
+    if any(k in clean_q for k in ['年度', '年', '字', '號', '院', '判', '裁', '釋', '法']) and len(clean_q) <= 45:
+        search_keyword = clean_q
+    else:
+        tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
+        search_keyword = " ".join(tokens[:4]) if tokens else clean_q[:25]
     encoded_k = urllib.parse.quote(search_keyword)
 
     return {
