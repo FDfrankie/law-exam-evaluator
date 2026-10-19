@@ -99,7 +99,7 @@ from admin_rulings_engine import (
     load_crawled_admin_rulings
 )
 try:
-    from lawbank_engine import (
+    from legal_summarizer_engine import (
         BooleanQueryParser,
         evaluate_boolean_query,
         AILegalSummarizer,
@@ -107,7 +107,7 @@ try:
     )
 except ImportError:
     try:
-        import lawbank_engine as _lbe
+        import legal_summarizer_engine as _lbe
         BooleanQueryParser = getattr(_lbe, "BooleanQueryParser", None)
         evaluate_boolean_query = getattr(_lbe, "evaluate_boolean_query", lambda q, t: True)
         AILegalSummarizer = getattr(_lbe, "AILegalSummarizer", None)
@@ -2481,8 +2481,8 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["app_mode"] = mode_options[3]
                     st.rerun()
 
-    # ==================== 子功能 4: 📜 AI 判決摘要精析 ====================
-    elif m5_active_tab == m5_sub_modes[3]:
+    # ==================== 子功能 5: 📜 AI 判決摘要精析 ====================
+    elif m5_active_tab == m5_sub_modes[4]:
         st.subheader("📜 AI 判決深度摘要精析")
         st.caption("精準解構各級法院裁判書，嚴格提煉六大核心結構：【主文】、【案例事實】、【案件爭點】、【雙方所述】、【法院心證】及【個人評析與相似判決對照】。")
 
@@ -2597,7 +2597,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
 
             st.divider()
             st.markdown("##### 🔗 本判決深度應用與跨功能聯動：")
-            ac1, ac2, ac3 = st.columns(3)
+            ac1, ac2, ac3, ac4 = st.columns(4)
             with ac1:
                 st.download_button(
                     label=f"💾 下載本案 AI 摘要 (.md)",
@@ -2607,11 +2607,16 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     use_container_width=True
                 )
             with ac2:
-                if st.button("🔄 帶入此判決進行【案例橫向比對】", use_container_width=True, key="btn_pass_to_cmp"):
-                    st.session_state["target_compare_case_a"] = s_id
-                    st.session_state["m5_sub_mode_idx"] = 4
+                if st.button("🌿 溯源歷審脈絡鏈", use_container_width=True, key="btn_sum_to_hist"):
+                    st.session_state["target_history_case_id"] = s_id
+                    st.session_state["m5_sub_mode_idx"] = 2
                     st.rerun()
             with ac3:
+                if st.button("🔄 帶入【案例橫向比對】", use_container_width=True, key="btn_pass_to_cmp"):
+                    st.session_state["target_compare_case_a"] = s_id
+                    st.session_state["m5_sub_mode_idx"] = 5
+                    st.rerun()
+            with ac4:
                 if st.button("📝 帶入試卷評分作為評分標準", use_container_width=True, key="btn_pass_sum_to_eval"):
                     st.session_state["question_text_content"] = f"【本案事實與法律爭點依據】：\n裁判字號：{s_id}\n請綜合上述爭議事實，分析當事人間之法律關係並予評析。"
                     st.session_state["rubric_text_content"] = s_md
@@ -2619,8 +2624,8 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["app_mode"] = mode_options[0]
                     st.rerun()
 
-    # ==================== 子功能 5: 🔄 案例橫向比對與分歧研析 ====================
-    elif m5_active_tab == m5_sub_modes[4]:
+    # ==================== 子功能 6: 🔄 案例橫向比對與分歧研析 ====================
+    elif m5_active_tab == m5_sub_modes[5]:
         st.subheader("🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)")
         st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
 
@@ -3065,19 +3070,25 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                             if p.get('exam_application_hint'):
                                 st.success(f"✍️ **國考作答指示：** {p.get('exam_application_hint')}")
 
-                            c_p1, c_p2 = st.columns(2)
+                            c_p0, c_p1, c_p2 = st.columns([1.5, 1.4, 1.4])
+                            with c_p0:
+                                if st.button(f"🌿 審級更迭脈絡", key=f"btn_tab_hist_{idx}_{p_idx}", use_container_width=True):
+                                    st.session_state["target_history_case_id"] = p.get("case_id", "")
+                                    st.session_state["m5_sub_mode_idx"] = 2
+                                    st.session_state["app_mode"] = mode_options[4]
+                                    st.rerun()
                             with c_p1:
                                 if st.button(f"⚡ 產出本判決 AI 深度摘要", key=f"btn_tab_sum_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_summary_case_id"] = p.get("case_id", "")
                                     st.session_state["target_summary_subject"] = lname
-                                    st.session_state["m5_sub_mode_idx"] = 3
+                                    st.session_state["m5_sub_mode_idx"] = 4
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             with c_p2:
                                 if st.button(f"🔄 帶入進行案例橫向比對", key=f"btn_tab_cmp_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_compare_case_a"] = p.get("case_id", "")
                                     st.session_state["target_compare_topic"] = f"{lname} {ano} 相關裁判見解分歧"
-                                    st.session_state["m5_sub_mode_idx"] = 4
+                                    st.session_state["m5_sub_mode_idx"] = 5
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             st.markdown("---")

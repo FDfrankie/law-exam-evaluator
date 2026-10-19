@@ -483,7 +483,7 @@ def search_precedents_lawbank_style(
         # 6. 裁判案由 (jt)
         if clean_cause:
             try:
-                from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+                from legal_summarizer_engine import BooleanQueryParser, evaluate_boolean_query
                 if BooleanQueryParser.is_boolean_query(clean_cause):
                     if not evaluate_boolean_query(clean_cause, f"{tit} {sub_c} {iss}"):
                         continue
@@ -500,7 +500,7 @@ def search_precedents_lawbank_style(
         # 7. 裁判主文 / 法院心證 (jmain / txtopinion)
         if clean_holding:
             try:
-                from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+                from legal_summarizer_engine import BooleanQueryParser, evaluate_boolean_query
                 if BooleanQueryParser.is_boolean_query(clean_holding):
                     if not evaluate_boolean_query(clean_holding, f"{hold} {sch}"):
                         continue
@@ -517,7 +517,7 @@ def search_precedents_lawbank_style(
         # 8. 案件爭點 (txtargument)
         if clean_issue:
             try:
-                from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+                from legal_summarizer_engine import BooleanQueryParser, evaluate_boolean_query
                 if BooleanQueryParser.is_boolean_query(clean_issue):
                     if not evaluate_boolean_query(clean_issue, f"{iss} {tit} {sub_c}"):
                         continue
@@ -617,7 +617,7 @@ def search_local_precedents(
     # 支援專業布林邏輯精確篩選 (Boolean Query)
     is_bool_query = False
     try:
-        from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+        from legal_summarizer_engine import BooleanQueryParser, evaluate_boolean_query
         if BooleanQueryParser.is_boolean_query(query) or BooleanQueryParser.is_boolean_query(full_query):
             is_bool_query = True
     except Exception:

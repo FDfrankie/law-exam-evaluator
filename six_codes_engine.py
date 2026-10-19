@@ -336,7 +336,7 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     # 支援專業布林邏輯精確篩選 (Boolean Query)
     is_bool_query = False
     try:
-        from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+        from legal_summarizer_engine import BooleanQueryParser, evaluate_boolean_query
         if BooleanQueryParser.is_boolean_query(raw_kw):
             is_bool_query = True
     except Exception:
