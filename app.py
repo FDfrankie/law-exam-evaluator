@@ -26,7 +26,11 @@ try:
         generate_judicial_search_urls,
         search_precedents_lawbank_style,
         LAWBANK_COMMON_CASE_WORDS,
-        LAWBANK_COURTS_TAXONOMY
+        LAWBANK_COURTS_TAXONOMY,
+        LAWSNOTE_TIME_RANGES,
+        get_precedent_history_chain,
+        PRESET_JUDGEMENT_HISTORIES,
+        extract_case_roc_year
     )
 except ImportError:
     try:
@@ -40,6 +44,10 @@ except ImportError:
         search_precedents_lawbank_style = getattr(_lqe, "search_precedents_lawbank_style", lambda **kw: [])
         LAWBANK_COMMON_CASE_WORDS = getattr(_lqe, "LAWBANK_COMMON_CASE_WORDS", ["全部字別 (不限)", "台上大", "台上", "憲判"])
         LAWBANK_COURTS_TAXONOMY = getattr(_lqe, "LAWBANK_COURTS_TAXONOMY", {"全部法院 (全體司法體系)": []})
+        LAWSNOTE_TIME_RANGES = getattr(_lqe, "LAWSNOTE_TIME_RANGES", ["全部時間 (不限年份)"])
+        get_precedent_history_chain = getattr(_lqe, "get_precedent_history_chain", lambda cid: None)
+        PRESET_JUDGEMENT_HISTORIES = getattr(_lqe, "PRESET_JUDGEMENT_HISTORIES", {})
+        extract_case_roc_year = getattr(_lqe, "extract_case_roc_year", lambda item: 0)
     except Exception:
         LegalIssueQueryEngine = None
         search_local_precedents = None
@@ -50,6 +58,10 @@ except ImportError:
         search_precedents_lawbank_style = lambda **kw: []
         LAWBANK_COMMON_CASE_WORDS = ["全部字別 (不限)", "台上大", "台上", "憲判"]
         LAWBANK_COURTS_TAXONOMY = {"全部法院 (全體司法體系)": []}
+        LAWSNOTE_TIME_RANGES = ["全部時間 (不限年份)"]
+        get_precedent_history_chain = lambda cid: None
+        PRESET_JUDGEMENT_HISTORIES = {}
+        extract_case_roc_year = lambda item: 0
 from six_codes_engine import (
     SIX_CODES_TAXONOMY,
     get_laws_in_branch,
@@ -417,7 +429,6 @@ with st.sidebar:
         "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
         "📖 高分權威擬答生成",
         "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)",
-        "⚖️ 地檢署起訴書 vs 法院判決書 (刑訴300・事實認定與論理比對)",
         "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (法源 AI 摘要旗艦)",
         "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)",
         "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
@@ -428,14 +439,12 @@ with st.sidebar:
         old_val = st.session_state["app_mode"]
         if "爭點查詢" in old_val or "統一法學檢索" in old_val:
             st.session_state["app_mode"] = mode_options[4]
-        elif "起訴書" in old_val:
+        elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val or "起訴書" in old_val:
             st.session_state["app_mode"] = mode_options[5]
-        elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val:
-            st.session_state["app_mode"] = mode_options[6]
         elif "智慧六法" in old_val:
-            st.session_state["app_mode"] = mode_options[7]
+            st.session_state["app_mode"] = mode_options[6]
         elif "手寫筆記蒸餾" in old_val:
-            st.session_state["app_mode"] = mode_options[8]
+            st.session_state["app_mode"] = mode_options[7]
         elif old_val not in mode_options:
             st.session_state["app_mode"] = mode_options[0]
 

@@ -22,7 +22,10 @@ try:
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
 except ImportError:
-    import google.generativeai as legacy_genai
+    try:
+        import google.generativeai as legacy_genai
+    except ImportError:
+        legacy_genai = None
     USE_MODERN_GENAI = False
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
