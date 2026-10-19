@@ -29,6 +29,93 @@ OPENDATA_DUMP_DIR = Path(DATA_DIR) / "judicial_opendata"
 OPENDATA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
+class JudicialOpenDataClient:
+    """
+    司法院裁判書開放 API (RESTful) 客戶端
+    官方路徑：
+    1. 驗證權限取得 Token: POST https://data.judicial.gov.tw/jdg/api/Auth
+    2. 取得 7 日前異動清單: POST https://data.judicial.gov.tw/jdg/api/JList
+    3. 依 jid 取得裁判書全文: POST https://data.judicial.gov.tw/jdg/api/JDoc
+    """
+    AUTH_URL = "https://data.judicial.gov.tw/jdg/api/Auth"
+    JLIST_URL = "https://data.judicial.gov.tw/jdg/api/JList"
+    JDOC_URL = "https://data.judicial.gov.tw/jdg/api/JDoc"
+
+    def __init__(self, username: str = "", password: str = ""):
+        self.username = username
+        self.password = password
+        self.token = ""
+
+    def authenticate(self, username: str = None, password: str = None) -> Dict[str, Any]:
+        """使用帳號密碼登入取得 Token (效期 6 小時)"""
+        import requests
+        u = username or self.username
+        p = password or self.password
+        if not u or not p:
+            return {"success": False, "error": "帳號或密碼不可為空"}
+
+        headers = {"Content-Type": "application/json"}
+        payload = {"user": u, "password": p}
+        try:
+            resp = requests.post(self.AUTH_URL, headers=headers, json=payload, timeout=15)
+            if resp.status_code == 200:
+                res_json = resp.json()
+                if "Token" in res_json:
+                    self.token = res_json["Token"]
+                    self.username = u
+                    self.password = p
+                    return {"success": True, "token": self.token}
+                else:
+                    return {"success": False, "error": res_json.get("error", "驗證失敗")}
+            else:
+                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+        except Exception as e:
+            return {"success": False, "error": f"連線至司法院 API 失敗: {e}"}
+
+    def fetch_jlist(self, token: str = None) -> Dict[str, Any]:
+        """取得 7 日前異動之裁判書清單"""
+        import requests
+        tk = token or self.token
+        if not tk:
+            return {"success": False, "error": "請先提供或驗證取得 Token"}
+
+        headers = {"Content-Type": "application/json"}
+        payload = {"token": tk}
+        try:
+            resp = requests.post(self.JLIST_URL, headers=headers, json=payload, timeout=20)
+            if resp.status_code == 200:
+                return {"success": True, "data": resp.json()}
+            else:
+                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+        except Exception as e:
+            return {"success": False, "error": f"清單查詢失敗: {e}"}
+
+    def fetch_jdoc(self, jid: str, token: str = None) -> Dict[str, Any]:
+        """依裁判 ID (jid) 取得裁判書全文與 metadata"""
+        import requests
+        tk = token or self.token
+        if not tk:
+            return {"success": False, "error": "請先提供或驗證取得 Token"}
+
+        headers = {"Content-Type": "application/json"}
+        payload = {"token": tk, "j": jid.strip()}
+        try:
+            resp = requests.post(self.JDOC_URL, headers=headers, json=payload, timeout=25)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and "error" in data:
+                    return {"success": False, "error": data["error"]}
+                return {"success": True, "data": data}
+            else:
+                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+        except Exception as e:
+            return {"success": False, "error": f"裁判調閱失敗: {e}"}
+REPO_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json"
+SCORING_STANDARDS_DIR = Path(STANDARDS_DIR)
+OPENDATA_DUMP_DIR = Path(DATA_DIR) / "judicial_opendata"
+OPENDATA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
+
+
 def clean_text(s: str) -> str:
     if not s:
         return ""
@@ -184,8 +271,16 @@ def parse_official_opendata_record(data: dict) -> Optional[Dict[str, Any]]:
     year = str(data.get("JYEAR") or data.get("year") or "").strip()
     track = str(data.get("JCASE") or data.get("case") or "").strip()
     no = str(data.get("JNO") or data.get("no") or "").strip()
-    title = data.get("JTITLE") or data.get("title") or "行政法事件"
+    title = data.get("JTITLE") or data.get("title") or "法律事件"
+    
+    # 全文可能在 JFULL 或 JFULLX.JFULLCONTENT 中
     jfull = data.get("JFULL") or data.get("jfull") or data.get("content") or ""
+    if not jfull and "JFULLX" in data:
+        jfx = data["JFULLX"]
+        if isinstance(jfx, dict):
+            jfull = jfx.get("JFULLCONTENT") or ""
+        elif isinstance(jfx, str):
+            jfull = jfx
 
     if not jfull and not (year and track and no):
         return None

@@ -3901,7 +3901,13 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     # 批次匯入司法院開放資料擴充大庫區塊
     st.divider()
     with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (Open Data ZIP/JSON) 至本機庫", expanded=False):
-        st.markdown("""
+        op_tab_zip, op_tab_api = st.tabs([
+            "📂 方式一：手動上傳司法院 Open Data 打包檔 (ZIP / JSON)",
+            "🌐 方式二：使用司法院開放平臺帳號密碼 API 直接連線同步"
+        ])
+
+        with op_tab_zip:
+            st.markdown("""
 司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）提供全臺灣各級法院按月份打包之裁判書資料集（ZIP 格式）：
 
 #### 📥 如何在司法院官網取得裁判 ZIP 檔？
@@ -3913,7 +3919,81 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 > 💡 **若手邊暫無 ZIP 檔案？**  
 > 完全不影響使用！請直接在上方輸入字號（如 `最高行108上625`、`最高行110上15`），系統會立即產生**標準案號與官方判決全文直通連結**，點擊複製全文貼入上方文字框，AI 會在 3 秒內自動完成專業級六大精髓與 IRAC 深度萃取！
 """)
-        uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip 或 .json)：", type=["zip", "json"], key="uploader_opendata_zip")
+            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip 或 .json)：", type=["zip", "json"], key="uploader_opendata_zip")
+
+        with op_tab_api:
+            st.markdown("""
+#### 🌐 司法院官方 API (RESTful) 直連登入同步
+依照司法院官方 API 規範，只要輸入您在司法院資料開放平臺註冊之**帳號**與**密碼**，系統將自動向 `https://data.judicial.gov.tw/jdg/api/Auth` 換取官方驗證 Token，並直接透過官方 API 調閱最新裁判書存入本地 Google Drive 大庫！
+
+*(註：司法院 API 伺服器依官方規定每日於凌晨 0 時至 6 時提供清單與大量下載服務)*
+""")
+            col_api_u, col_api_p = st.columns(2)
+            with col_api_u:
+                api_user_in = st.text_input("司法院開放平臺帳號 (user)：", key="api_judicial_user")
+            with col_api_p:
+                api_pwd_in = st.text_input("司法院開放平臺密碼 (password)：", type="password", key="api_judicial_pwd")
+
+            col_api_btn1, col_api_btn2 = st.columns([2, 1])
+            with col_api_btn1:
+                btn_test_auth = st.button("🔑 測試連線並換取 6 小時官方 Token", use_container_width=True, key="btn_test_judicial_auth")
+            with col_api_btn2:
+                btn_clear_token = st.button("✖️ 清除 Token", use_container_width=True, key="btn_clear_judicial_token")
+                if btn_clear_token:
+                    st.session_state.pop("judicial_api_token", None)
+                    st.rerun()
+
+            if btn_test_auth:
+                if not api_user_in.strip() or not api_pwd_in.strip():
+                    st.warning("請先輸入司法院開放平臺帳號與密碼！")
+                else:
+                    with st.spinner("正在連線至司法院驗證伺服器 (https://data.judicial.gov.tw/jdg/api/Auth)..."):
+                        from import_judicial_opendata import JudicialOpenDataClient
+                        client = JudicialOpenDataClient()
+                        auth_res = client.authenticate(api_user_in.strip(), api_pwd_in.strip())
+                        if auth_res.get("success"):
+                            st.session_state["judicial_api_token"] = auth_res["token"]
+                            st.success(f"🎉 司法院官方驗證成功！取得 Token：`{auth_res['token'][:8]}...`（有效時間 6 小時）")
+                        else:
+                            st.error(f"❌ 司法院驗證失敗：{auth_res.get('error')}")
+
+            # 若已有 Token，提供進一步直接拉取裁判功能
+            cur_token = st.session_state.get("judicial_api_token", "")
+            if cur_token:
+                st.info(f"✅ **目前授權狀態**：已取得司法院官方通行 Token (`{cur_token[:10]}...`)")
+                st.markdown("##### 🚀 依裁判案號或 JID 直接向司法院 API 抓取入庫：")
+                col_jid_in, col_jid_act = st.columns([3, 1])
+                with col_jid_in:
+                    inp_api_jid = st.text_input(
+                        "輸入欲調閱之裁判 JID (例如：`CHDM,100,訴,1552,20130517,2` 或 `TPAA,108,上,625,20191219,1`)：",
+                        placeholder="例如：TPAA,108,上,625,20191219,1",
+                        key="inp_api_fetch_jid"
+                    )
+                with col_jid_act:
+                    btn_fetch_jdoc = st.button("📥 線上抓取入庫", type="primary", use_container_width=True, key="btn_fetch_api_jdoc")
+
+                if btn_fetch_jdoc and inp_api_jid.strip():
+                    with st.spinner(f"正在向司法院 API 調閱【{inp_api_jid.strip()}】裁判全文..."):
+                        from import_judicial_opendata import JudicialOpenDataClient, parse_official_opendata_record, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
+                        import json
+                        client = JudicialOpenDataClient()
+                        doc_res = client.fetch_jdoc(inp_api_jid.strip(), cur_token)
+                        if doc_res.get("success"):
+                            doc_data = doc_res.get("data", {})
+                            parsed_doc = parse_official_opendata_record(doc_data)
+                            if parsed_doc and parsed_doc.get("case_id"):
+                                with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
+                                    cur_c = json.load(f)
+                                cur_c.append(parsed_doc)
+                                with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                    json.dump(cur_c, f, ensure_ascii=False, indent=2)
+                                with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                    json.dump(cur_c, f, ensure_ascii=False, indent=2)
+                                st.success(f"🎉 成功由司法院 API 調閱並入庫：【{parsed_doc['title']}】！全文共 {len(parsed_doc.get('full_text',''))} 字。")
+                            else:
+                                st.warning("裁判資料已下載，但欄位格式解析異常。")
+                        else:
+                            st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
         if uploaded_op_file is not None:
             if st.button("🚀 立即解析並擴充至本機裁判庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
                 with st.spinner(f"正在深度解壓並解析【{uploaded_op_file.name}】中的裁判書..."):
