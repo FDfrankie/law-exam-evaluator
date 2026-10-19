@@ -181,6 +181,20 @@ except Exception:
     USER_STANDPOINTS = ["⚖️ 客觀中立立場 (全面衡平評估法理與雙方勝算)"]
     OUTPUT_MODES = ["📑 完整專業法律諮詢意見書 (定性・條文・權利・證據・流程・時效)"]
 
+try:
+    from core_issues_taxonomy import (
+        get_taxonomy_chapters_for_subject,
+        get_curated_issues_by_chapter,
+        get_total_curated_issues_count
+    )
+except Exception:
+    def get_taxonomy_chapters_for_subject(s=""):
+        return ["🌟 全部體系章節大庫 (跨領域綜合檢索)"]
+    def get_curated_issues_by_chapter(c="", s=""):
+        return {}
+    def get_total_curated_issues_count():
+        return 0
+
 # 設定頁面配置
 st.set_page_config(
     page_title="司律考試 AI 評分與命題大師",
@@ -471,6 +485,13 @@ def get_subject_topics_taxonomy(subject_name: str) -> dict:
         return CORE_ISSUES_TAXONOMY.get("海商法", {})
     if any(w in subject_name for w in ["國民法官"]):
         return CORE_ISSUES_TAXONOMY.get("國民法官法", {})
+
+    try:
+        raw_issues = get_curated_issues_by_chapter("全部體系章節", subject_name)
+        if raw_issues:
+            return {title: info.get("query", title) for title, info in raw_issues.items()}
+    except Exception:
+        pass
 
     return {
         "【核心法理】實體法構成要件該當性與法律效果分析": "核心法條構成要件之法律涵攝、阻卻違法與阻卻責任事由",
@@ -2333,17 +2354,41 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 key="ai_query_mode"
             )
 
-        # 考點快選
-        available_sub_topics = get_subject_topics_taxonomy(q_subject)
-        if available_sub_topics:
-            sub_topic_options = ["-- 💡 快選此考科高頻核心爭點（點選自動帶入） --"] + list(available_sub_topics.keys())
-            sel_preset_q_topic = st.selectbox(
-                f"依【{q_subject.split(' ')[0]}】快選必考爭點：",
-                sub_topic_options,
-                key=f"sel_query_preset_topic_{q_subject}"
+        # 雙層法學考點快選系統（選單一：體系章節分類 ➔ 選單二：大量預寫具體法學爭點庫）
+        col_topic_c1, col_topic_c2 = st.columns([1.1, 2.2])
+        with col_topic_c1:
+            taxonomy_chapters = get_taxonomy_chapters_for_subject(q_subject)
+            cur_ch_key = f"sel_issue_chapter_{q_subject}"
+            sel_chapter = st.selectbox(
+                f"1. 📚 爭點體系分類 / 章節專題：",
+                taxonomy_chapters,
+                key=cur_ch_key
             )
-            if sel_preset_q_topic and sel_preset_q_topic != "-- 💡 快選此考科高頻核心爭點（點選自動帶入） --":
-                st.session_state["ai_query_input_text"] = available_sub_topics[sel_preset_q_topic]
+
+        with col_topic_c2:
+            curated_issues_map = get_curated_issues_by_chapter(sel_chapter, q_subject)
+            issue_title_list = list(curated_issues_map.keys())
+            total_issue_cnt = len(issue_title_list)
+            issue_options = [f"-- 💡 從預寫爭點庫快選（共 {total_issue_cnt} 則精選考點，點選自動帶入） --"] + issue_title_list
+            cur_issue_key = f"sel_issue_item_{q_subject}_{sel_chapter}"
+            sel_preset_issue = st.selectbox(
+                f"2. 🎯 預先寫好之具體核心爭點庫（依【{sel_chapter.split('・')[0].replace('🌟', '').strip()[:8]}】）：",
+                issue_options,
+                key=cur_issue_key
+            )
+
+        if sel_preset_issue and not sel_preset_issue.startswith("-- 💡"):
+            issue_info = curated_issues_map.get(sel_preset_issue, {})
+            issue_query = issue_info.get("query", sel_preset_issue)
+            issue_precedent = issue_info.get("precedent", "")
+            issue_statute = issue_info.get("statute", "")
+            issue_summary = issue_info.get("summary", "")
+
+            st.session_state["ai_query_input_text"] = issue_query
+            st.caption(f"📌 **已載入考點**：`{sel_preset_issue}` ｜ 🏛️ **權威指標**：`{issue_precedent or issue_statute}`")
+            if issue_summary:
+                with st.expander("💡 查看此預寫爭點之法理核心要點與二試作答指引：", expanded=False):
+                    st.info(f"**【爭點爭端】**：{sel_preset_issue}\n\n**【核心法理】**：{issue_summary}\n\n**【權威裁判】**：{issue_precedent}\n\n**【關聯法條】**：{issue_statute}")
 
 
 

@@ -18,7 +18,12 @@ except ImportError:
     USE_MODERN_GENAI = False
 
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
-from legal_query_engine import get_precedents_catalog, get_precedent_by_id, generate_judicial_search_urls
+from legal_query_engine import (
+    get_precedents_catalog,
+    get_precedent_by_id,
+    generate_judicial_search_urls,
+    get_precedent_history_chain
+)
 
 # ==============================================================================
 # 模組 1：專業布林邏輯搜尋語法引擎 (Boolean Precision Engine)
@@ -373,17 +378,29 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
         return info
 
     # 4. 常見格式: [年度] [字軌] [號數]
+    q_compact = re.sub(r'\s+', '', q)
     pattern = r'^(\d{1,3})?\s*(?:年|年度)?\s*([a-zA-Z\u4e00-\u9fa5\(\)（）\d]+?)\s*(?:字|字第|第)?\s*(\d+)(?:號)?$'
-    m = re.match(pattern, q)
+    m = re.match(pattern, q_compact)
     if m:
-        info["year"] = m.group(1)
-        info["track"] = normalize_citation_track(m.group(2))
-        info["no"] = m.group(3)
-    else:
-        if q.isdigit():
-            info["no"] = q
+        grp2 = m.group(2)
+        grp3 = m.group(3)
+        # 判斷是否為行政函釋 (部會機關代字或長流水號)
+        if any(k in grp2 for k in ['經商', '經企', '經工', '金管', '勞動', '智著', '智專', '智商', '台財', '財政', '內授', '內政', '衛部', '法檢', '保訓']) or len(grp3) >= 6:
+            info["doc_type"] = "行政函釋"
+            info["track"] = grp2
+            info["no"] = grp3
         else:
-            info["track"] = normalize_citation_track(q)
+            info["year"] = m.group(1)
+            info["track"] = normalize_citation_track(grp2)
+            info["no"] = grp3
+    else:
+        if q_compact.isdigit():
+            info["no"] = q_compact
+        elif any(k in q_compact for k in ['經商', '金管', '勞動', '智著', '台財', '財政', '函', '令']):
+            info["doc_type"] = "行政函釋"
+            info["track"] = q_compact
+        else:
+            info["track"] = normalize_citation_track(q_compact)
 
     return info
 
@@ -781,6 +798,8 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
     digits = re.findall(r'\d+', raw)
     search_urls = generate_judicial_search_urls(std_title or raw)
 
+    has_abbreviation = bool(parsed.get('track') or parsed.get('no') or parsed.get('doc_type'))
+
     # 1. 內建指標判解 (BUILTIN_LANDMARK_DOCS)
     for b in BUILTIN_LANDMARK_DOCS:
         b_title = b.get('title', '')
@@ -788,13 +807,14 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
         matched = False
         if match_case_abbreviation(parsed, {"case_id": b_title, "title": b_title}):
             matched = True
-        elif norm and len(norm) >= 3 and (norm in b_norm or b_norm in norm):
-            matched = True
-        elif digits:
-            if any(len(d) >= 5 and d in b_title for d in digits):
+        elif not has_abbreviation:
+            if norm and len(norm) >= 3 and (norm in b_norm or b_norm in norm):
                 matched = True
-            elif len(digits) >= 2 and all(d in b_norm for d in digits):
-                matched = True
+            elif digits:
+                if any(len(d) >= 5 and d in b_title for d in digits):
+                    matched = True
+                elif len(digits) >= 2 and all(d in b_norm for d in digits):
+                    matched = True
 
         if matched:
             return {
@@ -816,21 +836,22 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
 
     # 2. 行政函釋大典 (admin_rulings)
     try:
-        from admin_rulings_engine import get_all_administrative_rulings
-        all_r = get_all_administrative_rulings()
-        for r in all_r:
-            r_no = r.get('doc_number', '')
-            r_norm = re.sub(r'[\s\-_，,。號字第（）()]+', '', r_no).lower()
-            matched = False
-            if norm and len(norm) >= 3 and (norm in r_norm or r_norm in norm):
-                matched = True
-            elif digits and any(len(d) >= 6 and d in r_no for d in digits):
-                matched = True
-            elif parsed.get('no') and len(parsed['no']) >= 5 and parsed['no'] in r_no:
-                matched = True
+        if not parsed.get('track') and parsed.get('doc_type') not in ['判決', '裁定', '判例', '解釋']:
+            from admin_rulings_engine import get_all_administrative_rulings
+            all_r = get_all_administrative_rulings()
+            for r in all_r:
+                r_no = r.get('doc_number', '')
+                r_norm = re.sub(r'[\s\-_，,。號字第（）()]+', '', r_no).lower()
+                matched = False
+                if norm and len(norm) >= 3 and (norm in r_norm or r_norm in norm):
+                    matched = True
+                elif digits and any(len(d) >= 6 and d in r_no for d in digits):
+                    matched = True
+                elif parsed.get('no') and len(parsed['no']) >= 5 and parsed['no'] in r_no:
+                    matched = True
 
-            if matched:
-                doc_text = f"""【發文字號】：{r.get('doc_number')}
+                if matched:
+                    doc_text = f"""【發文字號】：{r.get('doc_number')}
 【主管機關】：{r.get('agency', '中央主管機關')}
 【發文日期】：{r.get('date', '')}
 【規範法典與關聯條號】：{r.get('law_name', '')} {r.get('article_target', '')}
@@ -845,23 +866,23 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
 【司律二試考點提示】：
 {r.get('exam_point_hint', '')}
 """
-                full_title = f"{r.get('agency', '中央部會')} {r.get('doc_number', '')}（{r.get('title', '')}）"
-                return {
-                    'found': True,
-                    'matched': True,
-                    'source': 'admin_ruling',
-                    'source_type': 'admin_ruling',
-                    'title': full_title,
-                    'doc_type': '📑 中央部會行政函釋',
-                    'citation': r.get('doc_number', raw),
-                    'court_or_agency': r.get('agency', '行政主管機關'),
-                    'laws_cited': [f"{r.get('law_name', '')} {r.get('article_target', '')}".strip()] if r.get('law_name') else [],
-                    'holding_snippet': (r.get('holding') or r.get('title') or '')[:280].strip(),
-                    'text': doc_text,
-                    'summary': full_title,
-                    'search_urls': generate_judicial_search_urls(f"{r.get('agency', '')} {r.get('doc_number', '')}"),
-                    'raw_doc': r
-                }
+                    full_title = f"{r.get('agency', '中央部會')} {r.get('doc_number', '')}（{r.get('title', '')}）"
+                    return {
+                        'found': True,
+                        'matched': True,
+                        'source': 'admin_ruling',
+                        'source_type': 'admin_ruling',
+                        'title': full_title,
+                        'doc_type': '📑 中央部會行政函釋',
+                        'citation': r.get('doc_number', raw),
+                        'court_or_agency': r.get('agency', '行政主管機關'),
+                        'laws_cited': [f"{r.get('law_name', '')} {r.get('article_target', '')}".strip()] if r.get('law_name') else [],
+                        'holding_snippet': (r.get('holding') or r.get('title') or '')[:280].strip(),
+                        'text': doc_text,
+                        'summary': full_title,
+                        'search_urls': generate_judicial_search_urls(f"{r.get('agency', '')} {r.get('doc_number', '')}"),
+                        'raw_doc': r
+                    }
     except Exception:
         pass
 
@@ -872,7 +893,7 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
         matched_cat = [item for item in cat if match_case_abbreviation(parsed, item)]
         if matched_cat:
             best = matched_cat[0]
-        else:
+        elif not has_abbreviation:
             p_by_id = get_precedent_by_id(raw)
             if p_by_id:
                 best = p_by_id
