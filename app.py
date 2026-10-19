@@ -23,6 +23,22 @@ from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
 from exam_generator import LawExamGenerator
 try:
+    from exam_bank_crawler import LawExamBankCrawler
+except Exception:
+    class LawExamBankCrawler:
+        def __init__(self):
+            import json
+            from pathlib import Path
+            try:
+                base_dir = DATA_DIR
+            except NameError:
+                base_dir = "data"
+            p = Path(base_dir) / "raw_exams" / "exams_catalog.json"
+            self.catalog = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
+        def run_all(self, max_pages=2):
+            pass
+
+try:
     from legal_query_engine import (
         LegalIssueQueryEngine,
         search_local_precedents,
@@ -2396,24 +2412,6 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
     elif m5_active_tab == m5_sub_modes[3]:
         st.subheader("📜 AI 判決深度摘要精析")
         st.caption("精準解構各級法院裁判書，嚴格提煉六大核心結構：【主文】、【案例事實】、【案件爭點】、【雙方所述】、【法院心證】及【個人評析與相似判決對照】。")
-
-        # 快速挑選熱門案例
-        st.markdown("##### 💡 經典權威裁判快速帶入：")
-        quick_cases = [
-            ("借名處分效力", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定"),
-            ("警察臨檢救濟", "憲法法庭 111年憲判字第16號判決"),
-            ("侵權純經濟損失", "最高法院 109 年度台上大字第 908 號民事大法庭裁定"),
-            ("特別災難死亡宣告", "臺灣臺南地方法院106年度亡字第40號"),
-            ("管轄與舉證責任", "台北地院100年更一字9號"),
-            ("最新民事事實審", "臺灣高等法院民事判決115年度上字第620號")
-        ]
-        q_cols = st.columns(len(quick_cases))
-        for qc_idx, (qc_lbl, qc_id) in enumerate(quick_cases):
-            with q_cols[qc_idx]:
-                if st.button(f"📌 {qc_lbl}", key=f"btn_qc_{qc_idx}", use_container_width=True):
-                    st.session_state["target_summary_case_id"] = qc_id
-                    st.session_state.pop("judgment_summary_result", None)
-
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
 
         current_case_id_val = st.session_state.get("target_summary_case_id", "")
@@ -2534,7 +2532,6 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
     elif m5_active_tab == m5_sub_modes[4]:
         st.subheader("🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)")
         st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
-
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
 
         c_a_val = st.session_state.get("target_compare_case_a", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
@@ -2645,6 +2642,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")
     st.caption("完美對標權威法學庫 2025/2026 最新主推「AI摘要」旗艦功能！支援數萬字長篇裁判書、最高法院大法庭裁定、憲法法庭判決、金管會/經濟部/法務部部會長篇函釋，一鍵秒級萃取六大標準化法學精髓！")
     st.divider()
+
     col_d1, col_d2 = st.columns([3, 1])
     with col_d1:
         default_d_title = st.session_state.get("sum_input_title", "")
