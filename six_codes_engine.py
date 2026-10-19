@@ -406,15 +406,148 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     scored_results.sort(key=lambda x: -x[0])
     return [x[1] for x in scored_results[:50]]
 
+def classify_document_nature(filename: str, path: str = "") -> Dict[str, Any]:
+    """
+    精準識別法學文檔之性質，嚴格區隔：
+    - 'question': 實戰試題 / 百題爭點演練 / 考古題 / 模擬考題
+    - 'handout': 課輔講義 / 授課教材 / 專題課程講義
+    - 'note': 個人讀書筆記 / 體系總筆記 / 手寫心智圖
+    """
+    s = (filename + " " + path).lower()
+    is_question = False
+    q_tag = "【實戰試題】"
+
+    if "百題" in s:
+        is_question = True
+        q_tag = "【民法百題爭點演練】" if ("民" in s or "總則" in s) else "【百題爭點演練】"
+    elif "考古題" in s or "考古" in s:
+        is_question = True
+        q_tag = "【歷屆考古題】"
+    elif any(k in s for k in ["模擬試題", "模擬考", "總複習模擬"]):
+        is_question = True
+        q_tag = "【模擬試題演練】"
+    elif any(k in s for k in ["試題演練", "實例題演練", "課輔演練", "期末課輔題目", "課輔題目"]):
+        is_question = True
+        q_tag = "【課輔實例演練題】"
+    elif any(k in s for k in ["期末考_試題", "期中考_試題", "期末考試", "期中考試", "試題說明"]):
+        is_question = True
+        q_tag = "【期中/期末考題】"
+    elif any(k in s for k in ["試題", "考題", "題目", "題庫", "真題", "測驗"]):
+        is_question = True
+        q_tag = "【實戰試題】"
+
+    if is_question:
+        return {
+            "doc_nature": "question",
+            "nature_name": "🎯 實例試題與百題演練",
+            "badge_icon": "🎯",
+            "tag": q_tag,
+            "is_question": True,
+            "is_handout": False,
+            "is_note": False
+        }
+
+    is_handout = False
+    h_tag = "【課輔講義】"
+    if any(k in s for k in ["講義", "課輔", "教材", "課程", "投影片", "ppt", "釋義與適用"]):
+        is_handout = True
+        if "課輔" in s:
+            h_tag = "【課輔講義】"
+        elif "課程" in s or "專題" in s:
+            h_tag = "【專題課程教材】"
+        else:
+            h_tag = "【法學講義】"
+
+    if is_handout:
+        return {
+            "doc_nature": "handout",
+            "nature_name": "📘 課輔與授課講義",
+            "badge_icon": "📘",
+            "tag": h_tag,
+            "is_question": False,
+            "is_handout": True,
+            "is_note": False
+        }
+
+    return {
+        "doc_nature": "note",
+        "nature_name": "📝 個人讀書筆記",
+        "badge_icon": "📝",
+        "tag": "【體系總筆記】" if "體系" in s else "【個人讀書筆記】",
+        "is_question": False,
+        "is_handout": False,
+        "is_note": True
+    }
+
+
+def get_unified_materials_catalog(meta_notes_cat: dict = None) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    動態整合六法標註目錄與 Google Drive 最新 580+ 份講義、筆記與試題大庫
+    並將檔案依考科分流建立索引
+    """
+    unified = {}
+    if meta_notes_cat:
+        for k, v in meta_notes_cat.items():
+            unified[k] = list(v)
+
+    # 嘗試讀取 drive_notes_manifest.json
+    manifest_paths = [
+        Path(DATA_DIR) / "drive_notes_manifest.json",
+        Path(__file__).resolve().parent / "data" / "drive_notes_manifest.json",
+        Path(DATA_DIR).parent / "drive_notes_manifest.json"
+    ]
+    manifest_items = []
+    for mp in manifest_paths:
+        if mp.exists():
+            try:
+                with open(mp, "r", encoding="utf-8") as f:
+                    manifest_items = json.load(f)
+                if manifest_items:
+                    break
+            except Exception:
+                pass
+
+    if manifest_items:
+        # 分類群組映射
+        SUB_TO_LAWS = {
+            "民總": ["民法"], "債總": ["民法"], "債各": ["民法"], "物權": ["民法"], "身分法": ["民法"], "民法": ["民法"], "民法考古題": ["民法"],
+            "刑總": ["刑法", "中華民國刑法"], "刑分": ["刑法", "中華民國刑法"], "刑法各論": ["刑法", "中華民國刑法"], "刑法考古題": ["刑法", "中華民國刑法"],
+            "憲法": ["憲法", "中華民國憲法"], "行政法": ["行政法"],
+            "商事法": ["公司法", "保險法", "證券交易法"], "公司法": ["公司法"], "保險法": ["保險法"], "證交法": ["證券交易法"], "證券交易法": ["證券交易法"],
+            "民訴": ["民事訴訟法"], "民事訴訟法": ["民事訴訟法"],
+            "智慧財產權法": ["專利法", "商標法", "著作權法"], "專利法": ["專利法"], "商標法": ["商標法"], "著作權法": ["著作權法"]
+        }
+
+        for item in manifest_items:
+            sub = item.get("subject", "")
+            target_laws = SUB_TO_LAWS.get(sub, [sub])
+            fn = item.get("filename", "")
+            
+            for t_law in target_laws:
+                if t_law not in unified:
+                    unified[t_law] = []
+                # 查重 (避免同檔名重複加入)
+                if not any(x.get("filename") == fn for x in unified[t_law]):
+                    unified[t_law].append({
+                        "filename": fn,
+                        "subject": sub,
+                        "author": item.get("author", ""),
+                        "path": item.get("path", ""),
+                        "size_kb": round(float(item.get("size_mb", 0.0)) * 1024, 1)
+                    })
+
+    return unified
+
+
 def get_precise_relevant_notes(law_name: str, article_no: str, content: str = "", notes_cat: dict = None) -> List[Dict[str, Any]]:
     """
-    依據法典編章結構、條號區間與實體法考點關鍵字，精準過濾關聯之個人讀書筆記。
-    嚴格防範「全科全部灌入（例如民法184條灌入離婚親屬筆記）」的問題，只返回高精確度相關之筆記（最多 3~5 篇）。
+    依據法典編章結構、條號區間與實體法考點關鍵字，精準過濾關聯之個人讀書筆記、實戰試題與課輔講義。
+    嚴格防範「全科全部灌入」或「把題目誤認為筆記」之問題。
     """
     if not notes_cat:
         return []
     
-    # 統整對應考科筆記清單
+    # 統整對應考科文檔清單
     candidate_notes = []
     if "刑法" in law_name:
         candidate_notes = notes_cat.get("刑法", []) or notes_cat.get("中華民國刑法", [])
@@ -452,8 +585,36 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
             if 1 <= art_num <= 152:
                 if "身分法_" in fn or "債各_" in fn or "債編" in fn:
                     continue  # 嚴格排除身分法與債各筆記
-                if "民總_" in fn:
+                if "民總_" in fn or "民法總則" in fn or "百題" in fn:
                     score += 50
+
+                    # 民法百題爭點系列實例演練精準條文映射
+                    if "百題" in fn:
+                        score += 30
+                        if 1 <= art_num <= 24 and ("（一）" in fn or "一" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：自然人權利能力與死亡宣告"
+                        elif 25 <= art_num <= 58 and ("（四）" in fn or "四" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：法人侵權責任與董事代表權"
+                        elif 66 <= art_num <= 70 and ("（七）" in fn or "七" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：權利客體（物）與主物從物"
+                        elif 71 <= art_num <= 85 and ("（十一）" in fn or "十一" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：法律行為標的妥當性與暴利行為"
+                        elif 86 <= art_num <= 98 and ("（十二）" in fn or "十二" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：意思表示瑕疵（通謀虛偽/錯誤/詐欺）"
+                        elif 103 <= art_num <= 118 and ("（十五）" in fn or "十五" in fn):
+                            score += 180
+                            match_reason = "民法百題爭點演練：代理、無權代理與無權處分"
+
+                    # 課輔實例試題演練
+                    if "試題演練" in fn or "期末試題演練" in fn:
+                        score += 120
+                        match_reason = "民法總則：實務期末與課輔試題演練"
+
                     if 1 <= art_num <= 24 and ("自然人" in fn or "權利主體" in fn):
                         score += 150
                         match_reason = "民法總則：權利主體（自然人）專題"
@@ -727,20 +888,25 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
                         match_reason = f"命中條文法理關鍵字【{kw}】"
 
         if score >= 100:
+            nat_info = classify_document_nature(fn, n.get("path", ""))
             n_copy = dict(n)
             n_copy["match_reason"] = match_reason
             n_copy["score"] = score
+            n_copy["doc_nature"] = nat_info["doc_nature"]
+            n_copy["nature_name"] = nat_info["nature_name"]
+            n_copy["badge_icon"] = nat_info["badge_icon"]
+            n_copy["tag"] = nat_info["tag"]
             scored.append(n_copy)
 
     scored.sort(key=lambda x: -x["score"])
-    return scored[:5]
+    return scored[:15]
 
 def get_article_annotations(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
-    """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、個人筆記）"""
+    """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、實戰試題、課輔講義與純讀書筆記）"""
     articles, meta, law_map = load_six_codes_data()
     
     # 標準化條號鍵
-    clean_no = article_no.replace(" ", "").replace("第", "").replace("條", "")
+    clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
     key = f"{law_name}_第{clean_no}條"
     
     prec_index = meta.get("precedents_article_index", {})
@@ -759,14 +925,19 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
         key_regs = []
         admin_rulings = []
     
-    # 個人讀書筆記 (改採精準編章考點過濾，嚴防全科灌入)
-    notes_cat = meta.get("notes_catalog", {})
+    # 整合六法標註目錄與雲端最新 580+ 份講義、筆記與試題大庫
+    unified_cat = get_unified_materials_catalog(meta.get("notes_catalog", {}))
     if not content:
         for a in law_map.get(law_name, []):
             if normalize_article_no(a.get("article_no", "")) == normalize_article_no(article_no):
                 content = a.get("content", "")
                 break
-    matched_notes = get_precise_relevant_notes(law_name=law_name, article_no=article_no, content=content, notes_cat=notes_cat)
+    anno_materials = get_precise_relevant_notes(law_name=law_name, article_no=article_no, content=content, notes_cat=unified_cat)
+
+    # 嚴格分流：將題目、講義、個人筆記三者徹底區隔，絕不把題目當成筆記！
+    matched_questions = [x for x in anno_materials if x.get("doc_nature") == "question"]
+    matched_handouts = [x for x in anno_materials if x.get("doc_nature") == "handout"]
+    matched_pure_notes = [x for x in anno_materials if x.get("doc_nature") == "note"]
 
     # 立法修正理由與歷史條文演革
     legislative_details = get_article_legislative_details(law_name=law_name, article_no=article_no, content=content)
@@ -778,7 +949,10 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
         "orders": matched_orders,
         "key_regulations": key_regs,
         "admin_rulings": admin_rulings,
-        "notes": matched_notes,
+        "questions": matched_questions[:5],   # 🎯 關聯實戰試題與百題爭點演練
+        "handouts": matched_handouts[:5],     # 📘 關聯課輔講義與授課教材
+        "notes": matched_pure_notes[:5],      # 📝 純個人讀書筆記
+        "all_materials": anno_materials,
         "legislative_details": legislative_details
     }
 

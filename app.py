@@ -568,12 +568,34 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
 
         q_input_mode = st.radio(
             "題目提供方式：",
-            ["✍️ 手動輸入題目文字", "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)", "👥 從社群考生共享題庫挑選題目"],
+            ["✍️ 手動輸入題目文字", "📷 拍照 / 圖片上傳試題 (AI 自動 OCR)", "🎯 從雲端實戰試題與百題演練挑選 (含民法百題/考古題)", "👥 從社群考生共享題庫挑選題目"],
             horizontal=True
         )
 
         new_extracted_q = None
-        if q_input_mode == "👥 從社群考生共享題庫挑選題目":
+        if q_input_mode == "🎯 從雲端實戰試題與百題演練挑選 (含民法百題/考古題)":
+            drive_questions = [x for x in drive_notes if x.get("doc_nature") == "question"]
+            if drive_questions:
+                q_subs = ["全部考科"] + sorted(list(set(x["subject"] for x in drive_questions)))
+                c_dq1, c_dq2 = st.columns([1, 2])
+                with c_dq1:
+                    sel_dq_sub = st.selectbox("題目考科篩選：", q_subs, key="sel_drive_q_sub")
+                filtered_dqs = [x for x in drive_questions if sel_dq_sub == "全部考科" or x["subject"] == sel_dq_sub]
+                with c_dq2:
+                    q_labels = [f"{q.get('tag', '【實戰試題】')} 【{q['subject']}】{q['filename']}" for q in filtered_dqs]
+                    sel_dq_idx = st.selectbox("選擇實戰試題或百題檔案：", range(len(filtered_dqs)), format_func=lambda i: q_labels[i], key="sel_drive_q_file")
+                
+                chosen_dq = filtered_dqs[sel_dq_idx]
+                if st.button("📥 一鍵帶入此試題進行作答與評分", type="primary", key="btn_apply_drive_q"):
+                    with st.spinner(f"正在自雲端試題庫載入《{chosen_dq['filename']}》..."):
+                        q_extracted_text = read_note_text(chosen_dq["path"], max_pages=10, auto_ocr=True)
+                        st.session_state.question_text_content = q_extracted_text if q_extracted_text else f"【實戰試題】：{chosen_dq['filename']}"
+                        st.session_state.imported_from_bank_label = f"{chosen_dq.get('tag', '【實戰試題】')}《{chosen_dq['filename']}》"
+                        st.rerun()
+            else:
+                st.info("💡 目前雲端硬碟中暫未偵測到實戰試題或百題檔案。")
+
+        elif q_input_mode == "👥 從社群考生共享題庫挑選題目":
             comm_questions = load_community_questions()
             if comm_questions:
                 q_titles = [f"【{q.get('subject', '綜合')}】{q.get('title', '題目')} ({q.get('created_at', '')[:10]})" for q in comm_questions]
@@ -849,47 +871,68 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
                         default_cat_idx = 5
 
-                col_sel1, col_sel2 = st.columns([1, 2])
+                col_sel1, col_sel_nat, col_sel2 = st.columns([1.1, 1.1, 1.8])
                 with col_sel1:
                     sel_note_category = st.selectbox(
-                        "筆記分類篩選：",
+                        "考科分類篩選：",
                         cat_options,
                         index=default_cat_idx,
                         key="sel_note_subject_filter"
                     )
+                with col_sel_nat:
+                    sel_doc_nature = st.selectbox(
+                        "文檔性質篩選：",
+                        ["📝 個人讀書筆記 (手寫/體系)", "📘 課輔與授課講義", "🎯 實例試題與百題演練", "全部性質 (筆記/講義/題目)"],
+                        index=0,
+                        key="sel_note_nature_filter"
+                    )
 
                 # 依分類篩選筆記
                 if "全部科目" in sel_note_category:
-                    filtered_notes = drive_notes
+                    base_notes = drive_notes
                     cat_display = "全部科目"
                 elif "民法全輯" in sel_note_category:
-                    filtered_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
+                    base_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
                     cat_display = "民法全輯（總則/債編/物權/身分）"
                 elif "刑法全輯" in sel_note_category:
-                    filtered_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
+                    base_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
                     cat_display = "刑法全輯（刑總/刑分）"
                 elif "公法全輯" in sel_note_category:
-                    filtered_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
+                    base_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
                     cat_display = "公法全輯（憲法/行政法）"
                 elif "商事法全輯" in sel_note_category:
-                    filtered_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
+                    base_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
                     cat_display = "商事法全輯"
                 elif "智財全輯" in sel_note_category:
-                    filtered_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
+                    base_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
                     cat_display = "智慧財產權法全輯"
                 else:
                     target_sub = sel_note_category.split("【")[1].split("】")[0]
-                    filtered_notes = [n for n in drive_notes if n["subject"] == target_sub]
+                    base_notes = [n for n in drive_notes if n["subject"] == target_sub]
                     cat_display = target_sub
 
+                # 依性質二次過濾，徹底排除題目混入筆記
+                if "個人讀書筆記" in sel_doc_nature:
+                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "note"]
+                elif "課輔與授課講義" in sel_doc_nature:
+                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "handout"]
+                elif "實例試題與百題演練" in sel_doc_nature:
+                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "question"]
+                else:
+                    filtered_notes = base_notes
+
                 with col_sel2:
-                    all_notes_label = f"🌟 【全部分析】載入此分類全部筆記 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
-                    note_labels = [all_notes_label] + [
-                        f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "")
-                        for n in filtered_notes
-                    ]
+                    if not filtered_notes:
+                        all_notes_label = f"此條件下暫無檔案 (共 0 份)"
+                        note_labels = [all_notes_label]
+                    else:
+                        all_notes_label = f"🌟 【全部分析】載入此分類全部文檔 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
+                        note_labels = [all_notes_label] + [
+                            f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "")
+                            for n in filtered_notes
+                        ]
                     sel_note_label = st.selectbox(
-                        "選擇 Google Drive 筆記檔案：",
+                        "選擇 Google Drive 檔案：",
                         note_labels,
                         key="sel_drive_note_file"
                     )
@@ -1429,9 +1472,11 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
     st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
 
     comm_q_all = load_community_questions()
-    m3_tab1, m3_tab2, m3_tab3 = st.tabs([
+    drive_questions = [x for x in drive_notes if x.get("doc_nature") == "question"]
+    m3_tab1, m3_tab2, m3_tab3, m3_tab4 = st.tabs([
         "🏛️ 考選部與臺大法研/轉學考歷年真題庫",
         "🎓 大學名師講義與課輔爭點知識庫 (190+ 份各科講義與簡報)",
+        f"🎯 雲端實戰試題大庫與百題爭點 ({len(drive_questions)} 份・含民法百題/期中考/考古題)",
         f"👥 社群考生共享真題庫與自創模擬試卷 ({len(comm_q_all)} 題)"
     ])
 
@@ -1617,6 +1662,49 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                 st.error(f"講義庫讀取異常: {cwe}")
 
     with m3_tab3:
+        st.markdown(f"#### 🎯 雲端實戰試題大庫與百題爭點演練庫（共收錄 {len(drive_questions)} 份試題檔案）")
+        st.caption("此處收錄法學資料庫中完整的各科實例試題（包含民法總則百題爭點系列、大學期中/期末考模擬題、課輔實例演練題），已與個人筆記嚴格區隔：")
+
+        q_subs_m3 = ["全部考科"] + sorted(list(set(x["subject"] for x in drive_questions)))
+        c_m3_s1, c_m3_s2 = st.columns([1, 2])
+        with c_m3_s1:
+            sel_m3_q_sub = st.selectbox("試題考科篩選：", q_subs_m3, key="sel_m3_drive_q_sub")
+        with c_m3_s2:
+            m3_q_kw = st.text_input("搜尋試題檔名或關鍵字（如：百題、期中、模擬試題、身分法）：", key="inp_m3_q_kw")
+
+        filtered_m3_qs = [x for x in drive_questions if (sel_m3_q_sub == "全部考科" or x["subject"] == sel_m3_q_sub) and (not m3_q_kw or m3_q_kw.lower() in x["filename"].lower())]
+        st.caption(f"共篩選出 **{len(filtered_m3_qs)}** 份實戰試題：")
+
+        for m3_q_idx, m3_q in enumerate(filtered_m3_qs):
+            m3_q_tag = m3_q.get("tag", "【實戰試題】")
+            m3_q_fn = m3_q["filename"]
+            with st.expander(f"🎯 `{m3_q_tag}` 【{m3_q['subject']}】{m3_q_fn} ({m3_q.get('size_mb', 0)} MB)"):
+                st.caption(f"檔案路徑：`{m3_q['path']}`")
+                c_m3_b1, c_m3_b2, c_m3_b3 = st.columns(3)
+                with c_m3_b1:
+                    if st.button(f"📝 帶入【試卷評分】作答", key=f"btn_m3_eval_{m3_q_idx}", use_container_width=True):
+                        with st.spinner("正在提取試題文字..."):
+                            q_txt = read_note_text(m3_q["path"], max_pages=10, auto_ocr=True)
+                            st.session_state["question_text_content"] = q_txt if q_txt else f"【實戰試題】：{m3_q_fn}"
+                            st.session_state["imported_from_bank_label"] = f"{m3_q_tag}《{m3_q_fn}》"
+                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.rerun()
+                with c_m3_b2:
+                    if st.button(f"🏆 一鍵生成高分示範擬答", key=f"btn_m3_ans_{m3_q_idx}", use_container_width=True):
+                        with st.spinner("正在讀取試題並生成二試上位卷 IRAC 示範擬答..."):
+                            q_txt = read_note_text(m3_q["path"], max_pages=10, auto_ocr=True)
+                            gen = LawExamGenerator()
+                            model_ans = gen.generate_model_answer(question=q_txt or m3_q_fn, subject=m3_q["subject"])
+                            st.markdown("##### 🏆 閱卷高分示範擬答：")
+                            st.markdown(model_ans)
+                with c_m3_b3:
+                    if st.button(f"🔍 帶入法學檢索樞紐剖析爭點", key=f"btn_m3_query_{m3_q_idx}", use_container_width=True):
+                        st.session_state["ai_query_input_text"] = f"{m3_q['subject']} {m3_q_fn} 實戰考點與實務見解"
+                        st.session_state["m5_sub_mode_idx"] = 1
+                        st.session_state["app_mode"] = mode_options[4]
+                        st.rerun()
+
+    with m3_tab4:
         st.markdown(f"#### 👥 全民社群考生共享真題與自創模擬題庫（共收錄 {len(comm_q_all)} 份獨立檔案）")
         st.caption("所有考生在【試卷評分】或【出題系統】中上傳、產出之實戰題目，均即時獨立存檔並自動匯聚於此，供所有考生共同切磋與演練！")
 
@@ -3546,14 +3634,20 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             timeline_hits = legis_data.get("timeline_hits", [])
             total_amends_display = len(curated_amends) if curated_amends else len(timeline_hits)
 
+            questions = anno.get("questions", [])
+            handouts = anno.get("handouts", [])
+
             badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
             badge_orders = f" ｜ 📋 【{len(key_regulations)} 部法規命令】" if key_regulations else ""
             badge_rulings = f" ｜ 📜 【{len(admin_rulings)} 筆主管函釋】" if admin_rulings else ""
             badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
+            badge_questions = f" ｜ 🎯 【收錄 {len(questions)} 份百題與演練試題】" if questions else ""
+            badge_handouts = f" ｜ 📘 【收錄 {len(handouts)} 部課輔講義】" if handouts else ""
             badge_notes = f" ｜ 📝 【精準命中 {len(notes)} 份個人筆記】" if notes else ""
 
-            with st.expander(f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_notes}", expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
+            exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_questions}{badge_handouts}{badge_notes}"
+            with st.expander(exp_label, expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
                 if art.get("is_latest_amendment"):
                     st.success(f"🆕 **此條文為立法院最新三讀通過並經總統府公布之修正條文！** (施行日期：{art.get('modified_date', '最新公布')})")
                     if art.get("amendment_reason"):
@@ -3562,11 +3656,13 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                         st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
 
-                tab_prec, tab_orders, tab_rulings, tab_legis, tab_notes, tab_ai = st.tabs([
+                tab_prec, tab_orders, tab_rulings, tab_legis, tab_questions, tab_handouts, tab_notes, tab_ai = st.tabs([
                     f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
                     f"📋 關聯法規命令與細則 ({len(key_regulations)} 部・點閱全文)",
                     f"📜 主管機關行政函釋 ({len(admin_rulings)} 筆・經濟部/智財局/金管會等)",
                     f"🕰️ 立法理由與歷史條文 ({total_amends_display} 次修法對照)",
+                    f"🎯 關聯實戰試題與百題演練 ({len(questions)} 份)",
+                    f"📘 關聯課輔講義與教材 ({len(handouts)} 份)",
                     f"📝 關聯個人讀書筆記 ({len(notes)} 份)",
                     "🤖 AI 深度釋析與作答模版"
                 ])
@@ -3819,22 +3915,64 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                 if a.get("exam_impact"):
                                     st.success(f"**新舊法適用要點：**\n{a.get('exam_impact')}")
 
+                with tab_questions:
+                    if questions:
+                        st.markdown(f"#### 🎯 實戰歷屆試題與百題演練清單（精準收錄 {len(questions)} 份真題與爭點演練）")
+                        st.caption("以下試題為法學資料庫中針對本法條實例爭點所編製之題庫（含民法百題爭點、期中/期末模擬考真題，絕非個人讀書筆記）：")
+                        for q_idx, q in enumerate(questions):
+                            q_tag = q.get("tag", "【實戰試題】")
+                            q_fn = q.get("filename", "")
+                            q_reason = q.get("match_reason", "考科實例試題演練")
+                            with st.container():
+                                st.markdown(f"**🎯 `{q_tag}` 《{q_fn}》** (`{q.get('size_kb', 0)}` KB)")
+                                st.info(f"💡 **試題爭點演練對應要點**：{q_reason}")
+                                c_q1, c_q2 = st.columns(2)
+                                with c_q1:
+                                    if st.button(f"✍️ 一鍵帶入進行試卷評分 (Mode 1)", key=f"btn_pass_q_m1_{idx}_{q_idx}", use_container_width=True):
+                                        st.session_state["question_text_content"] = f"【依據法規題目演練】：{lname} {ano}（{q_tag}《{q_fn}》）\n\n【條文規範】：\n{content}\n\n【爭點指引】：{q_reason}"
+                                        st.session_state["imported_from_bank_label"] = f"{q_tag}《{q_fn}》"
+                                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                                        st.rerun()
+                                with c_q2:
+                                    if st.button(f"⚡ 一鍵帶入 AI 爭點破題與高分擬答 (Mode 4)", key=f"btn_pass_q_m4_{idx}_{q_idx}", use_container_width=True):
+                                        st.session_state["gen_question_input"] = f"請針對【{lname} {ano}】實務考題（{q_tag}《{q_fn}》）所涉之核心爭點：{q_reason}，依據司律二試上位卷 IRAC 架構產出高分示範擬答。"
+                                        st.session_state["app_mode"] = mode_options[3]
+                                        st.rerun()
+                                st.markdown("---")
+                    else:
+                        st.info(f"💡 本機試題庫中目前暫無直接標註為【{lname} {ano}】之專屬演練試題。您可前往【歷年真題庫檢索】(模式 3) 查閱歷屆司法官律師、法研所試題，或由 AI 進行智慧模擬出題。")
+
+                with tab_handouts:
+                    if handouts:
+                        st.markdown(f"#### 📘 關聯課輔講義與授課教材（共 {len(handouts)} 部教材）")
+                        st.caption("收錄法學教授、助教編撰之專題課輔講義與授課體系教材：")
+                        for h in handouts:
+                            h_tag = h.get("tag", "【課輔講義】")
+                            h_fn = h.get("filename", "")
+                            h_reason = h.get("match_reason", "授課章節關聯")
+                            with st.container():
+                                st.markdown(f"**📘 `{h_tag}` 《{h_fn}》** (`{h.get('size_kb', 0)}` KB)")
+                                st.info(f"📖 **講義核心要點與章節**：{h_reason}")
+                                st.markdown("---")
+                    else:
+                        st.info(f"💡 目前暫無直接對應【{lname} {ano}】之專屬課輔講義。")
+
                 with tab_notes:
                     if notes:
-                        st.markdown(f"#### 📝 個人讀書筆記精準命中清單（共 {len(notes)} 份高相關筆記）")
-                        st.caption("系統已依據法典編章架構、條號區間與實體法考點關鍵字嚴格過濾，排除非相關章節：")
+                        st.markdown(f"#### 📝 個人純讀書筆記精準命中清單（共 {len(notes)} 份純筆記）")
+                        st.caption("系統已嚴格過濾排除試題與講義，僅保留您個人的手寫筆記與體系心智圖：")
                         for n in notes:
+                            n_tag = n.get("tag", "【個人筆記】")
                             reason = n.get("match_reason", "考科編章關聯")
                             with st.container():
-                                st.markdown(f"**📄 《{n['filename']}》** (`{n.get('size_kb', 0)}` KB)")
+                                st.markdown(f"**📄 `{n_tag}` 《{n['filename']}》** (`{n.get('size_kb', 0)}` KB)")
                                 st.info(f"🎯 **精準命中依據/章節考點**：{reason}")
                                 st.markdown("---")
                     else:
-                        st.info(f"💡 您的個人讀書筆記庫中，目前無直接對應【{lname} {ano}】之專屬章節筆記。系統已為您嚴格過濾掉其他不相關章節（如身分法、其他各論），確保筆記精準不冗餘。")
-                        # 亦提供考生手動查閱全部該法考科筆記之彈性入口
-                        raw_notes_for_law = get_article_annotations(law_name=lname, article_no="").get("notes", [])
+                        st.info(f"💡 您的個人讀書筆記庫中，目前無直接對應【{lname} {ano}】之手寫筆記。系統已為您嚴格過濾掉試題與其他不相關考科，確保筆記純粹不冗餘。")
+                        raw_notes_for_law = [x for x in get_article_annotations(law_name=lname, article_no="").get("notes", []) if x.get("doc_nature") == "note"]
                         if raw_notes_for_law:
-                            with st.expander(f"📂 展開查閱【{lname}】全部筆記目錄（共 {len(raw_notes_for_law)} 份，手動對照）", expanded=False):
+                            with st.expander(f"📂 展開查閱【{lname}】全部個人純筆記目錄（共 {len(raw_notes_for_law)} 份）", expanded=False):
                                 for rn in raw_notes_for_law[:15]:
                                     st.caption(f"- 📄 《{rn['filename']}》 ({rn.get('size_kb', 0)} KB)")
 

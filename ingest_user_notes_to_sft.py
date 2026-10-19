@@ -57,6 +57,19 @@ CACHE_DIR = SAMSUNG_NOTES_DIR / "_cache"
 TRAINING_DIR = Path(DATA_DIR) / "training_data"
 OUT_SFT_FILE = TRAINING_DIR / "law_exam_user_notes_sft.jsonl"
 
+try:
+    from six_codes_engine import classify_document_nature
+except Exception:
+    def classify_document_nature(filename: str, path: str = ""):
+        s = (filename + " " + path).lower()
+        if "百題" in s:
+            return {"doc_nature": "question", "nature_name": "🎯 實例試題與百題演練", "tag": "【民法百題爭點】", "badge_icon": "🎯"}
+        elif "考古題" in s or any(k in s for k in ["試題", "考題", "題目", "演練", "模擬", "測驗"]):
+            return {"doc_nature": "question", "nature_name": "🎯 實例試題與百題演練", "tag": "【實戰試題】", "badge_icon": "🎯"}
+        elif any(k in s for k in ["講義", "課輔", "教材", "課程"]):
+            return {"doc_nature": "handout", "nature_name": "📘 課輔與授課講義", "tag": "【課輔講義】", "badge_icon": "📘"}
+        return {"doc_nature": "note", "nature_name": "📝 個人讀書筆記", "tag": "【個人筆記】", "badge_icon": "📝"}
+
 import re
 
 def chinese_to_int(s: str) -> int:
@@ -231,7 +244,10 @@ def sync_all_drive_notes_to_samsung_notes() -> int:
             "author": n.get("author", ""),
             "size_mb": n["size_mb"],
             "path": str(n["path"]),
-            "is_cached": n["is_cached"]
+            "is_cached": n["is_cached"],
+            "doc_nature": n.get("doc_nature", "note"),
+            "nature_name": n.get("nature_name", "📝 個人讀書筆記"),
+            "tag": n.get("tag", "【個人筆記】")
         })
     for mp in manifest_paths:
         try:
@@ -544,6 +560,7 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                     is_cached = (f"{p.name}.txt" in existing_caches) or (f"{norm_name}.txt" in existing_caches)
                     distilled_count = 1 if (p.stem[:8] in existing_hashes_blob or norm_name[:8] in existing_hashes_blob) else 0
                     
+                    nat = classify_document_nature(norm_name, str(p))
                     notes_dict[norm_name] = {
                         "filename": norm_name,
                         "orig_filename": p.name,
@@ -553,7 +570,11 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                         "size_mb": round(size_mb, 2),
                         "path": p,
                         "is_cached": is_cached,
-                        "distilled_count": distilled_count
+                        "distilled_count": distilled_count,
+                        "doc_nature": nat["doc_nature"],
+                        "nature_name": nat["nature_name"],
+                        "tag": nat["tag"],
+                        "badge_icon": nat["badge_icon"]
                     }
                     
     # 2. 補充掃描 SamsungNotes 目錄（納入可能獨立存放或 Samsung Notes 直接匯出之講義筆記）
@@ -579,6 +600,7 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                 is_cached = f"{f.name}.txt" in existing_caches
                 distilled_count = 1 if f.stem[:8] in existing_hashes_blob else 0
                 
+                nat = classify_document_nature(f.name, str(f))
                 notes_dict[f.name] = {
                     "filename": f.name,
                     "orig_filename": f.name,
@@ -588,7 +610,11 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                     "size_mb": round(size_mb, 2),
                     "path": f,
                     "is_cached": is_cached,
-                    "distilled_count": distilled_count
+                    "distilled_count": distilled_count,
+                    "doc_nature": nat["doc_nature"],
+                    "nature_name": nat["nature_name"],
+                    "tag": nat["tag"],
+                    "badge_icon": nat["badge_icon"]
                 }
 
     # 3. 雲端部署回退（例如 Streamlit Cloud，若實體資料夾檔案有限，由 manifest 補齊檔案清單）
@@ -608,6 +634,7 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                                 local_p = SAMSUNG_NOTES_DIR / fname
                                 alt_p = Path(__file__).resolve().parent / "data" / "SamsungNotes" / fname
                                 p = local_p if local_p.exists() else (alt_p if alt_p.exists() else Path(item.get("path", fname)))
+                                nat = classify_document_nature(fname, str(p))
                                 notes_dict[fname] = {
                                     "filename": fname,
                                     "orig_filename": item.get("orig_filename", fname),
@@ -617,7 +644,11 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
                                     "size_mb": item.get("size_mb", 0.0),
                                     "path": p,
                                     "is_cached": item.get("is_cached", False),
-                                    "distilled_count": 0
+                                    "distilled_count": 0,
+                                    "doc_nature": item.get("doc_nature") or nat["doc_nature"],
+                                    "nature_name": item.get("nature_name") or nat["nature_name"],
+                                    "tag": item.get("tag") or nat["tag"],
+                                    "badge_icon": nat["badge_icon"]
                                 }
                 except Exception:
                     pass
