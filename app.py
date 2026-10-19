@@ -2211,7 +2211,31 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.link_button(lbl, lnk, use_container_width=True)
 
             if not lb_results:
-                st.info("💡 未找到完全符合條件之裁判。建議可放寬字別或關鍵字再次檢索！")
+                # 組合使用者於表單填寫的目標裁判全銜
+                target_court_clean = sel_court.replace("🏛️", "").replace("⚖️", "").strip() if sel_court != "全部法院 (全體司法體系)" else "各級法院"
+                target_tail = sel_case_type if sel_case_type != "全部" else "裁判"
+                target_combo_id = f"{target_court_clean} {lb_year} 年度{lb_word}字第 {lb_num} 號{target_tail}" if lb_year and lb_num else (first_kw or "指定條件裁判")
+                ext_direct_urls = generate_judicial_search_urls(target_combo_id)
+
+                st.warning(f"🔍 **本機離線庫未收錄此案全文**：已為您精準組裝標的案號【`{target_combo_id}`】！")
+                st.markdown("""
+> 💡 **為什麼找不到？**  
+> 台灣司法裁判每年產出數十萬筆，本機離線庫主要精選收錄重要大法庭、判例及高頻實務爭點。  
+> 為了讓您**「一定找得到」**，系統已為您直接對接官方司法院資料庫，並提供 AI 自動法理延伸推論：
+""")
+                col_nb1, col_nb2 = st.columns([1.8, 1.2])
+                with col_nb1:
+                    st.markdown("**🌐 點擊官方直通按鈕，秒級查閱並複製司法院官方全文：**")
+                    u_cols = st.columns(min(len(ext_direct_urls), 4))
+                    for u_i, (u_lbl, u_lnk) in enumerate(list(ext_direct_urls.items())[:4]):
+                        with u_cols[u_i]:
+                            st.link_button(u_lbl.split(" ")[0] + " 查詢", u_lnk, use_container_width=True)
+                with col_nb2:
+                    st.markdown("**⚡ 一鍵轉入 AI 裁判要旨深度精鍊：**")
+                    if st.button(f"🚀 將【{target_combo_id[:16]}...】帶入 AI 判解精鍊", type="primary", use_container_width=True, key="btn_pass_m5_to_m7"):
+                        st.session_state["sum_citation_search"] = target_combo_id
+                        st.session_state["app_mode"] = mode_options[6]  # 切換至 AI 判解精鍊旗艦
+                        st.rerun()
             else:
                 for idx, r in enumerate(lb_results):
                     c_id = r.get("case_id", "")
