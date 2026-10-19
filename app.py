@@ -3461,7 +3461,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
             badge_notes = f" ｜ 📝 【精準命中 {len(notes)} 份個人筆記】" if notes else ""
 
-            with st.expander(f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_notes}", expanded=(idx < 2 or art.get("is_latest_amendment"))):
+            with st.expander(f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_notes}", expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
                 if art.get("is_latest_amendment"):
                     st.success(f"🆕 **此條文為立法院最新三讀通過並經總統府公布之修正條文！** (施行日期：{art.get('modified_date', '最新公布')})")
                     if art.get("amendment_reason"):
