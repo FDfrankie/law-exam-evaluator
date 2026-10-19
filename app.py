@@ -3902,8 +3902,16 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     st.divider()
     with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (Open Data ZIP/JSON) 至本機庫", expanded=False):
         st.markdown("""
-司法院資料開放平臺（`opendata.judicial.gov.tw`）每月份提供全國各級法院裁判打包壓縮包（ZIP）。  
-您可以直接在此將下載好的 **ZIP 或 JSON 檔案** 上傳，系統將自動解析為標準裁判紀錄，並無縫併入本機裁判庫，讓全台裁判庫容量直接擴充至數萬至數十萬筆！
+司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）提供全臺灣各級法院按月份打包之裁判書資料集（ZIP 格式）：
+
+#### 📥 如何在司法院官網取得裁判 ZIP 檔？
+1. 前往 **[司法院資料開放平臺 (opendata.judicial.gov.tw)](https://opendata.judicial.gov.tw/)** 並註冊/登入免費會員。
+2. 進入 **「資料集下載」** 或 **「裁判書資料專區」**。
+3. 選擇所需之年度與月份（例如：`108年` 或最新月份打包檔，點擊下載對應之 `.zip` 壓縮檔）。
+4. 下載後**無需手動解壓**，直接拖曳下方上傳框，系統會自動解壓內含之 JSON 裁判檔並秒級入庫！
+
+> 💡 **若手邊暫無 ZIP 檔案？**  
+> 完全不影響使用！請直接在上方輸入字號（如 `最高行108上625`、`最高行110上15`），系統會立即產生**標準案號與官方判決全文直通連結**，點擊複製全文貼入上方文字框，AI 會在 3 秒內自動完成專業級六大精髓與 IRAC 深度萃取！
 """)
         uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip 或 .json)：", type=["zip", "json"], key="uploader_opendata_zip")
         if uploaded_op_file is not None:
