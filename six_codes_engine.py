@@ -392,6 +392,7 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
             key = f"{lname}_第{clean_no}條"
             if key in prec_index:
                 for p in prec_index[key]:
+                    p_text = f"{p.get('title', '')} {p.get('holding', '')} {p.get('scholarly_views', '')} {p.get('exam_application_hint', '')} {p.get('case_id', '')}"
                     if text_kw in p_text:
                         score += 60
                         break
