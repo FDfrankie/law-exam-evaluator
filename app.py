@@ -4157,16 +4157,15 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             questions = anno.get("questions", [])
             handouts = anno.get("handouts", [])
 
+            combined_materials = handouts + notes
+
             badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
-            badge_orders = f" ｜ 📋 【{len(key_regulations)} 部法規命令】" if key_regulations else ""
-            badge_rulings = f" ｜ 📜 【{len(admin_rulings)} 筆主管函釋】" if admin_rulings else ""
+            badge_orders_rulings = f" ｜ 📋 【{len(key_regulations)} 部法規/細則 ＋ {len(admin_rulings)} 筆主管函釋】" if (key_regulations or admin_rulings) else ""
             badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
-            badge_questions = f" ｜ 🎯 【收錄 {len(questions)} 份百題與演練試題】" if questions else ""
-            badge_handouts = f" ｜ 📘 【收錄 {len(handouts)} 部課輔講義】" if handouts else ""
-            badge_notes = f" ｜ 📝 【精準命中 {len(notes)} 份個人筆記】" if notes else ""
+            badge_materials = f" ｜ 📘 【收錄 {len(combined_materials)} 份名師講義與個人讀書筆記】" if combined_materials else ""
 
-            exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders}{badge_rulings}{badge_legis}{badge_questions}{badge_handouts}{badge_notes}"
+            exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
             with st.expander(exp_label, expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
                 if art.get("is_latest_amendment"):
                     st.success(f"🆕 **此條文為立法院最新三讀通過並經總統府公布之修正條文！** (施行日期：{art.get('modified_date', '最新公布')})")
@@ -4176,14 +4175,11 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                         st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
 
-                tab_prec, tab_orders, tab_rulings, tab_legis, tab_questions, tab_handouts, tab_notes, tab_ai = st.tabs([
+                tab_prec, tab_orders_rulings, tab_legis, tab_materials, tab_ai = st.tabs([
                     f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
-                    f"📋 關聯法規命令與細則 ({len(key_regulations)} 部・點閱全文)",
-                    f"📜 主管機關行政函釋 ({len(admin_rulings)} 筆・經濟部/智財局/金管會等)",
+                    f"📋 關聯法規命令、施行細則與主管機關行政函釋 ({len(key_regulations)} 部法規・{len(admin_rulings)} 筆函釋)",
                     f"🕰️ 立法理由與歷史條文 ({total_amends_display} 次修法對照)",
-                    f"🎯 關聯實戰試題與百題演練 ({len(questions)} 份)",
-                    f"📘 關聯課輔講義與教材 ({len(handouts)} 份)",
-                    f"📝 關聯個人讀書筆記 ({len(notes)} 份)",
+                    f"📘 關聯名師講義與個人手寫讀書筆記 ({len(combined_materials)} 份・線上閱讀 PDF)",
                     "🤖 AI 深度釋析與作答模版"
                 ])
 
@@ -4213,12 +4209,16 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                     st.rerun()
                             st.markdown("---")
                     else:
-                        st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或點擊第 6 個分頁由 AI 進行歷審精選裁判與學說補強。")
+                        st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或由 AI 進行歷審精選裁判與學說補強。")
 
-                with tab_orders:
-                    st.markdown(f"#### 📋 【{lname}】之關聯法規命令、施行法與施行細則（支援逐條點閱與全文瀏覽）")
+                with tab_orders_rulings:
+                    st.markdown(f"#### 📋 【{lname} {ano}】關聯法規命令、施行細則與主管機關行政函釋")
+                    st.caption("全面整合 **授權法規命令與細則全文點閱**、**主管機關行政指導與解釋令函**，以及**跨法典法律/命令快速直通聯結**！")
+
+                    # 第一區塊：關聯法規命令與施行細則
+                    st.markdown("##### 📘 一、授權法規命令、施行細則與相關關聯法規全文")
                     if key_regulations:
-                        st.caption(f"已串接行政院及主管部會（經濟部、金管會、智慧財產局、勞動部、法務部）發布之法規命令與細則全文。點擊下方各命令卡片即可展開閱讀完整條文！")
+                        st.caption(f"已串接行政院及主管部會發布之法規命令與細則全文。點擊下方各命令卡片即可展開閱讀完整條文：")
                         for r_idx, reg in enumerate(key_regulations):
                             reg_name = reg["name"]
                             reg_type = reg["type"]
@@ -4291,16 +4291,40 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                         st.session_state["six_codes_search_kw"] = ""
                                         st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
                                         st.rerun()
+                                Dangerously_url = reg_details.get("url") if reg_details else ""
                                 with btn_col2:
-                                    if reg_details and reg_details.get("url"):
-                                        st.link_button(f"🌐 前往全國法規資料庫官方查看《{reg_name}》", reg_details["url"])
+                                    if Dangerously_url:
+                                        st.link_button(f"🌐 前往全國法規資料庫官方查看《{reg_name}》", Dangerously_url)
                     else:
                         st.info("此法規母法目前無直接對應之核心法規命令，或直接以母法本體為規範依據。")
 
-                    # 任意調閱全國 10,452 部行政命令任意法規
-                    with st.expander(f"🔍 任意調閱全台 10,452 部其他行政法規命令與施行細則全文 (ChOrder.json)"):
+                    # 任意快速直通調閱全國 2,053 部法律與 10,452 部行政命令 (任意調閱與連結其他法律)
+                    with st.expander(f"🔗 快速連結與直通調閱其他法律或行政命令全文 (支援全台 2,053 部法律與 10,452 部法規命令)", expanded=False):
+                        st.caption("可在此直接搜尋並一鍵切換調閱任何相關法律（如：性侵害犯罪防治法、刑法、兒童及少年福利與權益保障法）或行政命令：")
+                        col_rel1, col_rel2 = st.columns([3, 1])
+                        with col_rel1:
+                            all_law_names = sorted(list(law_map.keys()))
+                            kw_rel_law = st.text_input("輸入欲聯結之法律名稱關鍵字：", placeholder="例如：性侵害犯罪防治法、個人資料保護法、刑法...", key=f"kw_rel_law_{idx}")
+                        with col_rel2:
+                            st.write("")
+                            st.write("")
+                            matched_rel_laws = [l for l in all_law_names if kw_rel_law.strip() and kw_rel_law.strip() in l][:20] if kw_rel_law.strip() else []
+
+                        if matched_rel_laws:
+                            sel_rel_law = st.selectbox("選擇欲切換研讀之關聯法律：", matched_rel_laws, key=f"sel_rel_law_{idx}")
+                            if st.button(f"🚀 一鍵開啟《{sel_rel_law}》條文全文", key=f"btn_switch_rel_law_{idx}", type="primary"):
+                                st.session_state["six_codes_law"] = sel_rel_law
+                                for br_name, br_laws in SIX_CODES_TAXONOMY.items():
+                                    if sel_rel_law in br_laws:
+                                        st.session_state["six_codes_branch"] = br_name
+                                        break
+                                st.session_state["six_codes_search_kw"] = ""
+                                st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
+                                st.rerun()
+
+                        # 行政命令部分
                         all_orders_map = get_chorder_regulations_map()
-                        kw_custom_reg = st.text_input(f"輸入想查閱之法規命令或細則名稱（例如：專利法施行細則、公開發行公司、勞工請假...）：", key=f"kw_custom_reg_{idx}")
+                        kw_custom_reg = st.text_input(f"或輸入行政命令/細則名稱（例如：專利法施行細則、公開發行公司、勞工請假...）：", key=f"kw_custom_reg_{idx}")
                         if kw_custom_reg:
                             matched_regs = [k for k in all_orders_map.keys() if kw_custom_reg in k][:15]
                             if matched_regs:
@@ -4316,9 +4340,11 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                             else:
                                 st.warning("未找到相符之法規命令名稱。")
 
-                with tab_rulings:
-                    st.markdown(f"#### 📜 【{lname} {ano}】權威主管機關行政函釋庫")
-                    st.caption("深度整合 **經濟部商業司**（公司登記/公司法）、**經濟部智慧財產局 TIPO**（專利/商標/著作權）、**金融監督管理委員會**（證期局/銀行局）、**法務部法律字**（民事實體/行政程序法）、**勞動部勞動字**（勞動基準法）等中央主管機關之具拘束力行政指導與解釋令函！")
+                    st.markdown("---")
+
+                    # 第二區塊：主管機關權威行政函釋庫
+                    st.markdown("##### 📜 二、主管機關權威行政函釋庫 (經濟部/智財局/金管會/法務部/衛福部/勞動部)")
+                    st.caption("深度整合主管機關具拘束力之行政指導、函令解釋與實務爭點法律見解：")
 
                     if admin_rulings:
                         for r_item in admin_rulings:
@@ -4344,8 +4370,8 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
 
                     # 智慧爬取與補強按鈕
                     crawl_key = f"crawl_rulings_{lname}_{ano}"
-                    if st.button(f"🔄 智慧檢索/爬取此條文主管機關最新函釋（經濟部/智財局/金管會/法務部）", key=f"btn_crawl_ruling_{idx}"):
-                        with st.spinner(f"正在連線中央主管機關資料庫與 Gemini 3.x Flash，為【{lname} {ano}】爬取最新行政函釋與解釋令..."):
+                    if st.button(f"🔄 智慧檢索/爬取此條文主管機關最新函釋", key=f"btn_crawl_ruling_{idx}"):
+                        with st.spinner(f"正在連線中央主管機關資料庫，為【{lname} {ano}】爬取最新行政函釋與解釋令..."):
                             try:
                                 crawled = crawl_and_synthesize_admin_rulings(law_name=lname, article_no=ano, content=content)
                                 st.session_state[crawl_key] = crawled
@@ -4434,66 +4460,51 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                 if a.get("exam_impact"):
                                     st.success(f"**新舊法適用要點：**\n{a.get('exam_impact')}")
 
-                with tab_questions:
-                    if questions:
-                        st.markdown(f"#### 🎯 實戰歷屆試題與百題演練清單（精準收錄 {len(questions)} 份真題與爭點演練）")
-                        st.caption("以下試題為法學資料庫中針對本法條實例爭點所編製之題庫（含民法百題爭點、期中/期末模擬考真題，絕非個人讀書筆記）：")
-                        for q_idx, q in enumerate(questions):
-                            q_tag = q.get("tag", "【實戰試題】")
-                            q_fn = q.get("filename", "")
-                            q_reason = q.get("match_reason", "考科實例試題演練")
-                            with st.container():
-                                st.markdown(f"**🎯 `{q_tag}` 《{q_fn}》** (`{q.get('size_kb', 0)}` KB)")
-                                st.info(f"💡 **試題爭點演練對應要點**：{q_reason}")
-                                c_q1, c_q2 = st.columns(2)
-                                with c_q1:
-                                    if st.button(f"✍️ 一鍵帶入進行試卷評分 (Mode 1)", key=f"btn_pass_q_m1_{idx}_{q_idx}", use_container_width=True):
-                                        st.session_state["question_text_content"] = f"【依據法規題目演練】：{lname} {ano}（{q_tag}《{q_fn}》）\n\n【條文規範】：\n{content}\n\n【爭點指引】：{q_reason}"
-                                        st.session_state["imported_from_bank_label"] = f"{q_tag}《{q_fn}》"
-                                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
-                                        st.rerun()
-                                with c_q2:
-                                    if st.button(f"⚡ 一鍵帶入 AI 爭點破題與高分擬答 (Mode 4)", key=f"btn_pass_q_m4_{idx}_{q_idx}", use_container_width=True):
-                                        st.session_state["gen_question_input"] = f"請針對【{lname} {ano}】實務考題（{q_tag}《{q_fn}》）所涉之核心爭點：{q_reason}，依據司律二試上位卷 IRAC 架構產出高分示範擬答。"
-                                        st.session_state["app_mode"] = mode_options[3]
-                                        st.rerun()
-                                st.markdown("---")
-                    else:
-                        st.info(f"💡 本機試題庫中目前暫無直接標註為【{lname} {ano}】之專屬演練試題。您可前往【歷年真題庫檢索】(模式 3) 查閱歷屆司法官律師、法研所試題，或由 AI 進行智慧模擬出題。")
+                with tab_materials:
+                    st.markdown(f"#### 📘 關聯名師授課講義與個人手寫讀書筆記（共 {len(combined_materials)} 份）")
+                    st.caption("已將課輔講義、名師授課體系教材與個人手寫筆記全面整合，並內建 **PDF 即時在線閱讀器**，點擊即可直接於頁面內翻閱閱讀或下載！")
 
-                with tab_handouts:
-                    if handouts:
-                        st.markdown(f"#### 📘 關聯課輔講義與授課教材（共 {len(handouts)} 部教材）")
-                        st.caption("收錄法學教授、助教編撰之專題課輔講義與授課體系教材：")
-                        for h in handouts:
-                            h_tag = h.get("tag", "【課輔講義】")
-                            h_fn = h.get("filename", "")
-                            h_reason = h.get("match_reason", "授課章節關聯")
-                            with st.container():
-                                st.markdown(f"**📘 `{h_tag}` 《{h_fn}》** (`{h.get('size_kb', 0)}` KB)")
-                                st.info(f"📖 **講義核心要點與章節**：{h_reason}")
-                                st.markdown("---")
-                    else:
-                        st.info(f"💡 目前暫無直接對應【{lname} {ano}】之專屬課輔講義。")
+                    if combined_materials:
+                        for m_idx, mat in enumerate(combined_materials):
+                            m_tag = mat.get("tag", "【講義筆記】")
+                            m_fn = mat.get("filename", "")
+                            m_reason = mat.get("match_reason", "考科章節關聯")
+                            m_path = mat.get("path", "")
+                            m_size = mat.get("size_kb", 0)
 
-                with tab_notes:
-                    if notes:
-                        st.markdown(f"#### 📝 個人純讀書筆記精準命中清單（共 {len(notes)} 份純筆記）")
-                        st.caption("系統已嚴格過濾排除試題與講義，僅保留您個人的手寫筆記與體系心智圖：")
-                        for n in notes:
-                            n_tag = n.get("tag", "【個人筆記】")
-                            reason = n.get("match_reason", "考科編章關聯")
                             with st.container():
-                                st.markdown(f"**📄 `{n_tag}` 《{n['filename']}》** (`{n.get('size_kb', 0)}` KB)")
-                                st.info(f"🎯 **精準命中依據/章節考點**：{reason}")
+                                st.markdown(f"**📄 `{m_tag}` 《{m_fn}》** (`{m_size}` KB)")
+                                st.info(f"🎯 **關聯章節與考點標註**：{m_reason}")
+
+                                # 內嵌 PDF 線上閱讀與下載
+                                if m_path and Path(m_path).exists() and m_fn.lower().endswith(".pdf"):
+                                    viewer_exp_key = f"exp_pdf_{idx}_{m_idx}"
+                                    with st.expander(f"👁️ 點此直接在線展開閱讀 PDF 講義 / 手寫筆記全文（無需跳出）", expanded=False):
+                                        try:
+                                            with open(m_path, "rb") as f_pdf:
+                                                pdf_bytes = f_pdf.read()
+                                            b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                                            pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+                                            st.markdown(pdf_display, unsafe_allow_html=True)
+                                            st.download_button(
+                                                label=f"💾 下載此份 PDF ({m_fn})",
+                                                data=pdf_bytes,
+                                                file_name=m_fn,
+                                                mime="application/pdf",
+                                                key=f"dl_pdf_{idx}_{m_idx}"
+                                            )
+                                        except Exception as pe:
+                                            st.warning(f"PDF 讀取提示: {pe}")
+                                            if Path(m_path).exists():
+                                                with open(m_path, "rb") as fp:
+                                                    st.download_button(f"💾 下載《{m_fn}》至本機閱讀", fp, file_name=m_fn, key=f"dl_fb_{idx}_{m_idx}")
+                                elif m_path and Path(m_path).exists():
+                                    with open(m_path, "rb") as fp:
+                                        st.download_button(f"💾 下載《{m_fn}》", fp, file_name=m_fn, key=f"dl_non_pdf_{idx}_{m_idx}")
+
                                 st.markdown("---")
                     else:
-                        st.info(f"💡 您的個人讀書筆記庫中，目前無直接對應【{lname} {ano}】之手寫筆記。系統已為您嚴格過濾掉試題與其他不相關考科，確保筆記純粹不冗餘。")
-                        raw_notes_for_law = [x for x in get_article_annotations(law_name=lname, article_no="").get("notes", []) if x.get("doc_nature") == "note"]
-                        if raw_notes_for_law:
-                            with st.expander(f"📂 展開查閱【{lname}】全部個人純筆記目錄（共 {len(raw_notes_for_law)} 份）", expanded=False):
-                                for rn in raw_notes_for_law[:15]:
-                                    st.caption(f"- 📄 《{rn['filename']}》 ({rn.get('size_kb', 0)} KB)")
+                        st.info(f"💡 目前您的資料庫中暫無直接對應【{lname} {ano}】之專屬課輔講義或個人讀書筆記。您可前往【模式 9：手寫筆記蒸餾與 SFT 模型微調大庫】上傳並自動歸納您的專屬讀書筆記！")
 
                 with tab_ai:
                     ai_cache_key = f"ai_anno_{lname}_{ano}"
