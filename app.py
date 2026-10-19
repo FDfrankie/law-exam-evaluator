@@ -513,7 +513,7 @@ with st.sidebar:
         "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
         "📖 高分權威擬答生成",
         "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)",
-        "💬 全能法律智慧問答樞紐 (Google 式檢索・條文定位・爭點論辯・金額精算)",
+        "💬 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算)",
         "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)",
         "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)",
         "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
@@ -524,7 +524,7 @@ with st.sidebar:
         old_val = st.session_state["app_mode"]
         if "爭點查詢" in old_val or "統一法學檢索" in old_val:
             st.session_state["app_mode"] = mode_options[4]
-        elif "法律問題" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "一般法律" in old_val or "智慧問答" in old_val or "全能法律" in old_val:
+        elif "法律問題" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "一般法律" in old_val or "智慧問答" in old_val or "全能法律" in old_val or "專屬法學" in old_val or "萬能檢索" in old_val:
             st.session_state["app_mode"] = mode_options[5]
         elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val or "起訴書" in old_val:
             st.session_state["app_mode"] = mode_options[6]
@@ -2962,16 +2962,16 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.rerun()
 
 
-# ----------------- 模式: 全能法律智慧問答樞紐 (Google 式檢索・條文定位・爭點論辯・金額精算) -----------------
-elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode:
+# ----------------- 模式: 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算) -----------------
+elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode or "專屬法學" in app_mode or "萬能檢索" in app_mode:
     st.markdown("""
         <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
-            <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 全能法律智慧檢索樞紐</h1>
-            <p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">如 Google 般全知敏捷：輸入任何法律提問、條文定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
+            <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
+            <p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">專為本專案特化之全能法學檢索系統：單一搜尋欄支援法條定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
         </div>
     """, unsafe_allow_html=True)
 
-    # 1. Google 風格整體統一搜尋欄
+    # 1. 專屬特化單一整體搜尋欄
     qa_input_val = st.session_state.get("current_qa_question_input", "")
     
     col_search_box, col_search_act = st.columns([4.2, 1.2])
@@ -2981,11 +2981,11 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
             value=qa_input_val,
             height=95,
             placeholder="🔍 例如：\n1. 把別人的油漆塗在自己車上是民法哪一條？所有權歸誰？\n2. 借名登記出名人擅自出賣不動產之效力？實務與學說見解為何？\n3. 車齡2年8個月車禍零件14萬工資6萬，依定率遞減法折舊應賠償多少？\n4. 房東藉故扣留2個月押金不退還，我該如何合法要回？",
-            key="txt_unified_google_search",
+            key="txt_unified_law_search",
             label_visibility="collapsed"
         )
     with col_search_act:
-        btn_start_qa = st.button("🔍 Google 智慧檢索", type="primary", use_container_width=True, key="btn_run_legal_qa")
+        btn_start_qa = st.button("🔍 啟動全能法學檢索", type="primary", use_container_width=True, key="btn_run_legal_qa")
         if st.button("✖️ 清除搜尋", use_container_width=True, key="btn_clear_legal_qa"):
             st.session_state.pop("current_qa_result", None)
             st.session_state.pop("current_qa_question_input", None)
@@ -3261,7 +3261,7 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
         if not user_question.strip():
             st.warning("請先輸入具體法律問題、條文疑義、爭點或計算題目！")
         else:
-            with st.spinner("AI 全能法學搜尋引擎正在檢索現行法典、最高法院判決、大法庭裁定與權威法理，進行深度推論..."):
+            with st.spinner("專屬法學智慧檢索引擎正在檢索現行法典、最高法院判決、大法庭裁定與權威法理，進行深度推論..."):
                 try:
                     engine = LegalQAEngine()
                     qa_hist = st.session_state.get("qa_conversation_history", [])
@@ -3292,7 +3292,7 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
         q_mode_tag = res.get("query_type", "法理深度剖析")
 
         st.divider()
-        st.markdown(f"### 📋 【AI 全能法律智慧檢索結果：{q_mode_tag.split(' ')[0]}】")
+        st.markdown(f"### 📋 【專屬法學智慧檢索結果：{q_mode_tag.split(' ')[0]}】")
         st.markdown(qa_ans)
 
         st.divider()
