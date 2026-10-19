@@ -59,7 +59,6 @@ COMMON_CASE_WORDS = [
     "訴", "重訴", "金訴", "上訴", "上重訴", "金上訴", "智訴", "矚訴",
     "交訴", "交易", "選訴", "易", "簡", "簡上", "抗", "自"
 ]
-LAWBANK_COMMON_CASE_WORDS = COMMON_CASE_WORDS  # 向後相容別名
 
 COURTS_TAXONOMY = {
     "全部法院 (全體司法體系)": [],
@@ -79,7 +78,6 @@ COURTS_TAXONOMY = {
         "福建金門地方法院", "福建連江地方法院"
     ]
 }
-LAWBANK_COURTS_TAXONOMY = COURTS_TAXONOMY  # 向後相容別名
 
 JUDICIAL_TIME_RANGES = [
     "全部時間 (不限年份)",
@@ -89,7 +87,6 @@ JUDICIAL_TIME_RANGES = [
     "近 10 年 (司法革新期・民國 104~115 年)",
     "近 30 年 (現代憲法裁判大典・民國 84~115 年)"
 ]
-LAWSNOTE_TIME_RANGES = JUDICIAL_TIME_RANGES  # 向後相容別名
 
 def extract_case_roc_year(item: Dict[str, Any]) -> int:
     """提取裁判或解釋之民國年度 (ROC Year)，供時間軸過濾使用"""
@@ -590,7 +587,7 @@ def search_precedents_advanced(
     results.sort(key=lambda x: -x[0])
     return [r[1] for r in results[:top_k]]
 
-search_precedents_lawbank_style = search_precedents_advanced  # 向後相容別名
+
 
 def search_local_precedents(
     query: str,

@@ -47,13 +47,9 @@ try:
         get_precedents_catalog,
         generate_judicial_search_urls,
         search_precedents_advanced,
-        search_precedents_lawbank_style,
         COMMON_CASE_WORDS,
         COURTS_TAXONOMY,
         JUDICIAL_TIME_RANGES,
-        LAWBANK_COMMON_CASE_WORDS,
-        LAWBANK_COURTS_TAXONOMY,
-        LAWSNOTE_TIME_RANGES,
         get_precedent_history_chain,
         PRESET_JUDGEMENT_HISTORIES,
         extract_case_roc_year
@@ -67,14 +63,10 @@ except ImportError:
         get_precedent_by_id = getattr(_lqe, "get_precedent_by_id", lambda cid: None)
         get_precedents_catalog = getattr(_lqe, "get_precedents_catalog", lambda: [])
         generate_judicial_search_urls = getattr(_lqe, "generate_judicial_search_urls", lambda q, s="": {})
-        search_precedents_advanced = getattr(_lqe, "search_precedents_advanced", getattr(_lqe, "search_precedents_lawbank_style", lambda **kw: []))
-        search_precedents_lawbank_style = search_precedents_advanced
-        COMMON_CASE_WORDS = getattr(_lqe, "COMMON_CASE_WORDS", getattr(_lqe, "LAWBANK_COMMON_CASE_WORDS", ["全部字別 (不限)", "台上大", "台上", "憲判"]))
-        COURTS_TAXONOMY = getattr(_lqe, "COURTS_TAXONOMY", getattr(_lqe, "LAWBANK_COURTS_TAXONOMY", {"全部法院 (全體司法體系)": []}))
-        JUDICIAL_TIME_RANGES = getattr(_lqe, "JUDICIAL_TIME_RANGES", getattr(_lqe, "LAWSNOTE_TIME_RANGES", ["全部時間 (不限年份)"]))
-        LAWBANK_COMMON_CASE_WORDS = COMMON_CASE_WORDS
-        LAWBANK_COURTS_TAXONOMY = COURTS_TAXONOMY
-        LAWSNOTE_TIME_RANGES = JUDICIAL_TIME_RANGES
+        search_precedents_advanced = getattr(_lqe, "search_precedents_advanced", lambda **kw: [])
+        COMMON_CASE_WORDS = getattr(_lqe, "COMMON_CASE_WORDS", ["全部字別 (不限)", "台上大", "台上", "憲判"])
+        COURTS_TAXONOMY = getattr(_lqe, "COURTS_TAXONOMY", {"全部法院 (全體司法體系)": []})
+        JUDICIAL_TIME_RANGES = getattr(_lqe, "JUDICIAL_TIME_RANGES", ["全部時間 (不限年份)"])
         get_precedent_history_chain = getattr(_lqe, "get_precedent_history_chain", lambda cid: None)
         PRESET_JUDGEMENT_HISTORIES = getattr(_lqe, "PRESET_JUDGEMENT_HISTORIES", {})
         extract_case_roc_year = getattr(_lqe, "extract_case_roc_year", lambda item: 0)
@@ -86,13 +78,9 @@ except ImportError:
         get_precedents_catalog = lambda: []
         generate_judicial_search_urls = lambda q, s="": {}
         search_precedents_advanced = lambda **kw: []
-        search_precedents_lawbank_style = lambda **kw: []
         COMMON_CASE_WORDS = ["全部字別 (不限)", "台上大", "台上", "憲判"]
         COURTS_TAXONOMY = {"全部法院 (全體司法體系)": []}
         JUDICIAL_TIME_RANGES = ["全部時間 (不限年份)"]
-        LAWBANK_COMMON_CASE_WORDS = COMMON_CASE_WORDS
-        LAWBANK_COURTS_TAXONOMY = COURTS_TAXONOMY
-        LAWSNOTE_TIME_RANGES = JUDICIAL_TIME_RANGES
         get_precedent_history_chain = lambda cid: None
         PRESET_JUDGEMENT_HISTORIES = {}
         extract_case_roc_year = lambda item: 0
@@ -1931,10 +1919,10 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
         # 檢索與重設按鈕
         col_btn_search, col_btn_clear = st.columns([3, 1])
         with col_btn_search:
-            btn_exec_lb = st.button("🚀 執行專業多維度精準檢索", type="primary", use_container_width=True, key="btn_exec_lawbank_search")
+            btn_exec_lb = st.button("🚀 執行專業多維度精準檢索", type="primary", use_container_width=True, key="btn_exec_adv_prec_search")
         with col_btn_clear:
             if st.button("✖️ 清除檢索條件", use_container_width=True, key="btn_clear_lb_all"):
-                for k in ["lb_court_system", "lb_input_year", "lb_sel_jword", "lb_input_word", "lb_input_num", "lb_input_cause", "lb_input_opinion", "lb_input_arg", "lb_input_statute", "lb_select_time_filter", "lb_time_filter", "lawbank_search_results", "lb_did_search"]:
+                for k in ["lb_court_system", "lb_input_year", "lb_sel_jword", "lb_input_word", "lb_input_num", "lb_input_cause", "lb_input_opinion", "lb_input_arg", "lb_input_statute", "lb_select_time_filter", "lb_time_filter", "adv_prec_search_results", "lb_did_search"]:
                     st.session_state.pop(k, None)
                 st.rerun()
 
@@ -1956,13 +1944,13 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         time_filter=lb_time_filter,
                         top_k=50
                     )
-                    st.session_state["lawbank_search_results"] = results
+                    st.session_state["adv_prec_search_results"] = results
                 except Exception as e:
                     st.error(f"專業多維檢索失敗: {e}")
 
         # 檢索結果展示
-        if "lawbank_search_results" in st.session_state:
-            lb_results = st.session_state["lawbank_search_results"]
+        if "adv_prec_search_results" in st.session_state:
+            lb_results = st.session_state["adv_prec_search_results"]
             st.divider()
             st.markdown(f"### 📋 專業規格檢索結果清單 (共命中 {len(lb_results)} 筆裁判)")
 
@@ -3076,14 +3064,72 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     st.caption("完美對標權威法學庫旗艦功能！支援「先輸入字號秒查」；若大庫未直接收錄，即時引導貼上裁判/函釋全文，由 AI 秒級深度萃取六大標準化法學精髓與司律上位 IRAC 論理！")
     st.divider()
 
+    # 案號縮寫速查語法指引與常見格式說明
+    with st.expander("💡 點此查看【案號縮寫速查語法指南】（支援判決/裁定/判例/院字/院解/更審/智財專利家事）", expanded=False):
+        st.markdown("""
+- **基本案號縮寫**：如 `108台上908`（代表 108 年度台上字第 908 號民事或刑事裁判，判決與裁定均涵蓋）。
+- **指定性質**：案號末尾加 `民`、`刑`、`行`（如 `108台上908民` 代表 108 年度台上字第 908 號民事判決）。
+- **指定書類**：
+  - 末尾加 `決`：代表判決（如 `108台上908決`、`108台上908民決`）。
+  - 末尾加 `裁`：代表裁定（如 `108台上大1719裁`、`108台上908裁`）。
+  - 末尾加 `例`：代表判例（如 `40台上86例`、`30上482例`、`65台上2440例`）。
+- **司法院歷史核心解釋**：支援 `院字2949`（司法院院字第2949號解釋）、`院解字3001` 或 `院解3001`（院解字第3001號解釋）、`釋字785`、`111憲判16`。
+- **更審字軌相容**：不拘括號與數字寫法，`重上更一15`、`重上更(一)15`、`重上更（一）15`、`重上更1` 等價兼容。
+- **專業法院特殊字軌**：涵蓋 `加上` / `家上`（家事裁判）、`民著上`（智慧財產著作權）、`行專上`（專利行政訴訟）、`民專上`、`行商上`、`民商上` 等。
+- **行政函釋字號**：支援機關字軌公文號與純流水號（如 `經商字第 10702425580 號`、`10702425580`、`金管保產字第 10904918231 號`）。
+""")
+
+    # 快捷體驗晶片 (雙排 12 顆高頻縮寫晶片)
+    st.markdown("**⚡ 快速點擊體驗常見指標判解縮寫：**")
+    chip_row1 = [
+        ("108台上908民", "108台上908民 (純經濟損失判決)"),
+        ("108台上大1719裁", "108台上大1719裁 (借名登記裁定)"),
+        ("40台上86例", "40台上86例 (無權代理判例)"),
+        ("30上482例", "30上482例 (合意解除判例)"),
+        ("院字2949", "院字2949 (土地登記效力解釋)"),
+        ("院解字3001", "院解字3001 (善意受讓動產解釋)")
+    ]
+    chip_row2 = [
+        ("重上更一15", "重上更一15 (情事變更更審判決)"),
+        ("109民著上12", "109民著上12 (智財著作權上訴)"),
+        ("110行專上5", "110行專上5 (專利進步性判決)"),
+        ("109家上12", "109家上12 (剩餘財產顯失公平)"),
+        ("111憲判16", "111憲判16 (強制採尿憲判字)"),
+        ("經商字第 10702425580 號", "經商字第 10702425580 號 (公司法函釋)")
+    ]
+
+    r1_cols = st.columns(6)
+    for idx, (code_val, tooltip_text) in enumerate(chip_row1):
+        with r1_cols[idx]:
+            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r1_{idx}"):
+                st.session_state["sum_citation_search"] = code_val
+                st.session_state["txt_citation_search_input"] = code_val
+                st.session_state["sum_input_title"] = ""
+                st.session_state["sum_input_text"] = ""
+                st.session_state.pop("last_ai_sum_res", None)
+                st.rerun()
+
+    r2_cols = st.columns(6)
+    for idx, (code_val, tooltip_text) in enumerate(chip_row2):
+        with r2_cols[idx]:
+            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r2_{idx}"):
+                st.session_state["sum_citation_search"] = code_val
+                st.session_state["txt_citation_search_input"] = code_val
+                st.session_state["sum_input_title"] = ""
+                st.session_state["sum_input_text"] = ""
+                st.session_state.pop("last_ai_sum_res", None)
+                st.rerun()
+
+    st.write("")
+
     # 第一步：先打字號 (裁判案號 / 行政函釋字號)
     cur_cite_val = st.session_state.get("sum_citation_search", "")
     col_sc1, col_sc2, col_sc3 = st.columns([5, 1.2, 1])
     with col_sc1:
         citation_input = st.text_input(
-            "🔍 第一步：請先輸入裁判案號或行政函釋字號（例如：108台上大1719、經商字第 10702425580 號、111憲判16、10702425020...）：",
+            "🔍 第一步：請先輸入裁判案號或行政函釋字號（例如：108台上908民、108台上大1719裁、40台上86例、院字2949、重上更一15、經商字第 10702425580 號...）：",
             value=cur_cite_val,
-            placeholder="輸入裁判字號縮寫或函釋公文字號（支援 108台上大1719、經商字第...、111憲判16、金管保...）",
+            placeholder="輸入裁判字號縮寫或函釋公文字號（支援 108台上908民、108台上大1719裁、40台上86例、院字2949、重上更一15、111憲判16、經商字第...）",
             key="txt_citation_search_input"
         )
     with col_sc2:
@@ -3091,6 +3137,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     with col_sc3:
         if st.button("✖️ 清除重置", use_container_width=True, key="btn_clear_citation_search"):
             st.session_state["sum_citation_search"] = ""
+            st.session_state["txt_citation_search_input"] = ""
             st.session_state["sum_input_text"] = ""
             st.session_state["sum_input_title"] = ""
             st.session_state.pop("last_ai_sum_res", None)
