@@ -449,6 +449,13 @@ CORE_ISSUES_TAXONOMY = {
 }
 
 def get_subject_topics_taxonomy(subject_name: str) -> dict:
+    if "全部" in subject_name:
+        all_topics = {}
+        for sub, topics in CORE_ISSUES_TAXONOMY.items():
+            for t_k, t_v in topics.items():
+                all_topics[f"[{sub}] {t_k}"] = t_v
+        return all_topics
+
     for k, v in CORE_ISSUES_TAXONOMY.items():
         if k in subject_name or subject_name in k:
             return v
@@ -796,27 +803,119 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
             subject = subject_choice.split(" ")[0]
 
     with col_sub2:
-        st.markdown("##### 🎯 第二步：設定核心考點爭點（支援分類快選）")
+        st.markdown("##### 🎯 第二步：設定核心考點爭點與客製化出題範圍")
         available_topics_map = get_subject_topics_taxonomy(subject)
-        topic_options = ["-- 請選擇司律高頻考點爭點（點選自動帶入） --"] + list(available_topics_map.keys())
-        sel_preset_topic = st.selectbox(
-            f"依【{subject}】分類快選高頻考點：",
-            topic_options,
-            key=f"sel_topic_preset_{subject}"
+        
+        # 1. 支援多選高頻核心考點爭點 (multiselect)
+        sel_preset_topics = st.multiselect(
+            f"依【{subject}】勾選核心考點爭點（支援多選複合命題）：",
+            options=list(available_topics_map.keys()),
+            default=[],
+            placeholder="💡 點此可多選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
+            key=f"msel_topics_{subject}"
         )
 
-        default_topic_text = ""
-        if sel_preset_topic and sel_preset_topic != "-- 請選擇司律高頻考點爭點（點選自動帶入） --":
-            default_topic_text = available_topics_map[sel_preset_topic]
+        # 2. 加入客製化出題範圍與新增自訂爭點工具區
+        with st.expander("🛠️ 客製化命題範圍設定與自訂考點新增（章節・法條・專案主題）", expanded=False):
+            col_sc1, col_sc2 = st.columns([1.2, 1.8])
+            with col_sc1:
+                scope_mode = st.selectbox(
+                    "命題範圍類型：",
+                    [
+                        "🌟 全科目綜合範圍 (不設限)",
+                        "📜 特定法條/條文區間 (如：民法第179~198條)",
+                        "📚 特定編次/章節專題 (如：總則篇、債各、犯罪論)",
+                        "🏛️ 實務見解專題 (大法庭裁定/憲判字/判例)",
+                        "✏️ 完全自訂命題範圍"
+                    ],
+                    key=f"sel_scope_mode_{subject}"
+                )
+            with col_sc2:
+                scope_placeholder = "例如：民法第179條至第198條債總編、刑法第12條至第31條犯罪論..."
+                if "法條" in scope_mode:
+                    scope_placeholder = "例如：第184條至第198條侵權責任、或行政程序法第92條至第134條..."
+                elif "章節" in scope_mode:
+                    scope_placeholder = "例如：民法物權編占有與共有、公司法股東會決議瑕疵專題..."
+                elif "實務" in scope_mode:
+                    scope_placeholder = "例如：近五年最高法院民事大法庭裁定專題、111-113年憲判字重要判決..."
+                
+                custom_scope_input = st.text_input(
+                    "指定客製化範圍明細：",
+                    placeholder=scope_placeholder,
+                    key=f"txt_custom_scope_{subject}"
+                )
 
-        topic = st.text_input(
-            "出題核心主題/考點（若有上傳筆記亦可留空或輸入重點關鍵字）：",
-            value=default_topic_text,
-            placeholder="例如：借名登記、侵權純經濟損失、原因自由行為...",
-            key=f"exam_topic_input_{subject}"
+            # 自訂新增爭點考點
+            col_add_t1, col_add_t2 = st.columns([3, 1])
+            with col_add_t1:
+                new_adhoc_topic = st.text_input(
+                    "➕ 輸入欲新增的自訂考點關鍵字：",
+                    placeholder="例如：108台上大1719、不純正不作為犯保證人地位、違約定金酌減...",
+                    key=f"txt_adhoc_topic_add_{subject}"
+                )
+            with col_add_t2:
+                st.write("")
+                if st.button("➕ 新增至考點", use_container_width=True, key=f"btn_add_adhoc_{subject}"):
+                    if new_adhoc_topic.strip():
+                        if f"adhoc_topics_list_{subject}" not in st.session_state:
+                            st.session_state[f"adhoc_topics_list_{subject}"] = []
+                        if new_adhoc_topic.strip() not in st.session_state[f"adhoc_topics_list_{subject}"]:
+                            st.session_state[f"adhoc_topics_list_{subject}"].append(new_adhoc_topic.strip())
+                        st.rerun()
+
+            adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
+            if adhoc_list:
+                st.caption("📌 目前已新增的自訂考點：")
+                st.write("、".join([f"`{a}`" for a in adhoc_list]))
+                if st.button("🗑️ 清空自訂新增考點", key=f"btn_clear_adhoc_{subject}"):
+                    st.session_state[f"adhoc_topics_list_{subject}"] = []
+                    st.rerun()
+
+        # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics)
+        assembled_parts = []
+        
+        # (1) 勾選的高頻爭點
+        if sel_preset_topics:
+            topic_descriptions = [f"{t}（{available_topics_map.get(t, t)}）" for t in sel_preset_topics]
+            assembled_parts.append("【核心考點爭點】：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(topic_descriptions)]))
+        
+        # (2) 自訂新增考點
+        adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
+        if adhoc_list:
+            assembled_parts.append("【額外自訂考點】：\n" + "\n".join([f"- {a}" for a in adhoc_list]))
+
+        # (3) 客製化範圍
+        custom_scope_val = st.session_state.get(f"txt_custom_scope_{subject}", "").strip()
+        if custom_scope_val:
+            assembled_parts.append(f"【指定客製化命題範圍】：{custom_scope_val}")
+        elif scope_mode and "全科目" not in scope_mode:
+            assembled_parts.append(f"【指定命題類型】：{scope_mode}")
+
+        auto_assembled_text = "\n\n".join(assembled_parts)
+
+        # 追蹤上一次的自動合成內容，判斷使用者是否有手動編輯
+        last_auto_key = f"last_auto_topic_text_{subject}"
+        topic_content_key = f"exam_topic_content_{subject}"
+        
+        if auto_assembled_text != st.session_state.get(last_auto_key):
+            st.session_state[topic_content_key] = auto_assembled_text
+            st.session_state[last_auto_key] = auto_assembled_text
+
+        current_topic_val = st.session_state.get(topic_content_key, auto_assembled_text)
+
+        # 顯示整合後的出題核心考點文字區
+        topic = st.text_area(
+            "出題核心主題/考點（自動彙整所選考點與範圍，亦可直接自由修改）：",
+            value=current_topic_val,
+            height=110,
+            placeholder="例如：借名登記出名人無權處分、侵權行為純經濟損失、原因自由行為...（若有上傳筆記亦可留空或輸入重點關鍵字）"
         )
-        if default_topic_text:
-            st.caption(f"💡 已自動選定高頻爭點：`{default_topic_text}`（您可直接修改或補充自訂關鍵字）")
+        st.session_state[topic_content_key] = topic
+
+        total_selected_count = len(sel_preset_topics) + len(adhoc_list)
+        if total_selected_count > 0 or custom_scope_val:
+            scope_badge = f" ｜ 客製化範圍：`{custom_scope_val}`" if custom_scope_val else ""
+            st.caption(f"💡 目前已設定 **{total_selected_count}** 項核心考點{scope_badge}，AI 將依此精準命題！")
 
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
