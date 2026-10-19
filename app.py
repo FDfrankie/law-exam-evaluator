@@ -119,7 +119,11 @@ try:
         BooleanQueryParser,
         evaluate_boolean_query,
         AILegalSummarizer,
-        BUILTIN_LANDMARK_DOCS
+        BUILTIN_LANDMARK_DOCS,
+        find_legal_doc_by_citation,
+        lookup_case_by_abbreviation,
+        parse_case_abbreviation_query,
+        construct_standard_citation_from_parsed
     )
 except ImportError:
     try:
@@ -128,6 +132,10 @@ except ImportError:
         evaluate_boolean_query = getattr(_lbe, "evaluate_boolean_query", lambda q, t: True)
         AILegalSummarizer = getattr(_lbe, "AILegalSummarizer", None)
         BUILTIN_LANDMARK_DOCS = getattr(_lbe, "BUILTIN_LANDMARK_DOCS", [])
+        find_legal_doc_by_citation = getattr(_lbe, "find_legal_doc_by_citation", lambda c: None)
+        lookup_case_by_abbreviation = getattr(_lbe, "lookup_case_by_abbreviation", lambda q: {"matched": False})
+        parse_case_abbreviation_query = getattr(_lbe, "parse_case_abbreviation_query", lambda q: {})
+        construct_standard_citation_from_parsed = getattr(_lbe, "construct_standard_citation_from_parsed", lambda i: "")
     except Exception:
         class BooleanQueryParser:
             @classmethod
@@ -135,6 +143,10 @@ except ImportError:
         def evaluate_boolean_query(q, t): return True
         AILegalSummarizer = None
         BUILTIN_LANDMARK_DOCS = []
+        find_legal_doc_by_citation = lambda c: None
+        lookup_case_by_abbreviation = lambda q: {"matched": False}
+        parse_case_abbreviation_query = lambda q: {}
+        construct_standard_citation_from_parsed = lambda i: ""
 
 # 設定頁面配置
 st.set_page_config(
@@ -2640,58 +2652,251 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
 # ----------------- 模式: 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦) -----------------
 elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)" or "AI 摘要" in app_mode or "AI裁判" in app_mode or "AI 裁判" in app_mode:
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")
-    st.caption("完美對標權威法學庫 2025/2026 最新主推「AI摘要」旗艦功能！支援數萬字長篇裁判書、最高法院大法庭裁定、憲法法庭判決、金管會/經濟部/法務部部會長篇函釋，一鍵秒級萃取六大標準化法學精髓！")
+    st.caption("完美對標權威法學庫旗艦功能！支援「先輸入字號秒查」；若大庫未直接收錄，即時引導貼上裁判/函釋全文，由 AI 秒級深度萃取六大標準化法學精髓與司律上位 IRAC 論理！")
     st.divider()
 
-    col_d1, col_d2 = st.columns([3, 1])
-    with col_d1:
-        default_d_title = st.session_state.get("sum_input_title", "")
-        doc_title_in = st.text_input("文書名稱 / 案號字號：", value=default_d_title, placeholder="例如：最高法院 108 年度台上大字第 1719 號、經濟部經商字第 10802422030 號函...", key="txt_sum_doc_title")
-    with col_d2:
-        type_options = ["🏛️ 最高法院/高院裁判書", "📜 憲法法庭判決/釋字", "📑 中央部會行政函釋 (經濟部/金管會)", "📋 行政訴願決定書", "🎓 法學期刊名家評釋論文"]
-        default_d_type = st.session_state.get("sum_input_type", type_options[0])
-        type_idx = type_options.index(default_d_type) if default_d_type in type_options else 0
-        doc_type_in = st.selectbox("文書種類：", type_options, index=type_idx, key="sel_sum_doc_type")
+    # 快捷標竿範例按鈕列 (Quick Example Chips)
+    st.markdown("##### ⚡ 權威指標判解與部會長篇函釋快捷體驗：")
+    chip_col1, chip_col2, chip_col3, chip_col4, chip_col5, chip_col6 = st.columns(6)
+    with chip_col1:
+        if st.button("🏛️ 108台上大1719\n(借名登記)", use_container_width=True, key="chip_sum_1719"):
+            st.session_state["sum_citation_search"] = "108台上大1719"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
+    with chip_col2:
+        if st.button("📜 111憲判16\n(強制採尿)", use_container_width=True, key="chip_sum_111_16"):
+            st.session_state["sum_citation_search"] = "111憲判16"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
+    with chip_col3:
+        if st.button("📑 經商10702425580\n(股東會召集)", use_container_width=True, key="chip_sum_moea_173"):
+            st.session_state["sum_citation_search"] = "經商字第 10702425580 號"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
+    with chip_col4:
+        if st.button("📑 金管保1090494553\n(保險據實說明)", use_container_width=True, key="chip_sum_fsc_64"):
+            st.session_state["sum_citation_search"] = "金管保產字第 1090494553 號"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
+    with chip_col5:
+        if st.button("🏛️ 109台上2843\n(火災舉證)", use_container_width=True, key="chip_sum_2843"):
+            st.session_state["sum_citation_search"] = "109台上2843"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
+    with chip_col6:
+        if st.button("⚖️ 108台上大3594\n(毒品既未遂)", use_container_width=True, key="chip_sum_3594"):
+            st.session_state["sum_citation_search"] = "108台上大3594"
+            st.session_state.pop("last_ai_sum_res", None)
+            st.rerun()
 
-    default_d_text = st.session_state.get("sum_input_text", "")
-    doc_full_text = st.text_area(
-        "請貼上欲進行 AI 摘要之長篇裁判全文、大法庭裁定理由或主管機關行政函釋：",
-        value=default_d_text,
-        height=320,
-        placeholder="在此貼上數千至數萬字之法學裁判或公報釋令全文...",
-        key="txt_sum_full_text"
-    )
+    st.write("")
 
-    b_col1, b_col2 = st.columns([3, 1])
-    with b_col1:
-        btn_run_summarize = st.button("⚡ 啟動專業級 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_legal_summarizer")
-    with b_col2:
-        if st.button("✖️ 清除內容", use_container_width=True, key="btn_clear_sum_input"):
+    # 第一步：先打字號 (裁判案號 / 行政函釋字號)
+    cur_cite_val = st.session_state.get("sum_citation_search", "")
+    col_sc1, col_sc2, col_sc3 = st.columns([5, 1.2, 1])
+    with col_sc1:
+        citation_input = st.text_input(
+            "🔍 第一步：請先輸入裁判案號或行政函釋字號（例如：108台上大1719、經商字第 10702425580 號、111憲判16、10702425020...）：",
+            value=cur_cite_val,
+            placeholder="輸入裁判字號縮寫或函釋公文字號（支援 108台上大1719、經商字第...、111憲判16、金管保...）",
+            key="txt_citation_search_input"
+        )
+    with col_sc2:
+        btn_search_cite = st.button("🔍 查找字號", type="primary", use_container_width=True, key="btn_trigger_search_cite")
+    with col_sc3:
+        if st.button("✖️ 清除重置", use_container_width=True, key="btn_clear_citation_search"):
+            st.session_state["sum_citation_search"] = ""
             st.session_state["sum_input_text"] = ""
             st.session_state["sum_input_title"] = ""
             st.session_state.pop("last_ai_sum_res", None)
             st.rerun()
 
-    if btn_run_summarize:
-        if not doc_full_text.strip():
-            st.warning("請先貼上裁判全文或行政函釋！")
-        else:
-            with st.spinner("AI 大法官書記處法官正在解構案情、主文心證、關鍵法理與二試上位金句..."):
-                try:
-                    summarizer = AILegalSummarizer()
-                    sum_res = summarizer.summarize(
-                        doc_text=doc_full_text,
-                        doc_type=doc_type_in,
-                        title=doc_title_in
-                    )
-                    st.session_state["last_ai_sum_res"] = sum_res
-                except Exception as se:
-                    st.error(f"AI 摘要失敗: {se}")
+    # 更新 session_state 中的字號值
+    if citation_input != cur_cite_val:
+        st.session_state["sum_citation_search"] = citation_input
 
+    # 執行字號查找
+    matched_doc = None
+    if citation_input.strip():
+        matched_doc = find_legal_doc_by_citation(citation_input.strip())
+
+    to_summarize_text = ""
+    to_summarize_type = "🏛️ 最高法院/高院裁判書"
+    to_summarize_title = ""
+    trigger_summarize = False
+
+    # 分支 A：資料庫成功命中 (Found in Database)
+    if matched_doc and matched_doc.get("found"):
+        st.success(f"🎉 資料庫成功命中：【{matched_doc['title']}】！已自動載入案由、主文心證與完整論理。")
+
+        with st.container(border=True):
+            m_c1, m_c2, m_c3 = st.columns([2, 2, 3])
+            m_c1.markdown(f"**🏛️ 機關/審理法院**：  \n`{matched_doc.get('court_or_agency', '司法/行政機關')}`")
+            m_c2.markdown(f"**📜 文書類型**：  \n`{matched_doc.get('doc_type', '權威判解')}`")
+            laws_str = "、".join(matched_doc.get("laws_cited", [])) if matched_doc.get("laws_cited") else "涉及實體法與程序法關鍵法理"
+            m_c3.markdown(f"**🎯 涉及主要法條**：  \n`{laws_str}`")
+
+            if matched_doc.get("holding_snippet"):
+                st.markdown(f"**💡 裁判/函釋核心要旨節錄**：  \n> {matched_doc.get('holding_snippet')}")
+
+        with st.expander(f"👁️ 檢視或增修自動載入之全文內容（共 {len(matched_doc.get('text', ''))} 字）", expanded=False):
+            loaded_text = st.text_area(
+                "可直接在此檢視或微調載入之內文：",
+                value=matched_doc.get("text", ""),
+                height=220,
+                key="txt_loaded_hit_text"
+            )
+
+        col_act1, col_act2 = st.columns([3, 1])
+        with col_act1:
+            if st.button("⚡ 一鍵啟動 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_from_hit"):
+                to_summarize_text = loaded_text or matched_doc.get("text", "")
+                to_summarize_type = matched_doc.get("doc_type", "裁判書")
+                to_summarize_title = matched_doc.get("title", citation_input.strip())
+                trigger_summarize = True
+        with col_act2:
+            if st.button("🔄 重新輸入字號", use_container_width=True, key="btn_reinput_hit"):
+                st.session_state["sum_citation_search"] = ""
+                st.session_state.pop("last_ai_sum_res", None)
+                st.rerun()
+
+    # 分支 B：若輸入字號但資料庫未直接收錄 (Not Found in Database -> 引導輸入全文)
+    elif citation_input.strip():
+        st.info(f"💡 本地資料庫未直接收錄【{citation_input.strip()}】之既有全文。\n請在下方直接貼上裁判書或長篇函釋全文（或上傳文字檔案），AI 將即刻為您深度精鍊六大核心要旨！")
+
+        if matched_doc and matched_doc.get("search_urls"):
+            st.markdown("##### 🌐 點擊以下官方或權威法學資料庫，一鍵查找並複製全文：")
+            u_cols = st.columns(min(len(matched_doc["search_urls"]), 4))
+            for idx, (label, u_link) in enumerate(list(matched_doc["search_urls"].items())[:4]):
+                with u_cols[idx]:
+                    st.link_button(label, u_link, use_container_width=True)
+
+        st.divider()
+        st.subheader("📝 第二步：請貼上裁判書或長篇函釋全文")
+
+        col_nf1, col_nf2 = st.columns([3, 1])
+        with col_nf1:
+            suggested_title = matched_doc.get("standard_title") if matched_doc else citation_input.strip()
+            manual_title_in = st.text_input("文書名稱 / 案號字號：", value=st.session_state.get("sum_input_title", suggested_title), key="txt_manual_title_nf")
+        with col_nf2:
+            type_options = ["🏛️ 最高法院/高院裁判書", "📜 憲法法庭判決/釋字", "📑 中央部會行政函釋 (經濟部/金管會)", "📋 行政訴願決定書", "🎓 法學期刊名家評釋論文"]
+            suggested_type = matched_doc.get("doc_type") if matched_doc else type_options[0]
+            t_idx = type_options.index(suggested_type) if suggested_type in type_options else 0
+            manual_type_in = st.selectbox("文書種類：", type_options, index=t_idx, key="sel_manual_type_nf")
+
+        # 支援上傳文字檔 / Word / PDF
+        uploaded_doc_file = st.file_uploader("📂 或直接上傳裁判/函釋文字檔案 (.txt, .docx, .pdf)：", type=["txt", "docx", "pdf"], key="file_doc_uploader_nf")
+        pasted_text = st.session_state.get("sum_input_text", "")
+        if uploaded_doc_file is not None:
+            try:
+                if uploaded_doc_file.name.endswith(".txt"):
+                    pasted_text = uploaded_doc_file.read().decode("utf-8", errors="ignore")
+                elif uploaded_doc_file.name.endswith(".docx"):
+                    import docx
+                    d = docx.Document(uploaded_doc_file)
+                    pasted_text = "\n".join([p.text for p in d.paragraphs])
+                elif uploaded_doc_file.name.endswith(".pdf"):
+                    import pypdf
+                    reader = pypdf.PdfReader(uploaded_doc_file)
+                    pasted_text = "\n".join([page.extract_text() or "" for page in reader.pages])
+                st.success(f"✅ 成功自檔案【{uploaded_doc_file.name}】讀取共 {len(pasted_text)} 字！")
+            except Exception as fe:
+                st.warning(f"檔案解析提示: {fe}")
+
+        manual_full_text = st.text_area(
+            "請在此貼上裁判全文、大法庭裁定理由或主管機關行政函釋全文：",
+            value=pasted_text,
+            height=300,
+            placeholder="在此貼上數千至數萬字之法學裁判或公報釋令全文...",
+            key="txt_manual_full_text_nf"
+        )
+
+        b_nf1, b_nf2 = st.columns([3, 1])
+        with b_nf1:
+            if st.button("⚡ 啟動專業級 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_from_manual_nf"):
+                if not manual_full_text.strip():
+                    st.warning("請先貼上裁判全文或行政函釋！")
+                else:
+                    to_summarize_text = manual_full_text
+                    to_summarize_type = manual_type_in
+                    to_summarize_title = manual_title_in or citation_input.strip()
+                    trigger_summarize = True
+        with b_nf2:
+            if st.button("✖️ 清除內容", use_container_width=True, key="btn_clear_manual_nf"):
+                st.session_state["sum_input_text"] = ""
+                st.session_state["sum_input_title"] = ""
+                st.session_state.pop("last_ai_sum_res", None)
+                st.rerun()
+
+    # 分支 C：使用者尚未輸入字號 (初始狀態)
+    else:
+        st.info("💡 **操作指引**：請於上方輸入裁判案號或部會長篇函釋字號進行秒級查找；若手邊已有現成裁判書全文，亦可直接展開下方【直接手動貼上全文】區域直接貼入！")
+
+        with st.expander("📝 直接手動貼上全文 / 上傳檔案（免輸入字號）", expanded=False):
+            col_init1, col_init2 = st.columns([3, 1])
+            with col_init1:
+                init_title_in = st.text_input("文書名稱 / 案號字號：", value=st.session_state.get("sum_input_title", ""), placeholder="例如：最高法院 108 年度台上字第 908 號...", key="txt_init_title")
+            with col_init2:
+                type_options = ["🏛️ 最高法院/高院裁判書", "📜 憲法法庭判決/釋字", "📑 中央部會行政函釋 (經濟部/金管會)", "📋 行政訴願決定書", "🎓 法學期刊名家評釋論文"]
+                init_type_in = st.selectbox("文書種類：", type_options, index=0, key="sel_init_type")
+
+            init_uploaded_file = st.file_uploader("📂 上傳裁判/函釋文字檔案 (.txt, .docx, .pdf)：", type=["txt", "docx", "pdf"], key="file_init_uploader")
+            init_pasted_text = st.session_state.get("sum_input_text", "")
+            if init_uploaded_file is not None:
+                try:
+                    if init_uploaded_file.name.endswith(".txt"):
+                        init_pasted_text = init_uploaded_file.read().decode("utf-8", errors="ignore")
+                    elif init_uploaded_file.name.endswith(".docx"):
+                        import docx
+                        d = docx.Document(init_uploaded_file)
+                        init_pasted_text = "\n".join([p.text for p in d.paragraphs])
+                    elif init_uploaded_file.name.endswith(".pdf"):
+                        import pypdf
+                        reader = pypdf.PdfReader(init_uploaded_file)
+                        init_pasted_text = "\n".join([page.extract_text() or "" for page in reader.pages])
+                    st.success(f"✅ 成功自檔案讀取共 {len(init_pasted_text)} 字！")
+                except Exception as fe:
+                    st.warning(f"檔案解析提示: {fe}")
+
+            init_full_text = st.text_area(
+                "請貼上欲進行 AI 摘要之法學裁判全文或行政函釋：",
+                value=init_pasted_text,
+                height=280,
+                placeholder="在此貼上數千至數萬字之法學裁判或公報釋令全文...",
+                key="txt_init_full_text"
+            )
+
+            if st.button("⚡ 啟動專業級 AI 核心要旨深度精鍊", type="primary", use_container_width=True, key="btn_run_init"):
+                if not init_full_text.strip():
+                    st.warning("請先貼上裁判全文或行政函釋！")
+                else:
+                    to_summarize_text = init_full_text
+                    to_summarize_type = init_type_in
+                    to_summarize_title = init_title_in
+                    trigger_summarize = True
+
+    # 共通執行 AI 核心要旨精鍊
+    if trigger_summarize and to_summarize_text.strip():
+        with st.spinner("AI 大法官書記處法官正在解構案情、主文心證、核心爭點、關鍵法理與二試上位 IRAC 金句..."):
+            try:
+                summarizer = AILegalSummarizer()
+                sum_res = summarizer.summarize(
+                    doc_text=to_summarize_text,
+                    doc_type=to_summarize_type,
+                    title=to_summarize_title
+                )
+                st.session_state["last_ai_sum_res"] = sum_res
+                st.session_state["sum_input_title"] = to_summarize_title
+                st.session_state["sum_input_text"] = to_summarize_text
+            except Exception as se:
+                st.error(f"AI 摘要失敗: {se}")
+
+    # 成果展示區 (標準化六大核心要旨報告)
     if "last_ai_sum_res" in st.session_state:
         sum_res = st.session_state["last_ai_sum_res"]
+        active_title = sum_res.get("title") or st.session_state.get("sum_input_title") or "法學文書"
         st.divider()
-        st.markdown(f"### 📑 【{sum_res.get('title', '')}】AI 專業級 核心要旨精鍊報告")
+        st.markdown(f"### 📑 【{active_title}】AI 專業級 核心要旨精鍊報告")
         st.markdown(sum_res.get("markdown_result", ""))
 
         st.divider()
@@ -2701,20 +2906,20 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
             st.download_button(
                 "📥 下載完整 Markdown 摘要報告",
                 data=sum_res.get("markdown_result", ""),
-                file_name=f"AI摘要_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', doc_title_in)[:15]}.md",
+                file_name=f"AI摘要_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', active_title)[:15]}.md",
                 mime="text/markdown",
                 use_container_width=True
             )
         with s_act2:
             if st.button("📝 帶入試卷評分 (作為評分標準)", use_container_width=True, key="btn_sum_to_eval"):
-                st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{doc_title_in}】之案例事實與爭點深入申論其法律效果與實務見解。"
+                st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{active_title}】之案例事實與爭點深入申論其法律效果與實務見解。"
                 st.session_state["rubric_text_content"] = sum_res.get("markdown_result", "")
-                st.session_state["imported_from_bank_label"] = f"AI裁判摘要標準【{doc_title_in[:15]}】"
+                st.session_state["imported_from_bank_label"] = f"AI裁判摘要標準【{active_title[:15]}】"
                 st.session_state["app_mode"] = mode_options[0]
                 st.rerun()
         with s_act3:
             if st.button("📖 帶入高分擬答生成", use_container_width=True, key="btn_sum_to_ans"):
-                st.session_state["m4_target_question"] = f"請就【{doc_title_in}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
+                st.session_state["m4_target_question"] = f"請就【{active_title}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
                 st.session_state["app_mode"] = mode_options[3]
                 st.rerun()
 

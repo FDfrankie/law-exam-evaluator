@@ -50,16 +50,18 @@ def get_precedents_catalog() -> List[Dict[str, Any]]:
                 pass
     return []
 
-LAWBANK_COMMON_CASE_WORDS = [
+COMMON_CASE_WORDS = [
     "全部字別 (不限)",
     "憲判", "憲裁", "台上大", "台抗大", "台聲大", "台上", "台抗", "台再", "台聲", "台非",
-    "重上", "上易", "保險上", "勞上", "金上", "海商上", "家上",
-    "上更（一）", "上更（二）", "重上更（一）", "重上更（二）",
+    "重上", "上易", "保險上", "勞上", "金上", "海商上", "家上", "加上",
+    "民著上", "民專上", "行專上", "行商上", "智民上",
+    "上更（一）", "上更（二）", "重上更（一）", "重上更（二）", "重上更一", "重上更二",
     "訴", "重訴", "金訴", "上訴", "上重訴", "金上訴", "智訴", "矚訴",
     "交訴", "交易", "選訴", "易", "簡", "簡上", "抗", "自"
 ]
+LAWBANK_COMMON_CASE_WORDS = COMMON_CASE_WORDS  # 向後相容別名
 
-LAWBANK_COURTS_TAXONOMY = {
+COURTS_TAXONOMY = {
     "全部法院 (全體司法體系)": [],
     "🏛️ 憲法法院系統": ["憲法法庭", "司法院大法官", "司法院公報"],
     "🏛️ 最高法院 (終審法院)": ["最高法院", "最高法院民事庭", "最高法院刑事庭", "最高法院民事大法庭", "最高法院刑事大法庭"],
@@ -77,15 +79,17 @@ LAWBANK_COURTS_TAXONOMY = {
         "福建金門地方法院", "福建連江地方法院"
     ]
 }
+LAWBANK_COURTS_TAXONOMY = COURTS_TAXONOMY  # 向後相容別名
 
-LAWSNOTE_TIME_RANGES = [
+JUDICIAL_TIME_RANGES = [
     "全部時間 (不限年份)",
     "近 1 年 (最新考點・民國 113~115 年)",
     "近 3 年 (實務定錨・民國 111~115 年)",
     "近 5 年 (大法庭黃金期・民國 109~115 年)",
-    "近 10 年 (新法時期・民國 104~115 年)",
-    "近 30 年 (現代裁判全集・民國 84~115 年)"
+    "近 10 年 (司法革新期・民國 104~115 年)",
+    "近 30 年 (現代憲法裁判大典・民國 84~115 年)"
 ]
+LAWSNOTE_TIME_RANGES = JUDICIAL_TIME_RANGES  # 向後相容別名
 
 def extract_case_roc_year(item: Dict[str, Any]) -> int:
     """提取裁判或解釋之民國年度 (ROC Year)，供時間軸過濾使用"""
@@ -333,6 +337,14 @@ def get_precedent_history_chain(case_id: str) -> Optional[Dict[str, Any]]:
     """根據案號檢索裁判審級更迭與歷審脈絡鏈 (Judgement History / Instance Pipeline)"""
     if not case_id:
         return None
+    try:
+        from legal_summarizer_engine import parse_case_abbreviation_query, match_case_abbreviation
+        parsed = parse_case_abbreviation_query(case_id)
+        for k, v in PRESET_JUDGEMENT_HISTORIES.items():
+            if match_case_abbreviation(parsed, {"case_id": v.get("case_id", k), "title": v.get("title", "")}):
+                return v
+    except Exception:
+        pass
     clean_id = re.sub(r'[\s\-_]+', '', case_id).lower()
     for k, v in PRESET_JUDGEMENT_HISTORIES.items():
         if k in clean_id or clean_id in k:
@@ -348,7 +360,7 @@ def get_precedent_history_chain(case_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, str]:
-    """生成通往專業法學庫、法學檢索、審級脈絡、司法院與憲法法庭等外部權威法學資料庫的即時直連查詢連結"""
+    """生成通往司法院裁判書開放系統、法學資料檢索系統、憲法法庭與立法院等官方權威法學資料庫的即時直連查詢連結"""
     import urllib.parse
     clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
     tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
@@ -356,18 +368,16 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
     encoded_k = urllib.parse.quote(search_keyword)
 
     return {
-        "📚 權威判解與法規檢索 裁判與法規檢索": f"https://www.lawbank.com.tw/treatise/pl_search.aspx?keyword={encoded_k}",
-        "⚡ 法學實戰檢索 智慧法學搜尋": f"https://lawplayer.com/search?keyword={encoded_k}",
         "🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
+        "⚖️ 司法院法學資料檢索系統 (裁判與判例要旨)": "https://jirs.judicial.gov.tw/Index.aspx",
         "📜 憲法法庭裁判與司法院大法官解釋系統": f"https://cons.judicial.gov.tw/jcc/zh-tw/jep01?q={encoded_k}",
         "📖 全國法規資料庫 (法務部法規命令與沿革)": f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={encoded_k}",
-        "⚖️ 專業法學語意搜尋 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
         "🏛️ 立法院法律系統 (法條立法沿革與對照)": "https://lis.ly.gov.tw/lglawc/lglawkm",
-        "🎓 法學論著資料庫 法學論文與期刊論著索引": f"http://lawdata.com.tw/anglelaw/lawdata_search.aspx?keyword={encoded_k}",
+        "📜 司法院公報查詢系統 (裁判公報檢索)": "https://gaze.judicial.gov.tw/",
         "🏢 智慧財產及商業法院裁判檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
 
-def search_precedents_lawbank_style(
+def search_precedents_advanced(
     court_system: str = "全部法院 (全體司法體系)",
     jud_year: str = "",
     jud_word: str = "全部字別 (不限)",
@@ -382,8 +392,9 @@ def search_precedents_lawbank_style(
     top_k: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    權威法學資料庫 規格多維度司法裁判專業檢索：
+    專業法學多維度司法裁判檢索：
     支援：法院層級體系、民國年度 (jud_year)、常用字別 (sel_judword)、裁判字號 (jud_no)、
+    案號縮寫智慧解析（如 108台上908民、108台上大1719裁、院字2949、重上更一15）、
     裁判案由 (jt)、主文/心證 (jmain/txtopinion)、案件爭點 (txtargument)、相關法條 (lc1a/lc1b)、
     審級脈絡時間軸滑桿過濾 (time_filter)
     """
@@ -400,7 +411,17 @@ def search_precedents_lawbank_style(
     clean_issue = argument_issue.strip()
     clean_laws = cited_laws.strip()
     law_nums = re.findall(r'\d+', clean_laws)
-    target_courts = LAWBANK_COURTS_TAXONOMY.get(court_system, [])
+    target_courts = COURTS_TAXONOMY.get(court_system, [])
+
+    # 檢查是否為縮寫查詢
+    parsed_abbr = None
+    try:
+        from legal_summarizer_engine import parse_case_abbreviation_query, match_case_abbreviation
+        combined_citation = f"{clean_year}{clean_word}{clean_no}".strip()
+        if combined_citation:
+            parsed_abbr = parse_case_abbreviation_query(combined_citation)
+    except Exception:
+        parsed_abbr = None
 
     for item in catalog:
         score = 0
@@ -414,6 +435,10 @@ def search_precedents_lawbank_style(
         sch = item.get("scholarly_views", "")
         laws = " ".join(item.get("laws_cited", []))
         item_sub = item.get("subject", "")
+
+        # 縮寫精確命中加權
+        if parsed_abbr and match_case_abbreviation(parsed_abbr, item):
+            score += 120
 
         # 審級脈絡時間軸過濾 (JudgementChain Time Filter)
         if time_filter and "全部時間" not in time_filter:
@@ -565,6 +590,8 @@ def search_precedents_lawbank_style(
     results.sort(key=lambda x: -x[0])
     return [r[1] for r in results[:top_k]]
 
+search_precedents_lawbank_style = search_precedents_advanced  # 向後相容別名
+
 def search_local_precedents(
     query: str,
     subject: str = "",
@@ -581,8 +608,9 @@ def search_local_precedents(
 ) -> List[Dict[str, Any]]:
     """
     從 1,256 筆權威判解庫中高速篩選最相關之判決/大法庭裁定
-    支援專業法學庫 (LegalDatabase) 專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
-    支援審級脈絡系統 時間軸過濾滑桿 (time_filter)
+    支援專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
+    支援案號縮寫智慧匹配（如 108台上908民、108台上大1719裁、院字2949、重上更一15）
+    支援時間軸過濾滑桿 (time_filter)
     """
     catalog = get_precedents_catalog()
     if not catalog:
@@ -613,6 +641,16 @@ def search_local_precedents(
                     ngram_tokens.add(raw[i:i+n])
     tokens = list(ngram_tokens)
     numbers = re.findall(r'\d+', full_query)
+
+    # 支援案號縮寫智慧解析
+    parsed_abbr = None
+    try:
+        from legal_summarizer_engine import parse_case_abbreviation_query, match_case_abbreviation
+        combined_citation = f"{case_year}{case_word}{case_num}".strip() or query.strip()
+        if combined_citation:
+            parsed_abbr = parse_case_abbreviation_query(combined_citation)
+    except Exception:
+        parsed_abbr = None
 
     # 支援專業布林邏輯精確篩選 (Boolean Query)
     is_bool_query = False
@@ -679,6 +717,10 @@ def search_local_precedents(
             if not evaluate_boolean_query(target_bool_q, text_pool):
                 continue
             score += 100
+
+        # 案號縮寫智慧命中加權
+        if parsed_abbr and match_case_abbreviation(parsed_abbr, item):
+            score += 150
 
         # 專業法學庫進階錨點 1: 年度 + 常用字別 + 案號 精準命中
         if case_year.strip() and case_year.strip() in case_id:
@@ -768,10 +810,43 @@ def search_local_precedents(
     return [x[1] for x in scored_items[:top_k]]
 
 def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
-    """根據案號（精確、包含或關鍵字）從裁判庫中獲取裁判卡片"""
-    catalog = get_precedents_catalog()
-    if not catalog or not case_id:
+    """根據案號（精確、包含、關鍵字或智慧縮寫如 108台上908民、108台上大1719裁、院字2949、重上更一15）從裁判庫中獲取裁判卡片"""
+    if not case_id:
         return None
+
+    # 0. 縮寫智慧匹配
+    parsed = None
+    try:
+        from legal_summarizer_engine import parse_case_abbreviation_query, match_case_abbreviation, BUILTIN_LANDMARK_DOCS
+        parsed = parse_case_abbreviation_query(case_id)
+
+        # 優先搜尋 BUILTIN_LANDMARK_DOCS
+        for b in BUILTIN_LANDMARK_DOCS:
+            if match_case_abbreviation(parsed, {"case_id": b.get("title", ""), "title": b.get("title", "")}):
+                return {
+                    "case_id": b.get("title", ""),
+                    "court": b.get("doc_type", "法院"),
+                    "level": b.get("doc_type", "裁判"),
+                    "subject": "實體與程序法",
+                    "title": b.get("title", ""),
+                    "holding": b.get("text", "")[:400] + "...",
+                    "laws_cited": [],
+                    "issue": "本案裁判爭點與實質審級攻防",
+                    "scholarly_views": "權威學說與司法實務經典定錨。",
+                    "exam_application_hint": "司律二試上位卷作答關鍵先例。"
+                }
+    except Exception:
+        parsed = None
+
+    catalog = get_precedents_catalog()
+    if not catalog:
+        return None
+
+    if parsed:
+        for r in catalog:
+            if match_case_abbreviation(parsed, r):
+                return r
+
     clean_id = re.sub(r'[\s\-_]+', '', case_id).lower()
 
     # 1. 完全或前綴/後綴匹配
@@ -1098,8 +1173,8 @@ class LegalIssueQueryEngine:
             "rec_b": rec_b,
             "markdown_result": result_md,
             "external_search_urls": {
-                f"⚖️ 審級脈絡搜尋【{case_a}】": generate_judicial_search_urls(case_a).get("⚖️ 專業法學語意搜尋 智慧法學語意搜尋", ""),
-                f"⚖️ 審級脈絡搜尋【{case_b}】": generate_judicial_search_urls(case_b).get("⚖️ 專業法學語意搜尋 智慧法學語意搜尋", "")
+                f"⚖️ 裁判檢索【{case_a}】": generate_judicial_search_urls(case_a).get("🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)", ""),
+                f"⚖️ 裁判檢索【{case_b}】": generate_judicial_search_urls(case_b).get("🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)", "")
             }
         }
 
@@ -1109,7 +1184,7 @@ class LegalIssueQueryEngine:
         case_text: str = ""
     ) -> Dict[str, Any]:
         """
-        七法 (Lawsnote) 裁判審級更迭與歷審脈絡鏈 (Judgement History / Instance Pipeline)：
+        司法裁判審級更迭與歷審脈絡鏈 (Judgement History / Instance Pipeline)：
         精準溯源裁判於各級法院之演進歷程：
         1. 一審事實審 (地方法院): 兩造起訴與答辯、事實認定、一審裁判主文。
         2. 二審事實審/上訴審 (高等法院): 二審論理、是否逆轉或變更見解、爭點發酵。
@@ -1158,7 +1233,7 @@ class LegalIssueQueryEngine:
 
         prompt = f"""
 你是一位台灣「司法院前最高法院研究法官」兼「律師司法官高等考試權威講座名師」，精通台灣民刑事及公法訴訟各級法院審級流轉與見解更迭。
-現在請針對以下司法裁判進行【七法 (Lawsnote) 規格 裁判審級更迭與歷審脈絡鏈 (Judgement History Pipeline)】的深度剖析：
+現在請針對以下司法裁判進行【司法裁判審級更迭與歷審脈絡鏈 (Judgement History Pipeline)】的深度剖析：
 
 目標裁判：【{case_id}】
 
@@ -1244,7 +1319,7 @@ class LegalIssueQueryEngine:
         1. 本地權威判解庫 (1,256 筆裁判/大法庭/憲判字/高院/筆記地院)
         2. 司律核心法條庫 (六法全書關聯條號)
         3. 外部審級脈絡 / 專業法學庫 / 司法院 30 年判決跨庫直連
-        4. 七法時間軸過濾滑桿 (time_filter)
+        4. 審級脈絡時間軸過濾滑桿 (time_filter)
         """
         clean_q = query.strip()
         precedents = search_local_precedents(
