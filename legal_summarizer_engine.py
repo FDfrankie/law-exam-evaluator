@@ -478,6 +478,9 @@ def construct_standard_citation_from_parsed(info: dict) -> str:
     doc_type = info.get("doc_type") or "判決"
     nature = info.get("nature") or ""
 
+    if doc_type == "行政函釋" or any(k in raw_track for k in ['經商', '經企', '經工', '金管', '勞動', '智著', '智專', '智商', '台財', '財政', '函', '令']):
+        no_str = f"字第 {no} 號" if no else ""
+        return f"{raw_track}{no_str}函釋"
     if raw_track == '院':
         return f"司法院 院字第 {no} 號解釋" if no else "司法院 院字號解釋"
     if raw_track == '院解':
@@ -799,6 +802,11 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
     search_urls = generate_judicial_search_urls(std_title or raw)
 
     has_abbreviation = bool(parsed.get('track') or parsed.get('no') or parsed.get('doc_type'))
+    is_admin_query = (
+        parsed.get('doc_type') == "行政函釋" or
+        any(k in raw for k in ['經商', '經企', '經工', '金管', '勞動', '智著', '智專', '智商', '台財', '財政', '內授', '內政', '衛部', '法檢', '保訓', '函', '令']) or
+        any(len(d) >= 6 for d in digits)
+    )
 
     # 1. 內建指標判解 (BUILTIN_LANDMARK_DOCS)
     for b in BUILTIN_LANDMARK_DOCS:
@@ -836,7 +844,7 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
 
     # 2. 行政函釋大典 (admin_rulings)
     try:
-        if not parsed.get('track') and parsed.get('doc_type') not in ['判決', '裁定', '判例', '解釋']:
+        if is_admin_query or (not has_abbreviation and parsed.get('doc_type') not in ['判決', '裁定', '判例', '解釋']):
             from admin_rulings_engine import get_all_administrative_rulings
             all_r = get_all_administrative_rulings()
             for r in all_r:
