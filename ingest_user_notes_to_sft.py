@@ -63,7 +63,13 @@ except Exception:
     def classify_document_nature(filename: str, path: str = ""):
         s = (filename + " " + path).lower()
         if "百題" in s:
-            return {"doc_nature": "question", "nature_name": "🎯 實例試題與百題演練", "tag": "【民法百題爭點】", "badge_icon": "🎯"}
+            if any(k in s for k in ["刑總", "刑分", "刑法", "刑"]):
+                q_tag = "【刑法百題爭點】"
+            elif any(k in s for k in ["民總", "民法", "債", "物權", "身分", "民"]):
+                q_tag = "【民法百題爭點】"
+            else:
+                q_tag = "【百題爭點演練】"
+            return {"doc_nature": "question", "nature_name": "🎯 實例試題與百題演練", "tag": q_tag, "badge_icon": "🎯"}
         elif "考古題" in s or any(k in s for k in ["試題", "考題", "題目", "演練", "模擬", "測驗"]):
             return {"doc_nature": "question", "nature_name": "🎯 實例試題與百題演練", "tag": "【實戰試題】", "badge_icon": "🎯"}
         elif any(k in s for k in ["講義", "課輔", "教材", "課程"]):
@@ -160,11 +166,22 @@ def classify_resource_file(full_path: Path, resources_dir: Path):
             subject = "智慧財產權法"
             
     elif top == "百題":
-        if len(rel_parts) >= 2 and rel_parts[1] == "民總":
+        sub_folder = rel_parts[1] if len(rel_parts) >= 2 and not rel_parts[1].endswith(full_path.suffix) else ""
+        if sub_folder in ["刑總", "刑分", "刑法"]:
+            subject = sub_folder
+            author = "百題爭點"
+        elif sub_folder in ["民總", "民法", "債總", "債各", "物權", "身分法"]:
+            subject = sub_folder
+            author = "百題爭點"
+        elif "刑" in fname:
+            subject = "刑總"
+            author = "百題爭點"
+        elif "民" in fname:
             subject = "民總"
             author = "百題爭點"
         else:
-            subject = "民總"
+            subject = sub_folder or "法學百題"
+            author = "百題爭點"
             
     elif top in ["憲法", "憲法轉學考"]:
         subject = "憲法"

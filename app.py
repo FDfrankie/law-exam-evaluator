@@ -153,7 +153,13 @@ try:
         LegalQAEngine,
         LEGAL_CONSULTATION_DOMAINS,
         USER_STANDPOINTS,
-        OUTPUT_MODES
+        OUTPUT_MODES,
+        QUERY_TYPES,
+        calculate_vehicle_depreciation,
+        calculate_severance_pay,
+        calculate_marital_property_division,
+        calculate_inheritance_shares,
+        calculate_statutory_interest
     )
 except Exception:
     class LegalQAEngine:
@@ -165,9 +171,17 @@ except Exception:
             return "調解聲請書生成中..."
         def detect_question_domain(self, text):
             return "🌟 自動偵測 (全領域綜合剖析)"
+        def detect_query_intent(self, text):
+            return "🌟 智慧綜合判斷 (全自動意圖辨識)"
     LEGAL_CONSULTATION_DOMAINS = ["🌟 自動偵測 (全領域綜合剖析)"]
     USER_STANDPOINTS = ["⚖️ 客觀中立立場 (全面衡平評估法理與雙方勝算)"]
     OUTPUT_MODES = ["📑 完整專業法律諮詢意見書 (定性・條文・權利・證據・流程・時效)"]
+    QUERY_TYPES = ["🌟 智慧綜合判斷 (全自動意圖辨識)"]
+    def calculate_vehicle_depreciation(**kwargs): return {}
+    def calculate_severance_pay(**kwargs): return {}
+    def calculate_marital_property_division(**kwargs): return {}
+    def calculate_inheritance_shares(**kwargs): return {}
+    def calculate_statutory_interest(**kwargs): return {}
 
 try:
     from core_issues_taxonomy import (
@@ -499,7 +513,7 @@ with st.sidebar:
         "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
         "📖 高分權威擬答生成",
         "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)",
-        "💬 一般生活與實務法律問題諮詢 (AI 律師問答・權利分析・救濟指引)",
+        "💬 全能法律智慧問答樞紐 (Google 式檢索・條文定位・爭點論辯・金額精算)",
         "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)",
         "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)",
         "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
@@ -510,7 +524,7 @@ with st.sidebar:
         old_val = st.session_state["app_mode"]
         if "爭點查詢" in old_val or "統一法學檢索" in old_val:
             st.session_state["app_mode"] = mode_options[4]
-        elif "法律問題" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "一般法律" in old_val:
+        elif "法律問題" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "一般法律" in old_val or "智慧問答" in old_val or "全能法律" in old_val:
             st.session_state["app_mode"] = mode_options[5]
         elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val or "起訴書" in old_val:
             st.session_state["app_mode"] = mode_options[6]
@@ -2948,50 +2962,31 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.rerun()
 
 
-# ----------------- 模式: 一般生活與實務法律問題諮詢 (AI 律師問答・權利分析・救濟指引) -----------------
-elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode:
-    st.header("💬 一般生活與實務法律問題諮詢問答系統")
-    st.caption("無論是房屋租賃（修繕/押金/提前解約）、車禍損害賠償、勞動基準與資遣爭議、金錢借貸與本票支付命令、消費退換貨、網路妨害名譽告訴、家事離婚繼承或漏水鄰損，AI 律師級推論引擎為您深入剖析法律定性、具體條文、權利效果、舉證清單、救濟程序與時效防線！")
-    st.divider()
+# ----------------- 模式: 全能法律智慧問答樞紐 (Google 式檢索・條文定位・爭點論辯・金額精算) -----------------
+elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode:
+    st.markdown("""
+        <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
+            <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 全能法律智慧檢索樞紐</h1>
+            <p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">如 Google 般全知敏捷：輸入任何法律提問、條文定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    col_q1, col_q2, col_q3 = st.columns([1.5, 1.2, 1.3])
-    with col_q1:
-        qa_domain = st.selectbox(
-            "1. 🏛️ 法律範疇分類（可自選或交由系統自動辨識）：",
-            LEGAL_CONSULTATION_DOMAINS,
-            index=0,
-            key="sel_qa_domain"
-        )
-    with col_q2:
-        qa_standpoint = st.selectbox(
-            "2. ⚖️ 諮詢立場與評估角度：",
-            USER_STANDPOINTS,
-            index=0,
-            key="sel_qa_standpoint"
-        )
-    with col_q3:
-        qa_output_mode = st.selectbox(
-            "3. 📑 諮詢報告架構模式：",
-            OUTPUT_MODES,
-            index=0,
-            key="sel_qa_output_mode"
-        )
-
-    # 具體事實陳述
+    # 1. Google 風格整體統一搜尋欄
     qa_input_val = st.session_state.get("current_qa_question_input", "")
-    user_question = st.text_area(
-        "📝 請詳細描述您想諮詢的具體案件事實或法律疑問（人、事、時、地、爭議標的）：",
-        value=qa_input_val,
-        height=170,
-        placeholder="例如：我向房東租屋簽約一年，住滿四個月時因工作調點到外縣市想提前解約，一個月前已通知房東，但房東說契約寫提前解約需沒收兩個月押金並賠償一個月租金，且不願退還剩餘押金。請問房東這樣約定合法嗎？我能要求返還押金嗎？下一步該怎麼處理？",
-        key="txt_qa_question_input"
-    )
-
-    col_btn_qa1, col_btn_qa2 = st.columns([3, 1])
-    with col_btn_qa1:
-        btn_start_qa = st.button("⚡ 啟動 AI 專業法理深度諮詢", type="primary", use_container_width=True, key="btn_run_legal_qa")
-    with col_btn_qa2:
-        if st.button("✖️ 清除重置", use_container_width=True, key="btn_clear_legal_qa"):
+    
+    col_search_box, col_search_act = st.columns([4.2, 1.2])
+    with col_search_box:
+        user_question = st.text_area(
+            "請輸入欲搜尋之法律問題、條文疑義、爭點或計算例題：",
+            value=qa_input_val,
+            height=95,
+            placeholder="🔍 例如：\n1. 把別人的油漆塗在自己車上是民法哪一條？所有權歸誰？\n2. 借名登記出名人擅自出賣不動產之效力？實務與學說見解為何？\n3. 車齡2年8個月車禍零件14萬工資6萬，依定率遞減法折舊應賠償多少？\n4. 房東藉故扣留2個月押金不退還，我該如何合法要回？",
+            key="txt_unified_google_search",
+            label_visibility="collapsed"
+        )
+    with col_search_act:
+        btn_start_qa = st.button("🔍 Google 智慧檢索", type="primary", use_container_width=True, key="btn_run_legal_qa")
+        if st.button("✖️ 清除搜尋", use_container_width=True, key="btn_clear_legal_qa"):
             st.session_state.pop("current_qa_result", None)
             st.session_state.pop("current_qa_question_input", None)
             st.session_state.pop("qa_conversation_history", None)
@@ -2999,12 +2994,274 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
             st.session_state.pop("qa_generated_mediation", None)
             st.rerun()
 
+    # 快捷檢索意圖分類標籤 (預設全自動偵測，亦可手動快切)
+    qa_query_type = st.radio(
+        "檢索意圖標籤：",
+        QUERY_TYPES,
+        horizontal=True,
+        index=0,
+        key="rad_qa_query_type",
+        label_visibility="collapsed"
+    )
+
+    # 2. 原本那個功能也不錯可以保留 (保留在優雅收合的進階設定與專屬精算工具箱中)
+    with st.expander("⚙️ 保留原版進階設定與專用金錢精算工具箱 (領域自選・立場選擇・輸出規格・五大多功能試算機)", expanded=False):
+        st.markdown("##### 🎯 諮詢立場與報告規格設定：")
+        col_q1, col_q2, col_q3 = st.columns([1.5, 1.2, 1.3])
+        with col_q1:
+            qa_domain = st.selectbox(
+                "法律範疇分類（可自選或交由系統自動辨識）：",
+                LEGAL_CONSULTATION_DOMAINS,
+                index=0,
+                key="sel_qa_domain"
+            )
+        with col_q2:
+            qa_standpoint = st.selectbox(
+                "諮詢立場與評估角度：",
+                USER_STANDPOINTS,
+                index=0,
+                key="sel_qa_standpoint"
+            )
+        with col_q3:
+            qa_output_mode = st.selectbox(
+                "諮詢報告架構模式：",
+                OUTPUT_MODES,
+                index=0,
+                key="sel_qa_output_mode"
+            )
+
+        st.divider()
+        st.markdown("##### 🧮 專用法律金錢精算機（純 Python 零誤差精算法定公式，亦可點擊帶入上方搜尋欄進行 AI 深度剖析）：")
+        calc_tab1, calc_tab2, calc_tab3, calc_tab4, calc_tab5 = st.tabs([
+            "🚗 車損零件折舊",
+            "💼 勞退新制資遣費",
+            "👨‍👩‍👧 夫妻剩餘財產",
+            "📜 遺產應繼與特留分",
+            "💰 法定遲延利息"
+        ])
+
+        with calc_tab1:
+            st.caption("依行政院固定資產耐用年數表與最高法院77年度第九次民事庭會議決議：工資全額賠償不折舊，零件依法折舊，殘值底線不低於取得原價10%。")
+            cv_c1, cv_c2, cv_c3 = st.columns(3)
+            with cv_c1:
+                calc_v_part = st.number_input("零件維修費 (元)：", min_value=0.0, value=120000.0, step=1000.0, key="num_c_v_part")
+            with cv_c2:
+                calc_v_labor = st.number_input("工資板烤費 (元)：", min_value=0.0, value=40000.0, step=1000.0, key="num_c_v_labor")
+            with cv_c3:
+                calc_v_type = st.selectbox("車輛種類與耐用年數：", [
+                    "自用小客車 (耐用年數5年，年折舊率 0.369)",
+                    "營業小客車/計程車 (耐用年數4年，年折舊率 0.438)",
+                    "機車 (耐用年數3年，年折舊率 0.536)",
+                    "貨車 (耐用年數4年，年折舊率 0.438)"
+                ], key="sel_c_v_type")
+
+            cv_c4, cv_c5, cv_c6 = st.columns(3)
+            with cv_c4:
+                calc_v_years = st.number_input("出廠車齡（滿幾年）：", min_value=0, max_value=30, value=2, key="num_c_v_years")
+            with cv_c5:
+                calc_v_months = st.number_input("畸零月數（幾個月）：", min_value=0, max_value=11, value=6, key="num_c_v_months")
+            with cv_c6:
+                calc_v_method = st.selectbox("折舊計算方式：", [
+                    "定率遞減法 (每年折舊率計算，殘值底線 10%)",
+                    "平均法 (直線法，每年平均折舊)"
+                ], key="sel_c_v_method")
+
+            calc_v_neg = st.slider("我方過失相抵比例 (%)：", min_value=0, max_value=100, value=0, key="sli_c_v_neg")
+            
+            btn_run_v, btn_pass_v = st.columns([1, 1])
+            with btn_run_v:
+                if st.button("🧮 立即精算車損折舊", use_container_width=True, key="btn_calc_vehicle_run"):
+                    res_v = calculate_vehicle_depreciation(
+                        part_cost=calc_v_part,
+                        labor_cost=calc_v_labor,
+                        age_years=int(calc_v_years),
+                        age_months=int(calc_v_months),
+                        vehicle_type=calc_v_type,
+                        method=calc_v_method,
+                        comparative_negligence_pct=calc_v_neg
+                    )
+                    st.session_state["calc_v_result"] = res_v
+            with btn_pass_v:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_v_search"):
+                    st.session_state["current_qa_question_input"] = f"車輛車損賠償精算案例：車輛種類為【{calc_v_type.split(' ')[0]}】，車齡【{calc_v_years} 年 {calc_v_months} 個月】，維修支出：更換新零件 NT${calc_v_part:,.0f} 元，工資 NT${calc_v_labor:,.0f} 元，我方過失責任比例為 {calc_v_neg}%。請依【{calc_v_method.split(' ')[0]}】折舊計算，拆解得請求之損害賠償總金額與法理要件。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_v_result" in st.session_state:
+                vr = st.session_state["calc_v_result"]
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("零件折舊後殘值", f"NT${vr['part_final_value']:,.0f}")
+                m2.metric("工資不折舊", f"NT${vr['labor_cost']:,.0f}")
+                m3.metric("折舊前損害總額", f"NT${(vr['part_original'] + vr['labor_cost']):,.0f}")
+                m4.metric("最終應獲賠金額", f"NT${vr['final_award']:,.0f}", delta=f"-NT${vr['part_depreciation_total']:,.0f} (折舊)")
+                with st.expander("🔍 查看詳細計算步驟與法院折舊明細", expanded=True):
+                    for step in vr["steps"]:
+                        st.write(f"- {step}")
+                    st.caption(f"**法律依據**：{vr['legal_basis']}")
+
+        with calc_tab2:
+            st.caption("依勞工退休金條例第 12 條（勞退新制）每滿 1 年發給 0.5 個月平均工資，未滿 1 年以比例計，最高 6 個月為限；及勞動基準法第 16 條預告期間工資。")
+            cs_c1, cs_c2 = st.columns(2)
+            with cs_c1:
+                calc_s_wage = st.number_input("月平均工資 (元)：", min_value=0.0, value=65000.0, step=1000.0, key="num_c_s_wage")
+            with cs_c2:
+                calc_s_notice = st.checkbox("雇主是否已依法給足預告期？（若未給足依法應給付預告工資）", value=False, key="chk_c_s_notice")
+            cs_c3, cs_c4, cs_c5 = st.columns(3)
+            with cs_c3:
+                calc_s_years = st.number_input("工作年資（滿幾年）：", min_value=0, max_value=50, value=3, key="num_c_s_years")
+            with cs_c4:
+                calc_s_months = st.number_input("畸零月數：", min_value=0, max_value=11, value=7, key="num_c_s_months")
+            with cs_c5:
+                calc_s_days = st.number_input("畸零天數：", min_value=0, max_value=30, value=15, key="num_c_s_days")
+
+            btn_run_s, btn_pass_s = st.columns([1, 1])
+            with btn_run_s:
+                if st.button("🧮 立即精算資遣費與預告工資", use_container_width=True, key="btn_calc_sev_run"):
+                    res_s = calculate_severance_pay(
+                        monthly_wage=calc_s_wage,
+                        years=int(calc_s_years),
+                        months=int(calc_s_months),
+                        days=int(calc_s_days),
+                        has_advance_notice=calc_s_notice
+                    )
+                    st.session_state["calc_s_result"] = res_s
+            with btn_pass_s:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_s_search"):
+                    st.session_state["current_qa_question_input"] = f"勞工資遣費與預告工資精算案例：勞工月平均工資 NT${calc_s_wage:,.0f} 元，總年資【{calc_s_years} 年 {calc_s_months} 個月 {calc_s_days} 天】，雇主無預警終止勞動契約（{'已給預告期' if calc_s_notice else '未給預告期'}）。請依勞工退休金條例第12條與勞基法第16、17條，精算勞工依法應得之資遣費、預告工資及救濟途徑。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_s_result" in st.session_state:
+                sr = st.session_state["calc_s_result"]
+                sm1, sm2, sm3, sm4 = st.columns(4)
+                sm1.metric("新制資遣基數", f"{sr['capped_factor']:.3f} 個月")
+                sm2.metric("新制資遣費", f"NT${sr['severance_amount']:,.0f}")
+                sm3.metric("預告期工資", f"NT${sr['notice_pay']:,.0f}", help=f"法定預告期 {sr['notice_days']} 日")
+                sm4.metric("合計應給付總額", f"NT${sr['total_due']:,.0f}")
+                st.caption(f"**年資計算**：{sr['tenure_str']} ｜ **法條依據**：{sr['legal_basis']}")
+
+        with calc_tab3:
+            st.caption("民法第 1030 條之 1 法定財產制剩餘財產分配：婚後現存財產扣除婚後負債，並扣除因繼承、無償取得之財產與慰撫金後，計算雙方差額並平均分配。")
+            cm_col1, cm_col2 = st.columns(2)
+            with cm_col1:
+                st.markdown("**【夫 (先生) 財產與負債】**")
+                calc_h_assets = st.number_input("夫婚後現存財產總額 (元)：", min_value=0.0, value=8000000.0, step=100000.0, key="num_c_h_a")
+                calc_h_debts = st.number_input("夫婚後所負債務總額 (元)：", min_value=0.0, value=2000000.0, step=100000.0, key="num_c_h_d")
+                calc_h_exempt = st.number_input("夫因繼承/無償贈與/慰撫金取得 (元)：", min_value=0.0, value=1000000.0, step=50000.0, key="num_c_h_e")
+            with cm_col2:
+                st.markdown("**【妻 (太太) 財產與負債】**")
+                calc_w_assets = st.number_input("妻婚後現存財產總額 (元)：", min_value=0.0, value=3000000.0, step=100000.0, key="num_c_w_a")
+                calc_w_debts = st.number_input("妻婚後所負債務總額 (元)：", min_value=0.0, value=500000.0, step=50000.0, key="num_c_w_d")
+                calc_w_exempt = st.number_input("妻因繼承/無償贈與/慰撫金取得 (元)：", min_value=0.0, value=0.0, step=50000.0, key="num_c_w_e")
+
+            btn_run_m, btn_pass_m = st.columns([1, 1])
+            with btn_run_m:
+                if st.button("🧮 立即精算剩餘財產分配額", use_container_width=True, key="btn_calc_mar_run"):
+                    res_m = calculate_marital_property_division(
+                        husband_assets=calc_h_assets,
+                        husband_debts=calc_h_debts,
+                        husband_exempt=calc_h_exempt,
+                        wife_assets=calc_w_assets,
+                        wife_debts=calc_w_debts,
+                        wife_exempt=calc_w_exempt
+                    )
+                    st.session_state["calc_m_result"] = res_m
+            with btn_pass_m:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_m_search"):
+                    st.session_state["current_qa_question_input"] = f"夫妻剩餘財產分配案例：夫婚後財產 NT${calc_h_assets:,.0f}，負債 NT${calc_h_debts:,.0f}，無償取得 NT${calc_h_exempt:,.0f}；妻婚後財產 NT${calc_w_assets:,.0f}，負債 NT${calc_w_debts:,.0f}，無償取得 NT${calc_w_exempt:,.0f}。請依民法第1030條之1分析雙方淨財產、差額分配金額、時效與抗辯事由。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_m_result" in st.session_state:
+                mr = st.session_state["calc_m_result"]
+                mm1, mm2, mm3 = st.columns(3)
+                mm1.metric("夫婚後淨財產", f"NT${mr['husband_net']:,.0f}")
+                mm2.metric("妻婚後淨財產", f"NT${mr['wife_net']:,.0f}")
+                mm3.metric("雙方差額", f"NT${mr['difference']:,.0f}")
+                st.success(f"⚖️ 分配結論：由 **{mr['giver']}** 給付 **{mr['receiver']}** 剩餘財產差額半數 **NT${mr['transfer_amount']:,.0f}** 元！")
+
+        with calc_tab4:
+            st.caption("民法第 1138、1144 條法定應繼分與第 1223 條特留分精算。")
+            ci_c1, ci_c2, ci_c3 = st.columns(3)
+            with ci_c1:
+                calc_i_estate = st.number_input("被繼承人遺產總淨額 (元)：", min_value=0.0, value=12000000.0, step=100000.0, key="num_c_i_estate")
+            with ci_c2:
+                calc_i_spouse = st.checkbox("配偶是否在世為共同繼承人？", value=True, key="chk_c_i_spouse")
+            with ci_c3:
+                calc_i_order = st.selectbox("其他順序繼承人血親類別：", [
+                    "第一順序：子女 (直系血親卑親屬)",
+                    "第二順序：父母",
+                    "第三順序：兄弟姊妹",
+                    "第四順序：祖父母",
+                    "無其他順序血親繼承人 (僅配偶單獨繼承)"
+                ], key="sel_c_i_order")
+            
+            calc_i_count = st.number_input("該順序血親繼承人人數（人）：", min_value=0, max_value=20, value=3, key="num_c_i_count")
+
+            btn_run_i, btn_pass_i = st.columns([1, 1])
+            with btn_run_i:
+                if st.button("🧮 立即精算應繼分與特留分", use_container_width=True, key="btn_calc_inh_run"):
+                    order_idx = 1
+                    if "第二順序" in calc_i_order: order_idx = 2
+                    elif "第三順序" in calc_i_order: order_idx = 3
+                    elif "第四順序" in calc_i_order: order_idx = 4
+                    elif "無其他" in calc_i_order: order_idx = 0
+                    res_i = calculate_inheritance_shares(
+                        estate_total=calc_i_estate,
+                        has_spouse=calc_i_spouse,
+                        order=order_idx,
+                        heir_count=int(calc_i_count)
+                    )
+                    st.session_state["calc_i_result"] = res_i
+            with btn_pass_i:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_i_search"):
+                    st.session_state["current_qa_question_input"] = f"遺產繼承應繼分與特留分例題：被繼承人遺留遺產總額 NT${calc_i_estate:,.0f} 元，繼承人有配偶（{'有' if calc_i_spouse else '無'}）以及【{calc_i_order.split('：')[1]}】共 {calc_i_count} 人。請依民法第1138、1144與1223條，逐一計算各繼承人之應繼分比例、金額與特留分扣減原則。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_i_result" in st.session_state:
+                ir = st.session_state["calc_i_result"]
+                st.markdown("##### 📊 各繼承人應繼分與特留分試算分配清單：")
+                i_rows = []
+                for h in ir["heirs_summary"]:
+                    i_rows.append({
+                        "繼承人身分": h["role"],
+                        "法定應繼分比例": h["fraction"],
+                        "應繼分金額 (NT$)": f"{h['amount']:,.0f}",
+                        "法定特留分金額 (NT$)": f"{h['reserved']:,.0f}",
+                        "法律註記": h["note"]
+                    })
+                st.table(i_rows)
+                st.caption(f"**法律依據**：{ir['legal_basis']}")
+
+        with calc_tab5:
+            st.caption("民法第 203 條：應付利息之債務，其利率未經約定，亦無法律可據者，週年利率為百分之五。")
+            cnt_c1, cnt_c2, cnt_c3 = st.columns(3)
+            with cnt_c1:
+                calc_n_p = st.number_input("請求本金金額 (元)：", min_value=0.0, value=500000.0, step=10000.0, key="num_c_n_p")
+            with cnt_c2:
+                calc_n_d = st.number_input("經過天數（日）：", min_value=1, max_value=3650, value=180, key="num_c_n_d")
+            with cnt_c3:
+                calc_n_r = st.number_input("週年利率 (%)：", min_value=0.1, max_value=20.0, value=5.0, step=0.5, key="num_c_n_r")
+
+            if st.button("🧮 立即精算遲延利息", use_container_width=True, key="btn_calc_int_run"):
+                res_int = calculate_statutory_interest(
+                    principal=calc_n_p,
+                    days=int(calc_n_d),
+                    annual_rate_pct=calc_n_r
+                )
+                im1, im2, im3 = st.columns(3)
+                im1.metric("請求本金", f"NT${res_int['principal']:,.0f}")
+                im2.metric("法定利息金額", f"NT${res_int['interest_amount']:,.0f}", delta=f"{res_int['days']} 天")
+                im3.metric("本利和總額", f"NT${res_int['total_amount']:,.0f}")
+
+    # 3. 執行檢索推論
     do_run_qa = btn_start_qa or st.session_state.pop("qa_auto_run_trigger", False)
     if do_run_qa:
         if not user_question.strip():
-            st.warning("請先輸入具體案件事實或法律問題！")
+            st.warning("請先輸入具體法律問題、條文疑義、爭點或計算題目！")
         else:
-            with st.spinner("AI 專業法律顧問正在調閱現行法規、最高法院裁判心證與實務舉證法則，為您進行六大維度全方位深度剖析..."):
+            with st.spinner("AI 全能法學搜尋引擎正在檢索現行法典、最高法院判決、大法庭裁定與權威法理，進行深度推論..."):
                 try:
                     engine = LegalQAEngine()
                     qa_hist = st.session_state.get("qa_conversation_history", [])
@@ -3013,6 +3270,7 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
                         domain=qa_domain,
                         standpoint=qa_standpoint,
                         output_mode=qa_output_mode,
+                        query_type=qa_query_type,
                         history=qa_hist
                     )
                     st.session_state["current_qa_result"] = qa_res
@@ -3024,16 +3282,17 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
                         "answer": qa_res.get("content", "")
                     })
                 except Exception as qe:
-                    st.error(f"法律諮詢分析失敗: {qe}")
+                    st.error(f"法律檢索與諮詢分析失敗: {qe}")
 
     if "current_qa_result" in st.session_state:
         res = st.session_state["current_qa_result"]
         qa_ans = res.get("content", "")
         qa_q = res.get("question", "")
         q_dom = res.get("domain", "")
+        q_mode_tag = res.get("query_type", "法理深度剖析")
 
         st.divider()
-        st.markdown(f"### 📋 【{q_dom.split(' ')[0]} 法律諮詢意見書】")
+        st.markdown(f"### 📋 【AI 全能法律智慧檢索結果：{q_mode_tag.split(' ')[0]}】")
         st.markdown(qa_ans)
 
         st.divider()

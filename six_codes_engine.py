@@ -419,7 +419,12 @@ def classify_document_nature(filename: str, path: str = "") -> Dict[str, Any]:
 
     if "百題" in s:
         is_question = True
-        q_tag = "【民法百題爭點演練】" if ("民" in s or "總則" in s) else "【百題爭點演練】"
+        if any(k in s for k in ["刑", "刑總", "刑分", "刑法"]):
+            q_tag = "【刑法百題爭點演練】"
+        elif any(k in s for k in ["民", "民總", "債", "物權", "身分", "民法"]):
+            q_tag = "【民法百題爭點演練】"
+        else:
+            q_tag = "【百題爭點演練】"
     elif "考古題" in s or "考古" in s:
         is_question = True
         q_tag = "【歷屆考古題】"
@@ -591,22 +596,22 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
                     # 民法百題爭點系列實例演練精準條文映射
                     if "百題" in fn:
                         score += 30
-                        if 1 <= art_num <= 24 and ("（一）" in fn or "一" in fn):
+                        if 1 <= art_num <= 24 and any(b in fn for b in ["（一）", "(一)", "（1）", "(1)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：自然人權利能力與死亡宣告"
-                        elif 25 <= art_num <= 58 and ("（四）" in fn or "四" in fn):
+                        elif 25 <= art_num <= 58 and any(b in fn for b in ["（四）", "(四)", "（4）", "(4)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：法人侵權責任與董事代表權"
-                        elif 66 <= art_num <= 70 and ("（七）" in fn or "七" in fn):
+                        elif 66 <= art_num <= 70 and any(b in fn for b in ["（七）", "(七)", "（7）", "(7)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：權利客體（物）與主物從物"
-                        elif 71 <= art_num <= 85 and ("（十一）" in fn or "十一" in fn):
+                        elif 71 <= art_num <= 85 and any(b in fn for b in ["（十一）", "(十一)", "（11）", "(11)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：法律行為標的妥當性與暴利行為"
-                        elif 86 <= art_num <= 98 and ("（十二）" in fn or "十二" in fn):
+                        elif 86 <= art_num <= 98 and any(b in fn for b in ["（十二）", "(十二)", "（12）", "(12)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：意思表示瑕疵（通謀虛偽/錯誤/詐欺）"
-                        elif 103 <= art_num <= 118 and ("（十五）" in fn or "十五" in fn):
+                        elif 103 <= art_num <= 118 and any(b in fn for b in ["（十五）", "(十五)", "（15）", "(15)"]):
                             score += 180
                             match_reason = "民法百題爭點演練：代理、無權代理與無權處分"
 
@@ -755,8 +760,73 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
             if 1 <= art_num <= 100:
                 if "刑分_" in fn or "各論" in fn:
                     continue  # 排除分則
-                if "刑總_" in fn:
+                if "刑總_" in fn or "刑法總則" in fn or "百題" in fn:
                     score += 50
+                    
+                    # 刑法百題爭點系列實例演練精準條文映射
+                    if "百題" in fn or "釋義與適用" in fn:
+                        score += 30
+                        # （一）刑法之效力與罪刑法定原則 (第 1~11 條)
+                        if 1 <= art_num <= 11 and any(b in fn for b in ["（一）", "(一)", "（1）", "(1)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：罪刑法定原則與時地效力（第1~11條）"
+                        # （二）犯罪論體系與行為概念 (第 1~12 條)
+                        elif 1 <= art_num <= 12 and any(b in fn for b in ["（二）", "(二)", "（2）", "(2)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：犯罪論體系與行為概念"
+                        # （三）客觀構成要件與因果關係 (第 12~14 條)
+                        elif 12 <= art_num <= 14 and any(b in fn for b in ["（三）", "(三)", "（3）", "(3)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：因果關係與客觀構成要件"
+                        # （四）構成要件該當性、因果關係與客觀歸責、過失 (第 12~14 條)
+                        elif 12 <= art_num <= 14 and any(b in fn for b in ["（四）", "(四)", "（4）", "(4)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：構成要件該當性、客觀歸責與過失犯（第12~14條）"
+                        # （五）故意、不作為犯 (第 13~15 條)
+                        elif 13 <= art_num <= 15 and any(b in fn for b in ["（五）", "(五)", "（5）", "(5)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：故意論與不純正不作為犯保證人地位（第13~15條）"
+                        # （六）阻卻違法事由：正當防衛、緊急避難、依法令之行為 (第 21~24 條)
+                        elif 21 <= art_num <= 24 and any(b in fn for b in ["（六）", "(六)", "（6）", "(6)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：違法性阻卻事由（正當防衛/緊急避難/依法令行為）"
+                        # （七）超法規阻卻違法事由：被害人承諾、推定的承諾 (第 21~24 條)
+                        elif 21 <= art_num <= 24 and any(b in fn for b in ["（七）", "(七)", "（7）", "(7)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：超法規阻卻違法事由（承諾與義務衝突）"
+                        # （八）責任論與罪責原則 (第 18~20 條)
+                        elif 18 <= art_num <= 20 and any(b in fn for b in ["（八）", "(八)", "（8）", "(8)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：責任論與罪責原則"
+                        # （九）心神喪失與原因自由行為 (第 19 條)
+                        elif art_num == 19 and any(b in fn for b in ["（九）", "(九)", "（9）", "(9)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：心神喪失與原因自由行為（第19條）"
+                        # （十）責任能力與原因自由行為 (第 18~20 條)
+                        elif 18 <= art_num <= 20 and any(b in fn for b in ["（十）", "(十)", "（10）", "(10)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：責任能力判斷與不法意識（第18~20條）"
+                        # （十一）錯誤理論：事實錯誤、禁止錯誤、容許構成要件錯誤 (第 16~17 條)
+                        elif 16 <= art_num <= 17 and any(b in fn for b in ["（十一）", "(十一)", "（11）", "(11)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：錯誤論（禁止錯誤/容許構成要件錯誤）"
+                        # （十二）未遂犯論：著手實行、不能未遂、中止未遂 (第 25~27 條)
+                        elif 25 <= art_num <= 27 and any(b in fn for b in ["（十二）", "(十二)", "（12）", "(12)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：未遂犯論（著手認定/中止未遂/不能未遂）"
+                        # （十三）正犯與共犯：共同正犯、間接正犯、身分犯 (第 28、31 條)
+                        elif art_num in [28, 31] and any(b in fn for b in ["（十三）", "(十三)", "（13）", "(13)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：正犯論（共同正犯之成立與脫離/間接正犯）"
+                        # （十四）狹義共犯：教唆犯、幫助犯 (第 29、30 條)
+                        elif art_num in [29, 30] and any(b in fn for b in ["（十四）", "(十四)", "（14）", "(14)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：共犯論（教唆犯逾越與幫助犯之因果關係）"
+                        # （十五）題型總合實例演練與競合沒收 (第 15、24、38、50~55 條)
+                        elif (art_num in [15, 24, 38, 39, 40] or 50 <= art_num <= 55) and any(b in fn for b in ["（十五）", "(十五)", "（15）", "(15)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：重大總合實例題（不純正不作為＋緊急避難＋義務衝突＋競合沒收）"
+
                     if 28 <= art_num <= 31 and ("正犯" in fn or "共犯" in fn or "身分犯" in fn):
                         score += 180
                         match_reason = "刑法總則：正犯與共犯專題"
@@ -778,8 +848,57 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
             elif 101 <= art_num <= 363:
                 if "刑總_" in fn:
                     continue  # 排除總則
-                if "刑分_" in fn or "各論" in fn:
+                if "刑分_" in fn or "各論" in fn or "百題" in fn:
                     score += 50
+                    
+                    # 刑法分則百題爭點系列實例演練精準條文映射
+                    if "百題" in fn or "釋義與適用" in fn:
+                        score += 30
+                        # （一）、（二）竊盜罪章 (第 320~324 條)
+                        if 320 <= art_num <= 324 and any(b in fn for b in ["（一）", "(一)", "（1）", "(1)", "（二）", "(二)", "（2）", "(2)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：竊盜罪章（動產、竊取行為與所有意圖）"
+                        # （三）、（四）詐欺罪章 (第 339~341 條)
+                        elif 339 <= art_num <= 341 and any(b in fn for b in ["（三）", "(三)", "（3）", "(3)", "（四）", "(四)", "（4）", "(4)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：詐欺罪章（施用詐術、財產處分與三角詐欺）"
+                        # （五）侵占與背信罪章 (第 335~342 條)
+                        elif (335 <= art_num <= 338 or art_num == 342) and any(b in fn for b in ["（五）", "(五)", "（5）", "(5)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：侵占罪與背信罪（財產保護身分與違背任務）"
+                        # （六）恐嚇取財與擄人勒贖罪章 (第 346~348 條)
+                        elif 346 <= art_num <= 348 and any(b in fn for b in ["（六）", "(六)", "（6）", "(6)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：恐嚇取財罪與擄人勒贖罪（索款既遂與擄人意圖）"
+                        # （七）贓物罪章 (第 349~351 條)
+                        elif 349 <= art_num <= 351 and any(b in fn for b in ["（七）", "(七)", "（7）", "(7)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：贓物罪章（收受/搬運/寄藏/故買與準贓物罪）"
+                        # （八）殺人與過失致死罪章 (第 271~276 條)
+                        elif 271 <= art_num <= 276 and any(b in fn for b in ["（八）", "(八)", "（8）", "(8)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：殺人罪與過失致死罪（PUA、教唆自殺與客觀歸責）"
+                        # （九）傷害罪章 (第 277~287 條)
+                        elif 277 <= art_num <= 287 and any(b in fn for b in ["（九）", "(九)", "（9）", "(9)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：傷害罪章（傷害他人身體或健康法益）"
+                        # （十）妨害自由罪章 (第 296~308 條，強制罪)
+                        elif 296 <= art_num <= 308 and any(b in fn for b in ["（十）", "(十)", "（10）", "(10)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：妨害自由罪章（強制罪第304條、強暴脅迫與違法性審查）"
+                        # （十一）妨害名譽及信用罪章 (第 309~314 條)
+                        elif 309 <= art_num <= 314 and any(b in fn for b in ["（十一）", "(十一)", "（11）", "(11)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：妨害名譽罪章（公然侮辱與誹謗罪、真實惡意原則）"
+                        # （十二）妨害性自主罪章 (第 221~229 條)
+                        elif 221 <= art_num <= 229 and any(b in fn for b in ["（十二）", "(十二)", "（12）", "(12)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：妨害性自主罪章（強制性交/猥褻與積極同意權）"
+                        # （十五）妨害司法罪章 (第 161~172 條，脫逃、藏匿人犯、偽證誣告)
+                        elif 161 <= art_num <= 172 and any(b in fn for b in ["（十五）", "(十五)", "（15）", "(15)"]):
+                            score += 180
+                            match_reason = "刑法百題爭點演練：妨害司法罪章（脫逃罪、藏匿人犯與偽證誣告）"
+
                     if 271 <= art_num <= 276 and ("殺人" in fn or "生命" in fn):
                         score += 180
                         match_reason = "刑法分則：侵害生命法益（殺人罪章）"
