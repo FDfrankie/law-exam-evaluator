@@ -2455,7 +2455,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.rerun()
 
     # ==================== 子功能 4: 📜 AI 判決摘要精析 ====================
-    elif m5_active_tab == m5_sub_modes[3]:
+    elif m5_active_tab == m5_sub_modes[4]:
         st.subheader("📜 AI 判決深度摘要精析")
         st.caption("精準解構各級法院裁判書，嚴格提煉六大核心結構：【主文】、【案例事實】、【案件爭點】、【雙方所述】、【法院心證】及【個人評析與相似判決對照】。")
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
@@ -2574,114 +2574,257 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["app_mode"] = mode_options[0]
                     st.rerun()
 
-    # ==================== 子功能 5: 🔄 案例橫向比對與分歧研析 ====================
-    elif m5_active_tab == m5_sub_modes[4]:
+    # ==================== 子功能 5: 🔄 案例橫向比對與實務分歧研析 ====================
+    elif m5_active_tab == m5_sub_modes[5]:
         st.subheader("🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)")
-        st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
-        all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
+        st.caption("支援【輸入爭點・找出所有判決採何說】與【兩大裁判橫向精確對比】：深度解構實務學說頻譜（甲說、乙說、折衷說）、所有裁判採何說歸納清單、事實區別關鍵 (Case Distinguishing)、歷審見解變遷與司律二試作答上位心法！")
 
-        c_a_val = st.session_state.get("target_compare_case_a", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
-        c_b_val = st.session_state.get("target_compare_case_b", "最高法院 96 年度台上字第 2851 號判決")
-        c_top_val = st.session_state.get("target_compare_topic", "借名登記出名人未經同意處分標的物之效力")
+        distinguish_tab1, distinguish_tab2 = st.tabs([
+            "🎯 依爭點歸納「所有判決採何說」矩陣 (Doctrine Spectrum by Issue)",
+            "⚖️ 指定兩大裁判橫向精確比對 (Case A vs Case B Distinguishing)"
+        ])
 
-        col_a_box, col_b_box = st.columns(2)
-        with col_a_box:
-            st.markdown("#### 🏛️ 【基準裁判 A】")
-            def_idx_a = 0
-            for idx_a, tag in enumerate(all_precedents_tags):
-                if c_a_val and c_a_val in tag:
-                    def_idx_a = idx_a
-                    break
-            sel_tag_a = st.selectbox("從庫中選取裁判 A：", all_precedents_tags, index=def_idx_a, key="sel_cmp_tag_a")
-            if sel_tag_a and sel_tag_a != "-- 📚 從本機 1,256 筆權威庫中挑選裁判 --":
-                c_a_val = sel_tag_a.split(" ｜ ")[0].strip()
-            inp_case_a = st.text_input("裁判 A 案號/字號：", value=c_a_val, key="inp_cmp_case_a")
+        # ----------------- 分頁 1: 輸入爭點・找出所有判決採何說 -----------------
+        with distinguish_tab1:
+            st.markdown("#### 🎯 輸入爭點・找出所有判決採何說 (實務各說頻譜與裁判歸納)")
+            st.caption("輸入具體爭點，AI 將深入檢索本機 1,256+ 裁判庫、大法庭裁定、歷審脈絡鏈與行政函釋，自動歸納【甲說、乙說、折衷說】各說核心論理，並精確梳理【哪些具體判決採何說】與【現行終局定錨見解】！")
 
-        with col_b_box:
-            st.markdown("#### 🏛️ 【比對裁判 B】")
-            def_idx_b = 0
-            for idx_b, tag in enumerate(all_precedents_tags):
-                if c_b_val and c_b_val in tag:
-                    def_idx_b = idx_b
-                    break
-            sel_tag_b = st.selectbox("從庫中選取裁判 B：", all_precedents_tags, index=def_idx_b, key="sel_cmp_tag_b")
-            if sel_tag_b and sel_tag_b != "-- 📚 從本機 1,256 筆權威庫中挑選裁判 --":
-                c_b_val = sel_tag_b.split(" ｜ ")[0].strip()
-            inp_case_b = st.text_input("裁判 B 案號/字號：", value=c_b_val, key="inp_cmp_case_b")
-
-        inp_cmp_topic = st.text_input("核心比對爭點主題（選填）：", value=c_top_val, placeholder="例如：借名登記出名人處分權限、過失傷害注意義務標準...", key="inp_cmp_topic")
-
-        with st.expander("📝 自訂補充兩案裁判內容或事實節錄（選填）", expanded=False):
-            t_col1, t_col2 = st.columns(2)
-            with t_col1:
-                custom_text_a = st.text_area("裁判 A 內容節錄：", height=100, key="custom_text_a")
-            with t_col2:
-                custom_text_b = st.text_area("裁判 B 內容節錄：", height=100, key="custom_text_b")
-
-        col_b_cmp, col_b_cclr = st.columns([3, 1])
-        with col_b_cmp:
-            btn_start_cmp = st.button("🚀 啟動 AI 裁判橫向比對與分歧研析", type="primary", use_container_width=True, key="btn_exec_case_cmp")
-        with col_b_cclr:
-            if st.button("✖️ 清除比對結果", use_container_width=True, key="btn_clr_case_cmp"):
-                st.session_state.pop("case_comparison_result", None)
-                st.rerun()
-
-        if btn_start_cmp:
-            if not inp_case_a.strip() or not inp_case_b.strip():
-                st.warning("請同時提供【裁判 A】與【裁判 B】之案號！")
-            else:
-                with st.spinner(f"AI 司法典試顧問正在進行【{inp_case_a}】vs【{inp_case_b}】全方位事實區別與法理分歧研析..."):
-                    try:
-                        engine = LegalIssueQueryEngine()
-                        cmp_res = engine.compare_precedents(
-                            case_a=inp_case_a.strip(),
-                            case_b=inp_case_b.strip(),
-                            text_a=custom_text_a,
-                            text_b=custom_text_b,
-                            topic=inp_cmp_topic.strip()
-                        )
-                        st.session_state["case_comparison_result"] = cmp_res
-                        st.session_state["target_compare_case_a"] = inp_case_a.strip()
-                        st.session_state["target_compare_case_b"] = inp_case_b.strip()
-                        st.session_state["target_compare_topic"] = inp_cmp_topic.strip()
-                    except Exception as ce:
-                        st.error(f"比對分析失敗: {ce}")
-
-        if "case_comparison_result" in st.session_state:
-            c_res = st.session_state["case_comparison_result"]
-            c_md = c_res.get("markdown_result", "")
-            ca_id = c_res.get("case_a", "")
-            cb_id = c_res.get("case_b", "")
-
-            st.divider()
-            st.subheader(f"⚖️ 【{ca_id}】 vs 【{cb_id}】AI 裁判橫向比對研析報告")
-
-            cb_col1, cb_col2 = st.columns(2)
-            with cb_col1:
-                st.link_button(f"🏛️ 司法院裁判書直查【{ca_id}】", f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={ca_id}", use_container_width=True)
-            with cb_col2:
-                st.link_button(f"🏛️ 司法院裁判書直查【{cb_id}】", f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={cb_id}", use_container_width=True)
-
-            st.markdown(c_md)
-
-            st.divider()
-            st.markdown("##### 🔗 比對報告應用與後續演練：")
-            cc_col1, cc_col2 = st.columns(2)
-            with cc_col1:
-                st.download_button(
-                    label="💾 下載兩大案例橫向比對報告 (.md)",
-                    data=c_md,
-                    file_name=f"案例橫向比對_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', ca_id)}_vs_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', cb_id)}.md",
-                    mime="text/markdown",
-                    use_container_width=True
-                )
-            with cc_col2:
-                if st.button("📝 帶入試卷評分作為進階對比評分標準", use_container_width=True, key="btn_pass_cmp_to_eval"):
-                    st.session_state["question_text_content"] = f"【二試進階實例案例區別題目】：\n請就【{ca_id}】與【{cb_id}】所涉及之案件事實與法律見解分歧，深入剖析其法律爭點、各說立論與事實區別標準。"
-                    st.session_state["rubric_text_content"] = c_md
-                    st.session_state["imported_from_bank_label"] = f"案例橫向比對標準【{ca_id[:15]} vs {cb_id[:15]}】"
-                    st.session_state["app_mode"] = mode_options[0]
+            # 快捷熱門重大爭點晶片
+            st.markdown("##### 📌 熱門重大法律爭點一鍵快捷體驗：")
+            d_c1, d_c2, d_c3 = st.columns(3)
+            with d_c1:
+                if st.button("🏛️ 借名登記出名人未經同意處分不動產之效力\n(有權處分說 vs 無權處分說)", use_container_width=True, key="chip_issue_1"):
+                    st.session_state["distinguish_issue_topic"] = "不動產借名登記出名人未經借名人同意擅自處分不動產之效力"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
                     st.rerun()
+                if st.button("⚖️ 販賣毒品罪既遂與未遂之認定標準\n(交付毒品說 vs 買賣合意說)", use_container_width=True, key="chip_issue_2"):
+                    st.session_state["distinguish_issue_topic"] = "販賣毒品罪之既遂與未遂認定標準（交付毒品移轉所有權說 vs 買賣契約合意說）"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.rerun()
+            with d_c2:
+                if st.button("📑 保險法第64條2年除斥期間經過後得否依民法第92條撤銷\n(特別法排他說 vs 競合說)", use_container_width=True, key="chip_issue_3"):
+                    st.session_state["distinguish_issue_topic"] = "要保人詐欺未據實說明時，保險人於保險法2年除斥期間經過後，得否依民法第92條撤銷契約"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.rerun()
+                if st.button("💰 純粹經濟上損失是否為民法第184條第1項前段保護客體\n(權利侵害說 vs 法益擴張說)", use_container_width=True, key="chip_issue_4"):
+                    st.session_state["distinguish_issue_topic"] = "純粹經濟上損失是否為民法第184條第1項前段之保護客體"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.rerun()
+            with d_c3:
+                if st.button("📜 警察對肇事者強制抽血/採尿檢測合憲性與正當程序\n(違憲/法官保留說 vs 合憲說)", use_container_width=True, key="chip_issue_5"):
+                    st.session_state["distinguish_issue_topic"] = "司法警察強制抽血或強制採尿取證之合憲性與正當法律程序（法官保留原則）"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.rerun()
+                if st.button("🏢 公司法第185條讓與主要部分營業或財產之審查標準\n(質與量雙重標準說 vs 純量化說)", use_container_width=True, key="chip_issue_6"):
+                    st.session_state["distinguish_issue_topic"] = "公司法第185條讓與主要部分營業或財產之實質影響審查基準（質與量雙重標準說）"
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.rerun()
+
+            st.write("")
+
+            cur_issue_topic = st.session_state.get("distinguish_issue_topic", "")
+            col_iq1, col_iq2 = st.columns([3, 1])
+            with col_iq1:
+                inp_issue_topic = st.text_input(
+                    "請輸入欲研析之法律爭點（例如：借名登記出名人未經同意處分標的物之效力、保險法64條除斥期間...）：",
+                    value=cur_issue_topic,
+                    placeholder="輸入具體法律爭點，系統將自動歸納各說並找出所有判決採何說...",
+                    key="txt_input_issue_doctrine_topic"
+                )
+                if inp_issue_topic != cur_issue_topic:
+                    st.session_state["distinguish_issue_topic"] = inp_issue_topic
+            with col_iq2:
+                inp_issue_sub = st.selectbox(
+                    "所屬考科領域（選填）：",
+                    ["民事法 (民總/債/物/身分)", "刑事法 (刑總/刑分/刑訴)", "公法 (憲法/行政法)", "商事法 (公司/證交/保險)", "智慧財產權法", "跨領域綜合實務"],
+                    key="sel_issue_doctrine_sub"
+                )
+
+            with st.expander("📝 自訂補充事實脈絡或案情背景（選填）", expanded=False):
+                inp_custom_issue_ctx = st.text_area(
+                    "爭點背景、兩造爭議情境或特定法規補充：",
+                    height=100,
+                    placeholder="可在此補充具體案例事實（如：善意受讓、已登記但未交付、逾期二年等）...",
+                    key="txt_custom_issue_ctx"
+                )
+
+            col_btn_doc1, col_btn_doc2 = st.columns([3, 1])
+            with col_btn_doc1:
+                btn_run_issue_doctrines = st.button("🚀 檢索並歸納所有判決採何說", type="primary", use_container_width=True, key="btn_exec_issue_doctrines")
+            with col_btn_doc2:
+                if st.button("✖️ 清除爭點分析結果", use_container_width=True, key="btn_clr_issue_doctrines"):
+                    st.session_state.pop("issue_doctrine_analysis_res", None)
+                    st.session_state["distinguish_issue_topic"] = ""
+                    st.rerun()
+
+            if btn_run_issue_doctrines:
+                if not inp_issue_topic.strip():
+                    st.warning("請先輸入欲研析之法律爭點！")
+                else:
+                    with st.spinner(f"AI 司法典試長正在檢索本機 1,256+ 裁判庫與大法庭裁定，歸納各說論理與【所有判決採何說】..."):
+                        try:
+                            engine = LegalIssueQueryEngine()
+                            doc_res = engine.analyze_doctrines_by_issue(
+                                issue_topic=inp_issue_topic.strip(),
+                                subject=inp_issue_sub,
+                                custom_context=inp_custom_issue_ctx
+                            )
+                            st.session_state["issue_doctrine_analysis_res"] = doc_res
+                            st.session_state["distinguish_issue_topic"] = inp_issue_topic.strip()
+                        except Exception as de:
+                            st.error(f"爭點各說判決歸納失敗: {de}")
+
+            if "issue_doctrine_analysis_res" in st.session_state:
+                d_res = st.session_state["issue_doctrine_analysis_res"]
+                d_md = d_res.get("markdown_result", "")
+                d_top = d_res.get("issue_topic", "")
+
+                st.divider()
+                st.subheader(f"📊 【{d_top}】爭點各說頻譜與裁判採何說歸納報告")
+
+                # 外部查詢直連
+                st.caption("🌐 全國權威司法資料庫爭點直查：")
+                ext_u = d_res.get("search_urls", {})
+                if ext_u:
+                    d_cols = st.columns(min(len(ext_u), 3))
+                    for idx, (label, link) in enumerate(list(ext_u.items())[:3]):
+                        with d_cols[idx]:
+                            st.link_button(label, link, use_container_width=True)
+
+                st.markdown(d_md)
+
+                st.divider()
+                st.markdown("##### 🔗 爭點各說成果轉化與實戰演練：")
+                dr_c1, dr_c2, dr_c3 = st.columns(3)
+                with dr_c1:
+                    st.download_button(
+                        label="💾 下載爭點各說判決歸納報告 (.md)",
+                        data=d_md,
+                        file_name=f"爭點各說判決歸納_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', d_top)[:15]}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+                with dr_c2:
+                    if st.button("📝 帶入試卷評分作為標準答案與評分標竿", use_container_width=True, key="btn_pass_doc_to_eval"):
+                        st.session_state["question_text_content"] = f"【二試爭點各說申論題目】：\n請就【{d_top}】深入剖析實務各說見解（甲說、乙說、折衷說），列舉採各說之指標判決論據，並評述最高司法機關之終局定錨立場與事實涵攝。"
+                        st.session_state["rubric_text_content"] = d_md
+                        st.session_state["imported_from_bank_label"] = f"爭點各說判決標準【{d_top[:15]}】"
+                        st.session_state["app_mode"] = mode_options[0]
+                        st.rerun()
+                with dr_c3:
+                    if st.button("📖 帶入高分擬答生成 (依 IRAC 鋪陳各說與定錨)", use_container_width=True, key="btn_pass_doc_to_ans"):
+                        st.session_state["m4_target_question"] = f"請針對【{d_top}】之爭議事實與法律爭執，依 IRAC 架構撰寫標準上位卷擬答，務必完整並列各說並涵攝最高法院定錨見解。"
+                        st.session_state["app_mode"] = mode_options[3]
+                        st.rerun()
+
+        # ----------------- 分頁 2: 指定兩大裁判橫向精確比對 -----------------
+        with distinguish_tab2:
+            st.markdown("#### ⚖️ 指定兩大裁判橫向精確比對 (Case A vs Case B Distinguishing)")
+            st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
+            all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
+
+            c_a_val = st.session_state.get("target_compare_case_a", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
+            c_b_val = st.session_state.get("target_compare_case_b", "最高法院 96 年度台上字第 2851 號判決")
+            c_top_val = st.session_state.get("target_compare_topic", "借名登記出名人未經同意處分標的物之效力")
+
+            col_a_box, col_b_box = st.columns(2)
+            with col_a_box:
+                st.markdown("#### 🏛️ 【基準裁判 A】")
+                def_idx_a = 0
+                for idx_a, tag in enumerate(all_precedents_tags):
+                    if c_a_val and c_a_val in tag:
+                        def_idx_a = idx_a
+                        break
+                sel_tag_a = st.selectbox("從庫中選取裁判 A：", all_precedents_tags, index=def_idx_a, key="sel_cmp_tag_a")
+                if sel_tag_a and sel_tag_a != "-- 📚 從本機 1,256 筆權威庫中挑選裁判 --":
+                    c_a_val = sel_tag_a.split(" ｜ ")[0].strip()
+                inp_case_a = st.text_input("裁判 A 案號/字號：", value=c_a_val, key="inp_cmp_case_a")
+
+            with col_b_box:
+                st.markdown("#### 🏛️ 【比對裁判 B】")
+                def_idx_b = 0
+                for idx_b, tag in enumerate(all_precedents_tags):
+                    if c_b_val and c_b_val in tag:
+                        def_idx_b = idx_b
+                        break
+                sel_tag_b = st.selectbox("從庫中選取裁判 B：", all_precedents_tags, index=def_idx_b, key="sel_cmp_tag_b")
+                if sel_tag_b and sel_tag_b != "-- 📚 從本機 1,256 筆權威庫中挑選裁判 --":
+                    c_b_val = sel_tag_b.split(" ｜ ")[0].strip()
+                inp_case_b = st.text_input("裁判 B 案號/字號：", value=c_b_val, key="inp_cmp_case_b")
+
+            inp_cmp_topic = st.text_input("核心比對爭點主題（選填）：", value=c_top_val, placeholder="例如：借名登記出名人處分權限、過失傷害注意義務標準...", key="inp_cmp_topic")
+
+            with st.expander("📝 自訂補充兩案裁判內容或事實節錄（選填）", expanded=False):
+                t_col1, t_col2 = st.columns(2)
+                with t_col1:
+                    custom_text_a = st.text_area("裁判 A 內容節錄：", height=100, key="custom_text_a")
+                with t_col2:
+                    custom_text_b = st.text_area("裁判 B 內容節錄：", height=100, key="custom_text_b")
+
+            col_b_cmp, col_b_cclr = st.columns([3, 1])
+            with col_b_cmp:
+                btn_start_cmp = st.button("🚀 啟動 AI 裁判橫向比對與分歧研析", type="primary", use_container_width=True, key="btn_exec_case_cmp")
+            with col_b_cclr:
+                if st.button("✖️ 清除比對結果", use_container_width=True, key="btn_clr_case_cmp"):
+                    st.session_state.pop("case_comparison_result", None)
+                    st.rerun()
+
+            if btn_start_cmp:
+                if not inp_case_a.strip() or not inp_case_b.strip():
+                    st.warning("請同時提供【裁判 A】與【裁判 B】之案號！")
+                else:
+                    with st.spinner(f"AI 司法典試顧問正在進行【{inp_case_a}】vs【{inp_case_b}】全方位事實區別與法理分歧研析..."):
+                        try:
+                            engine = LegalIssueQueryEngine()
+                            cmp_res = engine.compare_precedents(
+                                case_a=inp_case_a.strip(),
+                                case_b=inp_case_b.strip(),
+                                text_a=custom_text_a,
+                                text_b=custom_text_b,
+                                topic=inp_cmp_topic.strip()
+                            )
+                            st.session_state["case_comparison_result"] = cmp_res
+                            st.session_state["target_compare_case_a"] = inp_case_a.strip()
+                            st.session_state["target_compare_case_b"] = inp_case_b.strip()
+                            st.session_state["target_compare_topic"] = inp_cmp_topic.strip()
+                        except Exception as ce:
+                            st.error(f"比對分析失敗: {ce}")
+
+            if "case_comparison_result" in st.session_state:
+                c_res = st.session_state["case_comparison_result"]
+                c_md = c_res.get("markdown_result", "")
+                ca_id = c_res.get("case_a", "")
+                cb_id = c_res.get("case_b", "")
+
+                st.divider()
+                st.subheader(f"⚖️ 【{ca_id}】 vs 【{cb_id}】AI 裁判橫向比對研析報告")
+
+                cb_col1, cb_col2 = st.columns(2)
+                with cb_col1:
+                    st.link_button(f"🏛️ 司法院裁判書直查【{ca_id}】", f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={ca_id}", use_container_width=True)
+                with cb_col2:
+                    st.link_button(f"🏛️ 司法院裁判書直查【{cb_id}】", f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={cb_id}", use_container_width=True)
+
+                st.markdown(c_md)
+
+                st.divider()
+                st.markdown("##### 🔗 比對報告應用與後續演練：")
+                cc_col1, cc_col2 = st.columns(2)
+                with cc_col1:
+                    st.download_button(
+                        label="💾 下載兩大案例橫向比對報告 (.md)",
+                        data=c_md,
+                        file_name=f"案例橫向比對_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', ca_id)}_vs_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', cb_id)}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+                with cc_col2:
+                    if st.button("📝 帶入試卷評分作為進階對比評分標準", use_container_width=True, key="btn_pass_cmp_to_eval"):
+                        st.session_state["question_text_content"] = f"【二試進階實例案例區別題目】：\n請就【{ca_id}】與【{cb_id}】所涉及之案件事實與法律見解分歧，深入剖析其法律爭點、各說立論與事實區別標準。"
+                        st.session_state["rubric_text_content"] = c_md
+                        st.session_state["imported_from_bank_label"] = f"案例橫向比對標準【{ca_id[:15]} vs {cb_id[:15]}】"
+                        st.session_state["app_mode"] = mode_options[0]
+                        st.rerun()
 
 
 # ----------------- 模式: 一般生活與實務法律問題諮詢 (AI 律師問答・權利分析・救濟指引) -----------------

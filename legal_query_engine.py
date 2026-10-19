@@ -1178,6 +1178,161 @@ class LegalIssueQueryEngine:
             }
         }
 
+    def analyze_doctrines_by_issue(
+        self,
+        issue_topic: str,
+        subject: str = "",
+        custom_context: str = ""
+    ) -> Dict[str, Any]:
+        """
+        爭點各說實務裁判歸納矩陣 (Issue Doctrine Clustering & Precedents Spectrum)：
+        輸入具體法律爭點，自本機 1,256+ 裁判庫、大法庭裁定、歷審更迭鏈與部會長篇函釋中，
+        自動歸納「甲說、乙說、折衷說」各說核心論理，並精確梳理【哪些判決採何說】與【現行終局定錨見解】！
+        """
+        # 1. 檢索本地相關裁判
+        retrieved_cases = search_local_precedents(
+            query=issue_topic,
+            subject=subject,
+            top_k=15
+        )
+
+        # 2. 檢索內建指標裁判全文
+        matched_landmarks = []
+        try:
+            from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
+            tokens = [tok for tok in re.split(r'[\s,，、。]+', issue_topic) if len(tok) >= 2]
+            for b in BUILTIN_LANDMARK_DOCS:
+                b_text = f"{b.get('title', '')} {b.get('text', '')}"
+                if any(tok in b_text for tok in tokens):
+                    matched_landmarks.append(b)
+        except Exception:
+            pass
+
+        # 3. 檢索歷審脈絡定錨庫
+        history_contexts = []
+        try:
+            tokens = [tok for tok in re.split(r'[\s,，、。]+', issue_topic) if len(tok) >= 2]
+            for k, h in PRESET_JUDGEMENT_HISTORIES.items():
+                h_text = f"{h.get('case_id', '')} {h.get('title', '')} {h.get('topic', '')} {h.get('distinguishing_insight', '')}"
+                if any(tok in h_text for tok in tokens):
+                    history_contexts.append(h)
+        except Exception:
+            pass
+
+        # 4. 檢索行政函釋大典
+        matched_rulings = []
+        try:
+            from admin_rulings_engine import get_all_administrative_rulings
+            rulings = get_all_administrative_rulings()
+            tokens = [tok for tok in re.split(r'[\s,，、。]+', issue_topic) if len(tok) >= 2]
+            for r in rulings:
+                r_text = f"{r.get('title', '')} {r.get('holding', '')} {r.get('content_analysis', '')} {r.get('exam_point_hint', '')}"
+                if any(tok in r_text for tok in tokens):
+                    matched_rulings.append(r)
+                    if len(matched_rulings) >= 5:
+                        break
+        except Exception:
+            pass
+
+        # 5. 組裝大模型專用研析上下文
+        cases_context_list = []
+        for c in retrieved_cases[:12]:
+            cases_context_list.append(
+                f"- 【案號】：{c.get('case_id')} | 審級={c.get('court')} ({c.get('level')})\n"
+                f"  案由：{c.get('title')}\n"
+                f"  裁判要旨：{c.get('holding')[:280]}\n"
+                f"  涉及爭點：{c.get('issue')}\n"
+                f"  學說與實務定位：{c.get('scholarly_views')}"
+            )
+        for b in matched_landmarks[:4]:
+            cases_context_list.append(
+                f"- 【權威指標裁定/判決】：{b.get('title')} ({b.get('doc_type')})\n"
+                f"  裁判內文節錄：{b.get('text')[:350]}"
+            )
+        for h in history_contexts[:3]:
+            cases_context_list.append(
+                f"- 【歷審見解分歧與大法庭定錨案】：{h.get('case_id')} ({h.get('topic')})\n"
+                f"  分歧與定錨核心：{h.get('distinguishing_insight')}\n"
+                f"  二試戰略：{h.get('exam_strategy')}"
+            )
+        for r in matched_rulings[:3]:
+            cases_context_list.append(
+                f"- 【中央部會長篇函釋】：{r.get('agency')} {r.get('doc_number')} ({r.get('title')})\n"
+                f"  函釋核心要旨：{r.get('holding')[:250]}"
+            )
+
+        cases_context_str = "\n\n".join(cases_context_list)
+
+        prompt = f"""
+你是一位台灣「司法院前最高法院大法庭研究法官」兼「律師司法官高等考試典試委員長」，精通司法實務見解脈絡與學說各說（甲說、乙說、丙說、折衷說、現行大法庭統一見解）。
+現在使用者輸入了一個具體之核心法律爭點：【{issue_topic}】
+請根據以下檢索之本機裁判庫、大法庭裁定、歷審更迭鏈與行政函釋，執行權威、深度之【爭點各說實務裁判歸納研析】：精確指出實務學說有哪些見解，以及「哪些具體裁判採何說」！
+
+核心法律爭點：【{issue_topic}】
+考科領域：【{subject or '實體法與程序法綜合領域'}】
+
+----------------------------------------
+【本機權威裁判庫與歷審脈絡鏈檢索結果】：
+{cases_context_str if cases_context_str else '（請本於台灣司法裁判演進全集與歷年大法庭/憲法裁判深入梳理）'}
+----------------------------------------
+{f"【使用者自訂補充事實/背景】：\n{custom_context.strip()}\n----------------------------------------" if custom_context.strip() else ""}
+
+請嚴格遵循標準繁體中文 Markdown 格式輸出，具備以下各大必備區塊：
+
+### 📊 一、爭點見解全景對照矩陣 (Doctrine Overview Matrix)
+請以 Markdown 表格精準呈現各說立場對比：
+| 說法名稱 | 核心論理與大前提 | 現行實務拘束力定位 | 採本說之代表裁判字號清單 (哪些判決採此說) |
+| :--- | :--- | :--- | :--- |
+| **甲說（如：有權處分說 / 交付移轉說 / 特別法排他說）** | ... | 🌟 現行最高法院大法庭統一定錨說 / 憲法法庭判決 | （明確列出具體字號，如最高法院 108 年度台上大字第 1719 號裁定等） |
+| **乙說（如：無權處分說 / 契約合意說 / 請求權競合說）** | ... | ⏳ 歷史舊判例 / 事實審部分裁判 | （明確列出具體字號，如最高法院 98 年度台上字第 76 號等） |
+| **丙說（若有：折衷說 / 善意保護說 / 類型化區別說）** | ... | ⚖️ 學界有力說 / 特定事實審例外見解 | （列出裁判字號或代表學者） |
+
+### 🏛️ 二、各說核心論理與「採何說」裁判逐案歸納清單 (Case-by-Case Adoption Mapping)
+請逐一深入解析各說法，並列出採該說之所有裁判：
+#### 1. 【甲說：...】
+- **核心法律大前提與立論根據**：法律文義、體系架構、立法目的與保護之實質法益。
+- **採本說之具體裁判清單與判旨摘錄**：
+  - 🏛️ **裁判案號 1**：（審級、案由）
+    - **案件事實特徵**：...
+    - **判決要旨核心引述**：以引號引用經典判旨。
+  - 🏛️ **裁判案號 2**：...
+
+#### 2. 【乙說：...】
+- **核心法律大前提與反對論點**：舊實務論據、對甲說之批評。
+- **採本說之具體裁判清單與判旨摘錄**：
+  - 🏛️ **裁判案號 1**：...
+  - 🏛️ **裁判案號 2**：...
+
+#### 3. 【丙說/折衷說/修正說（若有）】
+- **核心論理與適用邊界**：...
+- **採本說之裁判或學說代表**：...
+
+### 🔄 三、案例事實區別關鍵 (Case Distinguishing & Fact Nuances)
+- 說明採不同說法的各判決，其案件事實中是否存在細微差別（如：第三人善意或惡意、標的物登記外觀、契約特殊特約、除斥期間計算點），導致法院在事實涵攝上有所不同（案例區別技術）。
+
+### 📈 四、司法實務演進歷程與終局定錨 (Precedent Evolution Timeline)
+- 梳理實務見解演變時間軸：
+  - **舊判例/早期時期**：早期採取何說？
+  - **事實審與最高法院各庭分歧時期**：見解如何分歧？
+  - **大法庭終局統一定錨時期**：如何統一見解？哪些舊裁判/判例不再援用？
+
+### ✍️ 五、司律二試上位卷 IRAC 實戰破題範本 (300字考場必備金句)
+- **【俐落開標示範（40字）】**
+- **【大前提肯否二說論述模板（140字）】**（並列兩說並精確引註案號）
+- **【事實涵攝與定錨結論（120字）】**（涵攝大法庭定錨說）
+
+### 📚 六、權威法學教授學說評價與評釋
+- 王澤鑑、林山田、黃榮堅、姜世明、陳敏等權威法學名家之支持或批判見解。
+"""
+        result_md = self._call_model(prompt)
+        return {
+            "issue_topic": issue_topic,
+            "subject": subject,
+            "candidate_cases": retrieved_cases,
+            "markdown_result": result_md,
+            "search_urls": generate_judicial_search_urls(issue_topic, subject)
+        }
+
     def generate_case_history_timeline(
         self,
         case_id: str,
