@@ -260,8 +260,8 @@ TRACK_COURT_TAXONOMY = [
     ('重家上', '臺灣高等法院'),
     ('家上', '臺灣高等法院'),
     ('加上', '臺灣高等法院'),
-    ('上', '最高法院'),
-    ('抗', '最高法院'),
+    ('上', '最高行政法院'),
+    ('抗', '最高行政法院'),
 ]
 
 # 常用法院簡稱與標準法院全稱對照表（支援最高行、北高行、最高院、高院、智財法院、各地院等）
@@ -427,6 +427,44 @@ def normalize_court_case_citation(s: str) -> str:
     res = res.replace('@@xianpan@@', '憲判')
     return res
 
+def extract_case_components(text: str) -> Dict[str, Optional[str]]:
+    """
+    從裁判字號、公報名稱或標題中精確解析（年度、字軌、案號）
+    防止案號數字部分重疊（如 15 誤命中 4015、151、2150）以及字軌混淆（如 上 誤命中 台上）
+    """
+    if not text:
+        return {"year": None, "track": None, "no": None}
+    t = text.strip().replace(' ', '')
+    
+    # 1. 司法院解釋與憲法法庭判決
+    m_yj = re.search(r'院解字第?(\d+)號?', t)
+    if m_yj: return {'year': None, 'track': '院解', 'no': m_yj.group(1)}
+    m_yz = re.search(r'院字第?(\d+)號?', t)
+    if m_yz: return {'year': None, 'track': '院', 'no': m_yz.group(1)}
+    m_sz = re.search(r'釋字第?(\d+)號?', t)
+    if m_sz: return {'year': None, 'track': '釋', 'no': m_sz.group(1)}
+    m_xp = re.search(r'(?:(\d{1,3})年)?憲判字第?(\d+)號?', t)
+    if m_xp: return {'year': m_xp.group(1), 'track': '憲判', 'no': m_xp.group(2)}
+
+    # 2. 一般司法裁判: 如 "最高法院110年度台上字第4015號"、"最高行政法院 110 年度上字第 15 號判決"
+    m_std = re.search(r'(\d{1,3})\s*(?:年度|年)\s*([^\d]+?)\s*(?:字第|字|第)\s*(\d+)\s*號', t)
+    if m_std:
+        return {'year': m_std.group(1), 'track': m_std.group(2), 'no': m_std.group(3)}
+    
+    # 3. 縮寫或簡短案號: 如 "110台上4015"、"110上15"
+    m_short = re.search(r'^(\d{1,3})\s*([a-zA-Z\u4e00-\u9fa5\(\)（）]+?)\s*(\d+)$', t)
+    if m_short:
+        return {'year': m_short.group(1), 'track': m_short.group(2), 'no': m_short.group(3)}
+
+    # 4. 備援抓取
+    m_num = re.search(r'(?:字第|第)\s*(\d+)\s*號', t) or re.search(r'(?<!\d)(\d+)\s*號', t)
+    m_yr = re.search(r'(?<!\d)(\d{1,3})\s*(?:年度|年)', t)
+    return {
+        'year': m_yr.group(1) if m_yr else None,
+        'track': None,
+        'no': m_num.group(1) if m_num else None
+    }
+
 def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
     """
     智慧解析案號縮寫：
@@ -550,6 +588,13 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
             info["year"] = m.group(1)
             info["track"] = normalize_citation_track(grp2)
             info["no"] = grp3
+            if not info.get("court"):
+                for track_key, ct in sorted(TRACK_COURT_TAXONOMY, key=lambda x: len(x[0]), reverse=True):
+                    if track_key == info["track"] or (len(track_key) > 1 and track_key in info["track"]):
+                        info["court"] = ct
+                        if "行政" in ct:
+                            info["nature"] = "行"
+                        break
     else:
         if q_compact.isdigit():
             info["no"] = q_compact
@@ -562,7 +607,7 @@ def parse_case_abbreviation_query(query: str) -> Dict[str, Any]:
     return info
 
 def match_case_abbreviation(parsed_info: dict, case_record: dict) -> bool:
-    """判斷一筆裁判/解釋字典是否符合縮寫解析條件"""
+    """判斷一筆裁判/解釋字典是否符合縮寫解析條件（嚴格防禦案號部分字串重疊與字軌混淆）"""
     cid = case_record.get("case_id", "") or case_record.get("id", "") or case_record.get("interpret_id", "")
     level = case_record.get("level", "")
     court = case_record.get("court", "")
@@ -570,48 +615,100 @@ def match_case_abbreviation(parsed_info: dict, case_record: dict) -> bool:
     full_str = f"{cid} {court} {level} {title}"
     full_norm = normalize_court_case_citation(full_str)
 
+    # 提取候選標的之精確案號結構
+    cand_comp = extract_case_components(cid)
+    if not cand_comp or not cand_comp.get("no"):
+        cand_comp = extract_case_components(title) or cand_comp
+
     # 0. 法院比對 (若 query 明確指定法院或法院簡稱)
     if parsed_info.get("court"):
         expected_court = parsed_info["court"]
-        # 檢查 full_str 中是否符合目標法院，或比對簡稱
-        court_match = False
-        if expected_court in full_str or expected_court in court:
-            court_match = True
-        elif parsed_info.get("court_abbr") and parsed_info["court_abbr"] in full_str:
-            court_match = True
+        # 最高行政法院 vs 最高法院 嚴格防護
+        if "行政" in expected_court:
+            if "行政" not in full_str:
+                return False
+        elif expected_court == "最高法院":
+            if "行政" in full_str:
+                return False
         else:
-            # 兼容地方法院/高等法院/最高法院關鍵字
-            court_core = expected_court.replace("臺灣", "").replace("福建", "").replace("高等行政法院", "高行")
-            if court_core in full_str or court_core in court:
+            court_match = False
+            if expected_court in full_str or expected_court in court:
                 court_match = True
-        if not court_match:
-            return False
+            elif parsed_info.get("court_abbr") and parsed_info["court_abbr"] in full_str:
+                court_match = True
+            else:
+                court_core = expected_court.replace("臺灣", "").replace("福建", "").replace("高等行政法院", "高行")
+                if court_core in full_str or court_core in court:
+                    court_match = True
+            if not court_match:
+                return False
 
-    # 1. 號數比對
+    # 1. 號數精準比對 (嚴格防止 15 命中 4015、151、2150 等)
     if parsed_info.get("no"):
-        num = parsed_info["no"]
-        num_patterns = [f"第{num}號", f"字第{num}號", f"{num}號", f" {num} "]
-        if not any(np in cid for np in num_patterns) and num not in full_norm:
-            return False
+        req_no = str(parsed_info["no"]).strip()
+        cand_no = cand_comp.get("no")
+        if cand_no:
+            if cand_no != req_no:
+                return False
+        else:
+            strict_no_pat = rf'(?<!\d){re.escape(req_no)}(?!\d)'
+            if not re.search(strict_no_pat, cid) and not re.search(strict_no_pat, title):
+                return False
 
-    # 2. 年度比對
+    # 2. 年度精準比對
     if parsed_info.get("year"):
-        yr = parsed_info["year"]
-        yr_patterns = [f"{yr}年度", f"{yr}年", f" {yr} ", f"_{yr}_"]
-        if not any(yp in cid for yp in yr_patterns) and yr not in full_norm:
+        req_yr = str(parsed_info["year"]).strip()
+        cand_yr = cand_comp.get("year")
+        if cand_yr:
+            if cand_yr != req_yr:
+                return False
+        else:
+            strict_yr_pat = rf'(?<!\d){re.escape(req_yr)}(?!\d)\s*(?:年|年度)'
+            if not re.search(strict_yr_pat, cid) and not re.search(strict_yr_pat, title):
+                return False
+
+    # 3. 字軌嚴格比對 (防範 上 誤命中 台上、台上大、重上 等)
+    if parsed_info.get("track"):
+        req_tr = normalize_citation_track(parsed_info["track"])
+        cand_tr = normalize_citation_track(cand_comp.get("track") or "") if cand_comp.get("track") else ""
+        
+        # 共同別名映射 (釋/釋字、院/院字、院解/院解字、憲判/憲判字)
+        alias_groups = [
+            {'釋', '釋字'},
+            {'院', '院字'},
+            {'院解', '院解字'},
+            {'憲判', '憲判字'},
+            {'大', '大裁', '大法庭'},
+            {'家上', '加上'},
+            {'台上大', '上大'},
+            {'台抗大', '抗大'},
+        ]
+        def are_tracks_compatible(t1, t2):
+            if t1 == t2:
+                return True
+            for g in alias_groups:
+                if t1 in g and t2 in g:
+                    return True
             return False
 
-    # 3. 字軌比對 (含更審相容與加上/家上同義)
-    if parsed_info.get("track"):
-        track = parsed_info["track"]
-        track_norm = normalize_court_case_citation(track)
-        if track_norm not in full_norm:
-            if '家' in track_norm:
-                alt = track_norm.replace('家', '加')
-                if alt not in full_norm:
+        if cand_tr:
+            if not are_tracks_compatible(req_tr, cand_tr):
+                return False
+        else:
+            # 特殊邊界防護：當 req_tr 為 '上' 時，候選字串不可是 '台上'、'重上'、'上訴'、'上易' 等
+            if req_tr == '上':
+                if re.search(r'(?<![台重勞家加])上(?!大|訴|易)', full_str) is None:
+                    return False
+            elif req_tr == '抗':
+                if re.search(r'(?<![台])抗(?!大)', full_str) is None:
                     return False
             else:
-                return False
+                track_norm = normalize_court_case_citation(req_tr)
+                if track_norm not in full_norm:
+                    if '家' in track_norm and track_norm.replace('家', '加') in full_norm:
+                        pass
+                    else:
+                        return False
 
     # 4. 性質比對 (民/刑/行)
     if parsed_info.get("nature"):
@@ -677,11 +774,12 @@ def construct_standard_citation_from_parsed(info: dict) -> str:
     # 優先採用 parsed_info 中已解析出的法院全銜
     court = info.get("court")
     if not court:
-        court = "最高法院"
         for track_key, ct in sorted(TRACK_COURT_TAXONOMY, key=lambda x: len(x[0]), reverse=True):
-            if track_key in raw_track:
+            if track_key == raw_track or (len(track_key) > 1 and track_key in raw_track):
                 court = ct
                 break
+        if not court:
+            court = "最高行政法院" if raw_track in ['上', '抗', '大', '聲', '再'] and not raw_track.startswith('台') else "最高法院"
         if '重上' in raw_track or '更' in raw_track:
             court = "臺灣高等法院"
 
@@ -961,6 +1059,45 @@ BUILTIN_LANDMARK_DOCS: List[Dict[str, Any]] = [
 （一）民法第184條第1項前段規定：「因故意或過失，不法侵害他人之權利者，負損害賠償責任。」其保護客體嚴格限於固有之「權利」（包括人格權、身分權、物權、智慧財產權等絕對權）。
 （二）純粹經濟上損失，係指非因被害人之人身或所有權遭受實體損害而衍生之純粹財產上利益減損。此項純粹經濟上損失並非民法第184條第1項前段之保護客體。
 （三）如欲就純粹經濟上損失請求損害賠償，被害人必須依民法第184條第1項後段「故意以背於善良風俗之方法加損害於他人」，或第2項「違反保護他人之法律」之要件，始得主張救濟。原審未辨明權利侵害與純粹財產損失之區別，逕依第184條第1項前段命被告賠償營業停工利潤，其適用法律顯有違誤。"""
+    },
+    {
+        "id": "DOC_16_SUPREME_ADMIN_110_15",
+        "doc_type": "🏛️ 最高行政法院判決",
+        "title": "最高行政法院 110 年度上字第 15 號判決（地方議會議員停權處分與司法審查界線案）",
+        "text": """最高行政法院 110 年度上字第 15 號行政判決
+【案由】：有關地方自治事務事件
+【上訴人】：新竹縣議會
+【被上訴人】：余筱菁（時任新竹縣議員）
+【原審判決】：臺北高等行政法院 109 年度訴字第 774 號判決
+【主文】：
+原判決廢棄，發回臺北高等行政法院。
+
+【裁判核心法律爭點】：
+一、地方議會依其內部自律規則對個別民選議員作成「停止出席會議（停權）」之懲戒決議，其法律性質為何？受停權處分之議員得否循行政訴訟程序尋求司法救濟？
+二、議會自律原則（內部自律高權）與司法審查權（憲法第16條訴訟權保障、無漏洞權利保護原則）之界線應如何劃分？
+三、限制民意代表出席議會行使憲法及地方制度法賦予之提案、質詢、審議預算法案與表決權，是否受法律保留原則與比例原則之拘束？
+
+【最高行政法院判決理由要旨】：
+一、議員受停權決議干預其公法上法定職權，具備行政訴訟權利保護必要：
+（一）地方議會由全體議員依法選舉組成，以合議制形式行使地方自治團體之立法、預算審查及監督施政等公法上權限。議員個人基於公法上民意代表職能，享有出席各項大會與臨時會、審議提案、發言與表決之法定權能（法律上之力）。
+（二）地方議會所為禁止特定議員出席會議之懲戒（停權）處分，實質剝奪並限制該民意代表在特定會期內行使憲法與法律保障之公法上權限，直接干預其民選公職身分之正常行使，對其憲政法益與公法上權利構成實質侵害。
+（三）按憲法第16條保障人民訴訟權，宣示「有權利即有救濟」之核心法理，並參酌司法院釋字第381號、第499號解釋意旨，議員自得本於公法上權利受直接侵害之地位，向行政法院提起行政訴訟尋求救濟，具備訴訟權能與實質權利保護必要。
+
+二、議會內部紀律處分之定性與行政訴訟類型選擇：
+（一）地方議會對議員施以紀律懲戒，本質上係地方民意代表機關本於維持議事秩序、維護議會尊嚴所行使之自治內部管理事項，於地方自治團體機關單元間創設並變更公法上法律效果。
+（二）受懲戒議員若認停權決議違法侵害其權利，於停權會期經過後，因停權規制已執行完畢，原告得依法轉換或提起行政訴訟法第6條第1項後段之「確認公法上法律關係成立/不成立」或「確認行政處分違法」之確認訴訟，以洗刷名譽並回復其民主民意代表之合法地位。
+
+三、原判決違背法令與發回更審之關鍵：
+（一）地方制度法第31條雖授權地方議會自訂自律規則，惟剝奪民選代表出席權與審議權之嚴厲懲戒手段，關涉地方民主正當性核心，必須具備明確法令授權，並恪遵正當法律程序（如陳述意見、迴避原則）與比例原則。
+（二）原審法院對於新竹縣議會紀律委員會設置辦法之授權位階、議會自律權與司法審查界線之具體限度，以及事實認定之完備性尚有未盡，爰將原判決廢棄，發回原審臺北高等行政法院更為審理。
+
+【司律二試國考作答 IRAC 實戰提示】：
+1. Issue：地方議會議員停權處分之法律性質？議員得否提起行政訴訟尋求司法審查？
+2. Rule：憲法第16條有權利即有救濟、地方制度法第31條、司法院釋字第381號、第499號、最高行政法院110年度上字第15號判決。
+3. Application：
+   - 傳統特別權力關係與議會自律原則認為內部紀律事項不許司法審查；
+   - 最高行政法院新近定錨見解揚棄絕對自律說，肯定停權決議直接侵害議員之法定出席與表決權，具有重大外部法律效果，肯定其行政訴訟之訴訟權能；
+   - 審查密度上，行政法院應本於法律保留與比例原則進行實質審查，不得藉由議會自律為由全盤放任侵權。"""
     }
 ]
 
@@ -1005,9 +1142,9 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
             if norm and len(norm) >= 3 and (norm in b_norm or b_norm in norm):
                 matched = True
             elif digits:
-                if any(len(d) >= 5 and d in b_title for d in digits):
+                if any(len(d) >= 5 and re.search(rf'(?<!\d){re.escape(d)}(?!\d)', b_title) for d in digits):
                     matched = True
-                elif len(digits) >= 2 and all(d in b_norm for d in digits):
+                elif len(digits) >= 2 and all(re.search(rf'(?<!\d){re.escape(d)}(?!\d)', b_norm) for d in digits):
                     matched = True
 
         if matched:
@@ -1098,7 +1235,7 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
                     if norm and len(norm) >= 3 and (norm in cid_norm or cid_norm in norm):
                         best = c
                         break
-                    if digits and len(digits) >= 2 and all(d in cid for d in digits):
+                    if digits and len(digits) >= 2 and all(re.search(rf'(?<!\d){re.escape(d)}(?!\d)', cid) for d in digits):
                         best = c
                         break
 
