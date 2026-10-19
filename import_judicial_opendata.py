@@ -45,15 +45,16 @@ def parse_judgment_jid(jid_raw: str) -> Dict[str, Any]:
     if not jid_raw:
         return {}
 
-    # 抽取法院
-    m_court = re.search(r'^(臺灣[^\s0-9]+?法院|福建[^\s0-9]+?法院|最高[^\s0-9]+?法院|智慧財產[^\s0-9]+?法院|[\u4e00-\u9fa5]+?分院|[\u4e00-\u9fa5]+?地方法院)', jid_raw)
+    # 抽取法院 (支援 臺灣士林地方法院、臺灣臺北地方法院、臺灣高等法院臺中分院、最高法院等)
+    m_court = re.search(r'^(臺灣[^\s0-9]+?地方法院|福建[^\s0-9]+?地方法院|臺灣高等法院[^\s0-9]+?分院|最高行政法院|臺北高等行政法院|臺中高等行政法院|高雄高等行政法院|最高法院|智慧財產及商業法院|臺灣高等法院)', jid_raw)
     if m_court:
         court_raw = m_court.group(1)
     else:
-        m_court_alt = re.search(r'^(臺灣[^\s0-9]+?|福建[^\s0-9]+?|最高[^\s0-9]+?|智慧財產[^\s0-9]+?)(?:刑事|民事|行政|少年|家事|[0-9])', jid_raw)
-        court_raw = m_court_alt.group(1) if m_court_alt else ""
-        if court_raw and not court_raw.endswith("法院"):
-            court_raw += "法院"
+        m_court_alt = re.search(r'^(臺灣[^\s0-9]+?法院|福建[^\s0-9]+?法院|最高[^\s0-9]+?法院|智慧財產[^\s0-9]+?法院|[\u4e00-\u9fa5]+?分院|[\u4e00-\u9fa5]+?地方法院)', jid_raw)
+        if m_court_alt:
+            court_raw = m_court_alt.group(1)
+        else:
+            court_raw = "地方法院"
 
     # 抽取性質與書類
     nature = ""
