@@ -330,6 +330,31 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     else:
         pool = articles
 
+    # 支援法源式布林邏輯精確篩選 (Boolean Query)
+    is_bool_query = False
+    try:
+        from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
+        if BooleanQueryParser.is_boolean_query(raw_kw):
+            is_bool_query = True
+    except Exception:
+        is_bool_query = False
+
+    if is_bool_query:
+        scored_results = []
+        for a in pool:
+            ano = a.get("article_no", "")
+            content = a.get("content", "")
+            lname = a.get("law_name", "")
+            chap = a.get("chapter", "")
+            full_text = f"{lname} 第{ano}條 {chap} {content}"
+            if evaluate_boolean_query(raw_kw, full_text):
+                score = 100
+                if selected_law and lname == selected_law:
+                    score += 50
+                scored_results.append((score, a))
+        scored_results.sort(key=lambda x: -x[0])
+        return [item[1] for item in scored_results]
+
     prec_index = meta.get("precedents_article_index", {})
     scored_results = []
     
