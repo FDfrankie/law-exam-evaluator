@@ -1,8 +1,8 @@
 """
-法源法律網 (LawBank) 旗艦功能延伸模組：
-1. 功能 2：法源式專業布林邏輯搜尋語法引擎 (Boolean Precision Engine: ＆, ＋, －, ( ))
+權威法學資料庫 旗艦功能延伸模組：
+1. 功能 2：專業專業布林邏輯搜尋語法引擎 (Boolean Precision Engine: ＆, ＋, －, ( ))
 2. 功能 5：地檢署起訴書 vs 法院判決書「事實認定與論理比對」引擎 (Indictment vs Judgment Comparative Engine)
-3. 功能 6：一鍵 AI 裁判與長篇函釋核心要旨自動精鍊 (AI Legal Summarizer - 對標法源 AI 摘要)
+3. 功能 6：一鍵 AI 裁判與長篇函釋核心要旨自動精鍊 (AI Legal Summarizer - 對標專業法學庫 AI 摘要)
 """
 import os
 import sys
@@ -25,12 +25,12 @@ from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_t
 from legal_query_engine import get_precedents_catalog, get_precedent_by_id, generate_judicial_search_urls
 
 # ==============================================================================
-# 模組 1：法源式專業布林邏輯搜尋語法引擎 (Boolean Precision Engine)
+# 模組 1：專業專業布林邏輯搜尋語法引擎 (Boolean Precision Engine)
 # ==============================================================================
 
 class BooleanQueryParser:
     """
-    法源式布林邏輯解析器：
+    專業布林邏輯解析器：
     - ＆ 或 &：AND（且）
     - ＋ 或 +：OR（或）
     - － 或 -：NOT（不含、排除）
@@ -203,7 +203,7 @@ def evaluate_boolean_ast(node: Any, text: str) -> bool:
 
 
 def evaluate_boolean_query(query: str, text: str) -> bool:
-    """對任意文字串求值法源式布林查詢"""
+    """對任意文字串求值專業布林查詢"""
     if not query.strip():
         return True
     try:
@@ -568,7 +568,7 @@ BUILTIN_LANDMARK_DOCS: List[Dict[str, Any]] = [
 
 class AILegalSummarizer:
     """
-    一鍵 AI 裁判與長篇函釋核心要旨自動精鍊引擎 (對標法源 2025/2026 AI 摘要旗艦功能)
+    一鍵 AI 裁判與長篇函釋核心要旨自動精鍊引擎 (對標專業法學庫 2025/2026 AI 摘要旗艦功能)
     """
     def __init__(self):
         self.api_key = get_gemini_api_key()
@@ -614,7 +614,7 @@ class AILegalSummarizer:
     ) -> Dict[str, Any]:
         prompt = f"""
 你是一位台灣「司法院大法官書記處法官」兼「律師司法官高等考試權威名師」，精通裁判解構與長篇公報釋令精萃。
-現在使用者輸入了一篇動輒數萬字之【{doc_type}】全文或核心摘錄，請立即執行極致精練、結構嚴謹之【AI 法源級核心要旨深度摘要】：
+現在使用者輸入了一篇動輒數萬字之【{doc_type}】全文或核心摘錄，請立即執行極致精練、結構嚴謹之【AI 專業級 核心要旨深度摘要】：
 
 文書名稱/案號：【{title or '法學文書'}】
 文書類型：【{doc_type}】
@@ -626,7 +626,7 @@ class AILegalSummarizer:
 
 ------------------------
 
-請嚴格遵循法源法律網 AI 摘要旗艦規範，依序產出以下六大核心標題：
+請嚴格遵循權威法學庫 AI 摘要旗艦規範，依序產出以下六大核心標題：
 
 ### 📌 一、基本案情與案件程序審級歷程
 - **當事人背景與紛爭起因**：當事人身分、客觀爭端發生經過、行政處分作成或契約簽訂背景。

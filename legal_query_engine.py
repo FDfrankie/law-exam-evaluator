@@ -20,10 +20,7 @@ try:
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
 except ImportError:
-    try:
-        import google.generativeai as legacy_genai
-    except ImportError:
-        legacy_genai = None
+    import google.generativeai as legacy_genai
     USE_MODERN_GENAI = False
 
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
@@ -351,7 +348,7 @@ def get_precedent_history_chain(case_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, str]:
-    """生成通往法源、法律人、七法、司法院與憲法法庭等外部權威法學資料庫的即時直連查詢連結"""
+    """生成通往專業法學庫、法學檢索、審級脈絡、司法院與憲法法庭等外部權威法學資料庫的即時直連查詢連結"""
     import urllib.parse
     clean_q = re.sub(r'[\r\n\t]+', ' ', query).strip()
     tokens = [t for t in re.split(r'[\s,，、。！？]+', clean_q) if len(t) >= 2]
@@ -359,14 +356,14 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
     encoded_k = urllib.parse.quote(search_keyword)
 
     return {
-        "📚 法源法律網 LawBank 裁判與法規檢索": f"https://www.lawbank.com.tw/treatise/pl_search.aspx?keyword={encoded_k}",
-        "⚡ 法律人 LawPlayer 智慧法學搜尋": f"https://lawplayer.com/search?keyword={encoded_k}",
+        "📚 權威判解與法規檢索 裁判與法規檢索": f"https://www.lawbank.com.tw/treatise/pl_search.aspx?keyword={encoded_k}",
+        "⚡ 法學實戰檢索 智慧法學搜尋": f"https://lawplayer.com/search?keyword={encoded_k}",
         "🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)": f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_k}",
         "📜 憲法法庭裁判與司法院大法官解釋系統": f"https://cons.judicial.gov.tw/jcc/zh-tw/jep01?q={encoded_k}",
         "📖 全國法規資料庫 (法務部法規命令與沿革)": f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={encoded_k}",
-        "⚖️ 七法 Lawsnote 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
+        "⚖️ 專業法學語意搜尋 智慧法學語意搜尋": f"https://www.lawsnote.com/search?keyword={encoded_k}",
         "🏛️ 立法院法律系統 (法條立法沿革與對照)": "https://lis.ly.gov.tw/lglawc/lglawkm",
-        "🎓 月旦知識庫 法學論文與期刊論著索引": f"http://lawdata.com.tw/anglelaw/lawdata_search.aspx?keyword={encoded_k}",
+        "🎓 法學論著資料庫 法學論文與期刊論著索引": f"http://lawdata.com.tw/anglelaw/lawdata_search.aspx?keyword={encoded_k}",
         "🏢 智慧財產及商業法院裁判檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
 
@@ -385,10 +382,10 @@ def search_precedents_lawbank_style(
     top_k: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    法源法律網 (LawBank) 規格多維度司法裁判專業檢索：
+    權威法學資料庫 規格多維度司法裁判專業檢索：
     支援：法院層級體系、民國年度 (jud_year)、常用字別 (sel_judword)、裁判字號 (jud_no)、
     裁判案由 (jt)、主文/心證 (jmain/txtopinion)、案件爭點 (txtargument)、相關法條 (lc1a/lc1b)、
-    七法時間軸滑桿過濾 (time_filter)
+    審級脈絡時間軸滑桿過濾 (time_filter)
     """
     catalog = get_precedents_catalog()
     if not catalog:
@@ -418,7 +415,7 @@ def search_precedents_lawbank_style(
         laws = " ".join(item.get("laws_cited", []))
         item_sub = item.get("subject", "")
 
-        # 七法時間軸過濾 (Lawsnote Time Filter)
+        # 審級脈絡時間軸過濾 (JudgementChain Time Filter)
         if time_filter and "全部時間" not in time_filter:
             min_roc_year = 0
             if "近 1 年" in time_filter:
@@ -584,8 +581,8 @@ def search_local_precedents(
 ) -> List[Dict[str, Any]]:
     """
     從 1,256 筆權威判解庫中高速篩選最相關之判決/大法庭裁定
-    支援法源 (LawBank) 專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
-    支援七法 (Lawsnote) 時間軸過濾滑桿 (time_filter)
+    支援專業法學庫 (LegalDatabase) 專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
+    支援審級脈絡系統 時間軸過濾滑桿 (time_filter)
     """
     catalog = get_precedents_catalog()
     if not catalog:
@@ -617,7 +614,7 @@ def search_local_precedents(
     tokens = list(ngram_tokens)
     numbers = re.findall(r'\d+', full_query)
 
-    # 支援法源式布林邏輯精確篩選 (Boolean Query)
+    # 支援專業布林邏輯精確篩選 (Boolean Query)
     is_bool_query = False
     try:
         from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
@@ -638,7 +635,7 @@ def search_local_precedents(
         scholarly = item.get("scholarly_views", "")
         laws_cited = item.get("laws_cited", [])
 
-        # 七法時間軸過濾 (Lawsnote Time Filter)
+        # 審級脈絡時間軸過濾 (JudgementChain Time Filter)
         if time_filter and "全部時間" not in time_filter:
             min_roc_year = 0
             if "近 1 年" in time_filter:
@@ -657,7 +654,7 @@ def search_local_precedents(
                 if roc_y < min_roc_year:
                     continue
 
-        # 法源審級分類篩選 (court_categories)
+        # 專業法學庫審級分類篩選 (court_categories)
         if court_categories:
             cat_match = False
             for cat in court_categories:
@@ -676,14 +673,14 @@ def search_local_precedents(
         score = 0
         text_pool = f"{case_id} {court} {level} {title} {sub_cat} {issue} {holding} {scholarly} {' '.join(laws_cited)}"
 
-        # 若使用者輸入法源式布林查詢，先進行布林真值求值
+        # 若使用者輸入專業布林查詢，先進行布林真值求值
         if is_bool_query:
             target_bool_q = query if BooleanQueryParser.is_boolean_query(query) else full_query
             if not evaluate_boolean_query(target_bool_q, text_pool):
                 continue
             score += 100
 
-        # 法源進階錨點 1: 年度 + 常用字別 + 案號 精準命中
+        # 專業法學庫進階錨點 1: 年度 + 常用字別 + 案號 精準命中
         if case_year.strip() and case_year.strip() in case_id:
             score += 30
         if case_word.strip() and case_word.strip() in case_id:
@@ -691,25 +688,25 @@ def search_local_precedents(
         if case_num.strip() and case_num.strip() in case_id:
             score += 60
 
-        # 法源進階錨點 2: 裁判案由 (cause_of_action)
+        # 專業法學庫進階錨點 2: 裁判案由 (cause_of_action)
         if cause_of_action.strip():
             for c_tok in re.split(r'[\s,，、]+', cause_of_action.strip()):
                 if len(c_tok) >= 2 and (c_tok in title or c_tok in sub_cat or c_tok in issue):
                     score += 40
 
-        # 法源進階錨點 3: 法院心證 (opinion)
+        # 專業法學庫進階錨點 3: 法院心證 (opinion)
         if opinion.strip():
             for o_tok in re.split(r'[\s,，、]+', opinion.strip()):
                 if len(o_tok) >= 2 and (o_tok in holding or o_tok in scholarly):
                     score += 40
 
-        # 法源進階錨點 4: 案件爭點 (argument)
+        # 專業法學庫進階錨點 4: 案件爭點 (argument)
         if argument.strip():
             for a_tok in re.split(r'[\s,，、]+', argument.strip()):
                 if len(a_tok) >= 2 and (a_tok in issue or a_tok in title or a_tok in sub_cat):
                     score += 40
 
-        # 法源進階錨點 5: 相關法條 (statute_target)
+        # 專業法學庫進階錨點 5: 相關法條 (statute_target)
         if statute_target.strip():
             for s_tok in re.split(r'[\s,，、]+', statute_target.strip()):
                 if len(s_tok) >= 2 and any(s_tok in law for law in laws_cited):
@@ -776,19 +773,19 @@ def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
     if not catalog or not case_id:
         return None
     clean_id = re.sub(r'[\s\-_]+', '', case_id).lower()
-    
+
     # 1. 完全或前綴/後綴匹配
     for r in catalog:
         cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
         if cid == clean_id:
             return r
-            
+
     # 2. 包含匹配
     for r in catalog:
         cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
         if clean_id in cid or cid in clean_id:
             return r
-            
+
     # 3. 案號核心數字與中文字號比對 (例如 108台上大1719)
     nums = re.findall(r'\d+', clean_id)
     chars = re.findall(r'[\u4e00-\u9fa5]+', clean_id)
@@ -909,13 +906,13 @@ class LegalIssueQueryEngine:
 - **大前提確立示範**：如何融合法條、大法庭裁定字號與學說見解
 - **事實涵攝與結論**：如何將具體事實嚴密代入構成要件
 
-### 六、⚠️ 裁判效力狀態與違憲警示（七法 Lawsnote 特色功能）
+### 六、⚠️ 裁判效力狀態與違憲警示（專業法學語意搜尋 特色功能）
 - 標註本爭點涉及裁判之有效性狀態，提醒考生與實務嚴格防禦：
   - 🟢 **【現行有效主流】**：最高法院現行穩健見解或大法庭裁定
   - 🟡 **【見解歧異/變更中】**：各庭間尚有爭議、大法庭提案中
   - 🔴 **【已廢止/違憲停止適用】**：經大法庭裁定廢止、停止適用或經憲法法庭宣告違憲失效（絕對禁止在國考或訴訟中援用！）
 
-### 七、📈 爭點實務見解演進時間軸（七法歷程脈絡樹）
+### 七、📈 爭點實務見解演進時間軸（審級脈絡歷程脈絡樹）
 - 以清晰時間箭頭流程呈現本爭點之實務演進軌跡：
   `【早期傳統舊判例】➔ 【實務紛歧與學說反思】➔ 【最高法院大法庭裁定定錨】➔ 【憲法法庭最新人權審查趨勢】`
 
@@ -1101,123 +1098,9 @@ class LegalIssueQueryEngine:
             "rec_b": rec_b,
             "markdown_result": result_md,
             "external_search_urls": {
-                f"⚖️ 七法搜尋【{case_a}】": generate_judicial_search_urls(case_a).get("⚖️ 七法 Lawsnote 智慧法學語意搜尋", ""),
-                f"⚖️ 七法搜尋【{case_b}】": generate_judicial_search_urls(case_b).get("⚖️ 七法 Lawsnote 智慧法學語意搜尋", "")
+                f"⚖️ 審級脈絡搜尋【{case_a}】": generate_judicial_search_urls(case_a).get("⚖️ 專業法學語意搜尋 智慧法學語意搜尋", ""),
+                f"⚖️ 審級脈絡搜尋【{case_b}】": generate_judicial_search_urls(case_b).get("⚖️ 專業法學語意搜尋 智慧法學語意搜尋", "")
             }
-        }
-
-    def generate_case_history_timeline(
-        self,
-        case_id: str,
-        case_text: str = ""
-    ) -> Dict[str, Any]:
-        """
-        七法 (Lawsnote) 裁判審級更迭與歷審脈絡鏈 (Judgement History / Instance Pipeline)：
-        精準溯源裁判於各級法院之演進歷程：
-        1. 一審事實審 (地方法院): 兩造起訴與答辯、事實認定、一審裁判主文。
-        2. 二審事實審/上訴審 (高等法院): 二審論理、是否逆轉或變更見解、爭點發酵。
-        3. 三審法律審 (最高法院): 上訴第三審法律爭議、違背法令指摘、廢棄發回或自為判決。
-        4. 大法庭終局裁定 / 憲法法庭判決: 統一見解、廢棄舊判例之定錨效力。
-        5. 歷審見解更迭對比 (Distinguishing & Evolution Matrix)。
-        6. 國考二試上位卷 IRAC 開標與作答示範。
-        """
-        preset_info = get_precedent_history_chain(case_id)
-        local_rec = get_precedent_by_id(case_id)
-
-        preset_context = ""
-        if preset_info:
-            preset_context = f"""
-【權威歷審脈絡鏈已知數據】：
-- 案號與主題：{preset_info.get('case_id')} ({preset_info.get('topic')})
-- 歷審審級路徑：
-"""
-            for node in preset_info.get("chain", []):
-                preset_context += f"  * [{node.get('instance')}] {node.get('court')} `{node.get('case_no')}` - {node.get('holding')} (結果: {node.get('result')})\n"
-            preset_context += f"- 審級更迭分歧核心：{preset_info.get('distinguishing_points')}\n"
-            preset_context += f"- 國考上位卷作答策略：{preset_info.get('exam_strategy')}\n"
-
-        local_context = ""
-        if local_rec:
-            local_context = f"""
-【本機資料庫裁判摘要】：
-- 案號：{local_rec.get('case_id')} ({local_rec.get('court')} {local_rec.get('level')})
-- 爭點領域：{local_rec.get('title')} ({local_rec.get('sub_category')})
-- 核心要旨：{local_rec.get('holding')}
-- 引用法規：{', '.join(local_rec.get('laws_cited', []))}
-- 學說評析：{local_rec.get('scholarly_views')}
-- 國考作答提示：{local_rec.get('exam_application_hint')}
-"""
-
-        user_text_context = ""
-        if case_text.strip():
-            user_text_context = f"\n【使用者提供之裁判內容節錄】：\n{case_text.strip()[:6000]}\n"
-
-        prompt = f"""
-你是一位台灣「司法院前最高法院研究法官」兼「律師司法官高等考試權威講座名師」，精通台灣民刑事及公法訴訟各級法院審級流轉與見解更迭。
-現在請針對以下司法裁判進行【七法 (Lawsnote) 規格 裁判審級更迭與歷審脈絡鏈 (Judgement History Pipeline)】的深度剖析：
-
-目標裁判：【{case_id}】
-
-{preset_context}
-{local_context}
-{user_text_context}
-
-請嚴謹、精確、體系分明地輸出以下七大結構化區塊：
-
-### 一、🏛️ 裁判基本資訊與定錨位階
-- 案件字號、承審法院、所屬程序（民事/刑事/行政/憲法）、裁判時點。
-- 本裁判於司法實務體系中的定位（如：最高法院大法庭裁定、憲法法庭判決、最高法院具參考價值裁判）。
-
-### 二、🌿 裁判審級更迭脈絡圖 (Instance Evolution Pipeline)
-請以清晰的 ASCII 或 Markdown 流程呈現案件自起訴至終局裁判的審級路徑，例如：
-`【一審事實審：臺灣ＯＯ地方法院】 ➔ 【二審事實審：臺灣高等法院（見解是否逆轉）】 ➔ 【三審法律審：最高法院】 ➔ 【大法庭終局定錨 / 憲法法庭】`
-
-### 三、🔍 歷審攻防與論理深度剖析
-1. **一審事實審（地方法院）**：
-   - 原告/檢察官起訴主張 vs 被告抗辯
-   - 一審法院認定之主要事實與判決結論
-2. **二審事實審 / 上訴審（高等法院）**：
-   - 上訴理由與攻防焦點
-   - 二審是否逆轉改判？其法律心證與事實認定之關鍵轉折點為何？
-3. **三審法律審（最高法院）**：
-   - 上訴第三審之違背法令指摘核心
-   - 最高法院各庭間過去見解是否有歧異？發回或自為判決之法理剖析
-4. **大法庭終局定錨 / 憲法法庭判決（若屬大法庭或憲判字）**：
-   - 為何提案大法庭？本案提案法律問題之精準文字
-   - 大法庭終局裁定主文與核心法理
-   - 是否廢棄或變更早期特定判例、決議？（明確指明被廢止之判例字號）
-
-### 四、⚖️ 審級更迭與各審級見解對比矩陣 (Distinguishing Table)
-請繪製 Markdown 對比表格：
-| 審級與法院 | 案號字號 | 裁判結果 | 法律見解與心證核心 | 關鍵轉折 / 歧異點 |
-| :--- | :--- | :--- | :--- | :--- |
-| 一審事實審 (地院) | ... | ... | ... | ... |
-| 二審上訴審 (高院) | ... | ... | ... | ... |
-| 三審法律審 (最高院) | ... | ... | ... | ... |
-| 大法庭 / 憲法法庭 | ... | ... | ... | ... |
-
-### 五、📚 學說論戰與實務評析
-- 學界主流（通說）對本案各審級判決之評價
-- 有力學說之批評反思與不同見解
-
-### 六、⚠️ 裁判有效性狀態與引用防禦警示
-- 🟢 現行有效主流見解 / 🟡 各庭見解歧異中 / 🔴 舊判例已遭大法庭廢棄（考生切勿援用）
-- 在訴訟實戰與國家考試中，如何避免誤用已廢止之舊見解
-
-### 七、✍️ 司律二試上位卷 IRAC 作答示範（開標與審級深度論述心法）
-- **開標示範**：如何俐落破題並引述大法庭字號
-- **爭點論述**：如何將「歷審爭議演進」作為上位卷加分亮點寫入考卷
-- **事實涵攝與結論**：示範具體涵攝事實之得分文句
-
-請直接輸出繁體中文 Markdown 報告，文字必須專業、權威，具備最高司法研究等級！
-"""
-        response_text = self._call_model(prompt)
-        return {
-            "case_id": case_id,
-            "preset_info": preset_info,
-            "local_rec": local_rec,
-            "markdown_result": response_text,
-            "external_search_urls": generate_judicial_search_urls(case_id)
         }
 
     def unified_legal_search(
@@ -1231,16 +1114,14 @@ class LegalIssueQueryEngine:
         statute_target: str = "",
         case_year: str = "",
         case_word: str = "",
-        case_num: str = "",
-        time_filter: str = "全部時間 (不限年份)"
+        case_num: str = ""
     ) -> Dict[str, Any]:
         """
         全方位法學統一檢索樞紐：
         多維度即時查詢：
         1. 本地權威判解庫 (1,256 筆裁判/大法庭/憲判字/高院/筆記地院)
         2. 司律核心法條庫 (六法全書關聯條號)
-        3. 外部七法 / 法源 / 司法院 30 年判決跨庫直連
-        4. 七法時間軸過濾滑桿 (time_filter)
+        3. 外部審級脈絡 / 專業法學庫 / 司法院 30 年判決跨庫直連
         """
         clean_q = query.strip()
         precedents = search_local_precedents(
@@ -1254,10 +1135,9 @@ class LegalIssueQueryEngine:
             statute_target=statute_target,
             case_year=case_year,
             case_word=case_word,
-            case_num=case_num,
-            time_filter=time_filter
+            case_num=case_num
         )
-        
+
         statute_query = statute_target.strip() or clean_q
         matched_articles = []
         try:

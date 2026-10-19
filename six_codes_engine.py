@@ -333,7 +333,7 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     else:
         pool = articles
 
-    # 支援法源式布林邏輯精確篩選 (Boolean Query)
+    # 支援專業布林邏輯精確篩選 (Boolean Query)
     is_bool_query = False
     try:
         from lawbank_engine import BooleanQueryParser, evaluate_boolean_query
@@ -1050,7 +1050,7 @@ class SixCodesDeepAnnotator:
 ### 五、✍️ 國考申論作答開標與涵攝示範 (IRAC)
 - 示範一段漂亮俐落之二試答題開標與三段論法涵攝
 
-### 六、🔗 法源式跨法規關聯條文網絡（Cross-Statutory Network）
+### 六、🔗 專業跨法規關聯條文網絡（Cross-Statutory Network）
 - 列出與本條文最常**「共同連動援用」**之高頻實體法與程序法關聯條文（例如：請求權基礎競合、抗辯權、代位、時效或特別法條號）
 - 說明各關聯條文在實例題中如何相互牽動、開標組裝
 """
