@@ -57,7 +57,8 @@ class JudicialOpenDataClient:
         headers = {"Content-Type": "application/json"}
         payload = {"user": u, "password": p}
         try:
-            resp = requests.post(self.AUTH_URL, headers=headers, json=payload, timeout=15)
+            # 司法院政府伺服器憑證常有 Missing Subject Key Identifier 或自簽根憑證問題，故使用 verify=False 確保連線暢通
+            resp = requests.post(self.AUTH_URL, headers=headers, json=payload, timeout=15, verify=False)
             if resp.status_code == 200:
                 res_json = resp.json()
                 if "Token" in res_json:
@@ -82,7 +83,7 @@ class JudicialOpenDataClient:
         headers = {"Content-Type": "application/json"}
         payload = {"token": tk}
         try:
-            resp = requests.post(self.JLIST_URL, headers=headers, json=payload, timeout=20)
+            resp = requests.post(self.JLIST_URL, headers=headers, json=payload, timeout=20, verify=False)
             if resp.status_code == 200:
                 return {"success": True, "data": resp.json()}
             else:
@@ -100,7 +101,7 @@ class JudicialOpenDataClient:
         headers = {"Content-Type": "application/json"}
         payload = {"token": tk, "j": jid.strip()}
         try:
-            resp = requests.post(self.JDOC_URL, headers=headers, json=payload, timeout=25)
+            resp = requests.post(self.JDOC_URL, headers=headers, json=payload, timeout=25, verify=False)
             if resp.status_code == 200:
                 data = resp.json()
                 if isinstance(data, dict) and "error" in data:
@@ -110,10 +111,6 @@ class JudicialOpenDataClient:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
         except Exception as e:
             return {"success": False, "error": f"裁判調閱失敗: {e}"}
-REPO_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json"
-SCORING_STANDARDS_DIR = Path(STANDARDS_DIR)
-OPENDATA_DUMP_DIR = Path(DATA_DIR) / "judicial_opendata"
-OPENDATA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def clean_text(s: str) -> str:
@@ -353,8 +350,58 @@ def parse_official_opendata_record(data: dict) -> Optional[Dict[str, Any]]:
     }
 
 
+def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
+    """解壓 ZIP, RAR, 7Z 等格式壓縮檔至指定臨時目錄"""
+    ext = archive_path.suffix.lower()
+    if ext == ".zip":
+        try:
+            with zipfile.ZipFile(archive_path, 'r') as z:
+                z.extractall(extract_dir)
+            return True
+        except Exception:
+            pass
+
+    # 嘗試使用 7z 命令列（本機預裝之 7-Zip，支援 RAR, 7Z, ZIP, TAR, GZ 等全格式）
+    for cmd_7z in [r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe", "7z"]:
+        try:
+            import subprocess
+            res = subprocess.run([cmd_7z, "x", str(archive_path), f"-o{str(extract_dir)}", "-y"],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
+            if res.returncode == 0:
+                return True
+        except Exception:
+            pass
+
+    # 嘗試使用 rarfile (若為 RAR 檔)
+    if ext == ".rar":
+        try:
+            import rarfile
+            with rarfile.RarFile(archive_path) as rf:
+                rf.extractall(extract_dir)
+            return True
+        except Exception:
+            pass
+
+    # 嘗試使用 libarchive
+    try:
+        import libarchive.public
+        import os
+        prev_cwd = os.getcwd()
+        try:
+            os.chdir(str(extract_dir))
+            libarchive.public.extract_file(str(archive_path))
+            return True
+        finally:
+            os.chdir(prev_cwd)
+    except Exception:
+        pass
+
+    return False
+
+
 def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any]]:
-    """批量掃描並匯入目錄或 ZIP 檔中的司法院 Open Data JSON 裁判"""
+    """批量掃描並匯入目錄或 ZIP/RAR/7Z 檔中的司法院 Open Data JSON 裁判"""
+    import tempfile
     imported = []
     seen = set()
 
@@ -376,15 +423,16 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
             except Exception:
                 continue
 
-    # 2. 處理 ZIP 檔案
-    elif target_dir_or_zip.is_file() and target_dir_or_zip.suffix.lower() == ".zip":
-        print(f"📦 正在解壓讀取 Open Data ZIP: {target_dir_or_zip.name}...")
-        with zipfile.ZipFile(target_dir_or_zip, 'r') as z:
-            for fname in z.namelist():
-                if fname.endswith(".json"):
+    # 2. 處理壓縮檔 (ZIP, RAR, 7Z)
+    elif target_dir_or_zip.is_file() and target_dir_or_zip.suffix.lower() in [".zip", ".rar", ".7z"]:
+        print(f"📦 正在解壓讀取 Open Data 壓縮檔: {target_dir_or_zip.name}...")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            success = extract_archive_to_temp(target_dir_or_zip, Path(tmp_dir))
+            if success:
+                for j_path in Path(tmp_dir).glob("**/*.json"):
                     try:
-                        with z.open(fname) as jf:
-                            content = json.load(jf)
+                        with open(j_path, "r", encoding="utf-8") as f:
+                            content = json.load(f)
                             items = content if isinstance(content, list) else [content]
                             for item in items:
                                 parsed = parse_official_opendata_record(item)

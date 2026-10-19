@@ -3820,25 +3820,27 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 
         with op_tab_zip:
             st.markdown("""
-司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）提供全臺灣各級法院按月份打包之裁判書資料集（ZIP 格式）：
+司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）所提供之歷史各級法院按月份打包之裁判書資料集（常以 **RAR** 或 **ZIP** 壓縮格式封裝，內部為各裁判書之 JSON 檔案）：
 
-#### 📥 如何在司法院官網取得裁判 ZIP 檔？
-1. 前往 **[司法院資料開放平臺 (opendata.judicial.gov.tw)](https://opendata.judicial.gov.tw/)** 並註冊/登入免費會員。
-2. 進入 **「資料集下載」** 或 **「裁判書資料專區」**。
-3. 選擇所需之年度與月份（例如：`108年` 或最新月份打包檔，點擊下載對應之 `.zip` 壓縮檔）。
-4. 下載後**無需手動解壓**，直接拖曳下方上傳框，系統會自動解壓內含之 JSON 裁判檔並秒級入庫！
+#### 📥 如何在司法院官網取得裁判打包檔？
+1. 前往 **[司法院資料開放平臺 (opendata.judicial.gov.tw)](https://opendata.judicial.gov.tw/)** 並註冊/登入會員。
+2. 進入 **「資料集下載」** ➔ **「裁判書資料專區」**。
+3. 選擇所需之年度與月份（點擊下載對應之 `.rar` 或 `.zip` 壓縮檔）。
+4. 下載後**無需手動解壓**，直接上傳下方檔案框，系統已內建專用解壓核心，自動解壓縮內含之 JSON 裁判檔並秒級入庫！
 
-> 💡 **若手邊暫無 ZIP 檔案？**  
-> 完全不影響使用！請直接在上方輸入字號（如 `最高行108上625`、`最高行110上15`），系統會立即產生**標準案號與官方判決全文直通連結**，點擊複製全文貼入上方文字框，AI 會在 3 秒內自動完成專業級六大精髓與 IRAC 深度萃取！
+> 💡 **若手邊暫無 RAR/ZIP 檔案？**  
+> 完全不影響使用！請直接在上方輸入字號縮寫（如 `最高行108上625`、`最高行110上15`、`108台上大1719裁`），系統會立即產生**標準案號與官方判決全文直通連結**，點擊複製全文貼入上方文字框，AI 會在 3 秒內自動完成六大精髓與 IRAC 深度萃取！
 """)
-            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip 或 .json)：", type=["zip", "json"], key="uploader_opendata_zip")
+            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.rar, .zip, .7z 或 .json)：", type=["rar", "zip", "7z", "json"], key="uploader_opendata_zip")
 
         with op_tab_api:
             st.markdown("""
 #### 🌐 司法院官方 API (RESTful) 直連登入同步
-依照司法院官方 API 規範，只要輸入您在司法院資料開放平臺註冊之**帳號**與**密碼**，系統將自動向 `https://data.judicial.gov.tw/jdg/api/Auth` 換取官方驗證 Token，並直接透過官方 API 調閱最新裁判書存入本地 Google Drive 大庫！
+依照司法院官方 API 規範，只要輸入您在司法院資料開放平臺註冊之**帳號**與**密碼**，系統將自動向 `https://data.judicial.gov.tw/jdg/api/Auth` 換取官方驗證 Token，並直接透過官方 API 調閱最新裁判書存入本地大庫！
 
-*(註：司法院 API 伺服器依官方規定每日於凌晨 0 時至 6 時提供清單與大量下載服務)*
+> ⚠️ **官方連線與憑證注意**：  
+> 1. 司法院伺服器之 SSL 憑證缺少 Subject Key Identifier，系統已自動啟用安全略過模式確保暢通連線。  
+> 2. 司法院官方 API 規範：伺服器每日僅於**凌晨 0 時至 6 時**提供大量下載與清單服務，其餘時段司法院端可能限制訪問。
 """)
             col_api_u, col_api_p = st.columns(2)
             with col_api_u:
@@ -3910,16 +3912,27 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
             if st.button("🚀 立即解析並擴充至本機裁判庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
                 with st.spinner(f"正在深度解壓並解析【{uploaded_op_file.name}】中的裁判書..."):
                     try:
-                        from import_judicial_opendata import parse_official_opendata_record, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
-                        import zipfile, json
+                        from import_judicial_opendata import parse_official_opendata_record, extract_archive_to_temp, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
+                        import tempfile, json
+                        from pathlib import Path
                         
                         incoming_records = []
-                        if uploaded_op_file.name.endswith(".zip"):
-                            with zipfile.ZipFile(uploaded_op_file) as zf:
-                                for fn in zf.namelist():
-                                    if fn.endswith(".json"):
+                        fn_lower = uploaded_op_file.name.lower()
+
+                        if fn_lower.endswith((".zip", ".rar", ".7z")):
+                            with tempfile.TemporaryDirectory() as td:
+                                archive_tmp = Path(td) / uploaded_op_file.name
+                                with open(archive_tmp, "wb") as f_up:
+                                    f_up.write(uploaded_op_file.read())
+                                
+                                ext_dir = Path(td) / "extracted"
+                                ext_dir.mkdir(parents=True, exist_ok=True)
+                                
+                                ok = extract_archive_to_temp(archive_tmp, ext_dir)
+                                if ok:
+                                    for jf_path in ext_dir.glob("**/*.json"):
                                         try:
-                                            with zf.open(fn) as jf:
+                                            with open(jf_path, "r", encoding="utf-8") as jf:
                                                 c = json.load(jf)
                                                 items = c if isinstance(c, list) else [c]
                                                 for it in items:
@@ -3928,7 +3941,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                                                         incoming_records.append(p)
                                         except Exception:
                                             continue
-                        elif uploaded_op_file.name.endswith(".json"):
+                        elif fn_lower.endswith(".json"):
                             c = json.load(uploaded_op_file)
                             items = c if isinstance(c, list) else [c]
                             for it in items:
@@ -3937,7 +3950,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                                     incoming_records.append(p)
                         
                         if not incoming_records:
-                            st.warning("檔案中未找到符合司法院標準欄位之裁判書 JSON。")
+                            st.warning("檔案中未找到符合司法院標準欄位之裁判書 JSON（請確認壓縮檔內含有裁判書 .json 檔案）。")
                         else:
                             # 讀取現有大庫並合併
                             with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
