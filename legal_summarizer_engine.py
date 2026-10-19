@@ -162,7 +162,7 @@ def match_term_in_legal_text(term: str, text: str) -> bool:
         return True
     if term_lower in t_lower:
         return True
-    
+
     if re.search(r'\d+', term_lower):
         norm_t = normalize_legal_search_text(text)
         norm_term = normalize_legal_search_text(term)
@@ -170,7 +170,7 @@ def match_term_in_legal_text(term: str, text: str) -> bool:
         norm_term_clean = re.sub(r'(?:年度|年|第|號|字)', '', norm_term)
         if norm_term_clean and norm_term_clean in norm_t_clean:
             return True
-            
+
     return False
 
 

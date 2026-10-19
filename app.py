@@ -1793,37 +1793,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
         st.subheader("⚖️ 權威法學資料庫 規格裁判書多維專業檢索系統")
         st.caption("完整比照「權威法學資料庫」專業裁判書查詢規格，支援布林邏輯運算（＆、＋、－、( )），與法院體系、民國年度 (jud_year)、常用字別 (sel_judword)、裁判案號 (jud_no)、裁判案由 (jt)、主文/心證 (jmain/txtopinion)、案件爭點 (txtargument)、相關法條 (lc1a/lc1b) 全維度交叉篩選。")
 
-        # 1. 快速載入經典檢索範本
-        st.markdown("##### 💡 經典專業法學庫檢索條件一鍵快選（含布林精準範本）：")
-        lb_presets = [
-            ("108 台上大 1719 (借名處分有權說)", "🏛️ 最高法院 (終審法院)", "108", "台上大", "1719", "借名登記", "有權處分", "", ""),
-            ("布林範本 (借名＋信託＆1719－善意)", "🏛️ 最高法院 (終審法院)", "", "", "", "借名登記 ＋ 信託", "1719 － 善意受讓", "", ""),
-            ("111 憲判字第 16 號 (警察臨檢救濟)", "🏛️ 憲法法院系統", "111", "憲判", "16", "警察職權", "正當法律程序", "臨檢救濟", "憲法第8條"),
-            ("109 台上大 908 (侵權純經濟損失)", "🏛️ 最高法院 (終審法院)", "109", "台上大", "908", "損害賠償", "純經濟上損失", "過失侵權", "民法第184條"),
-            ("臺南地院 106 亡 40 (重大災難死亡宣告)", "🏛️ 地方法院 (一審事實審)", "106", "亡", "40", "宣告死亡", "特別災難", "失蹤期間", "民法第8條"),
-            ("108 台上大 897 (保險法 64 與民法 92)", "🏛️ 最高法院 (終審法院)", "108", "台上大", "897", "給付保險金", "解除契約", "詐欺撤銷", "保險法第64條")
-        ]
-        p_row1 = st.columns(3)
-        p_row2 = st.columns(3)
-        for p_idx, (p_lbl, p_ct, p_yr, p_wd, p_no, p_cause, p_hold, p_arg, p_law) in enumerate(lb_presets):
-            target_col = p_row1[p_idx] if p_idx < 3 else p_row2[p_idx - 3]
-            with target_col:
-                if st.button(f"📌 {p_lbl}", key=f"btn_lb_preset_{p_idx}", use_container_width=True):
-                    st.session_state["lb_court_system"] = p_ct
-                    st.session_state["lb_input_year"] = p_yr
-                    st.session_state["lb_sel_jword"] = p_wd if p_wd in LAWBANK_COMMON_CASE_WORDS else "全部字別 (不限)"
-                    st.session_state["lb_input_word"] = p_wd
-                    st.session_state["lb_input_num"] = p_no
-                    st.session_state["lb_input_cause"] = p_cause
-                    st.session_state["lb_input_opinion"] = p_hold
-                    st.session_state["lb_input_arg"] = p_arg
-                    st.session_state["lb_input_statute"] = p_law
-                    st.session_state["lb_did_search"] = True
-                    st.rerun()
-
-        st.markdown("---")
-
-        # 2. 專業法學庫檢索表單
+        # 專業法學庫檢索表單
         col_c1, col_c2 = st.columns([1.5, 1])
         with col_c1:
             court_opts = list(LAWBANK_COURTS_TAXONOMY.keys())
@@ -1978,31 +1948,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
         st.subheader("⚡ 極速全域熱搜 極速熱搜與全國法學資料庫矩陣")
         st.caption("比照「法學實戰檢索」秒級熱搜與全域跨庫導航，支援高頻爭點晶片快選、雙向自然語言搜尋、本機 1,256 筆裁判與六法法條即時命中，並跨庫直通全國 8 大權威司法與法學文獻系統！")
 
-        # 法學檢索熱搜晶片
-        st.markdown("##### 🔥 法學檢索熱搜爭點與標籤快選（點擊直接秒速搜尋）：")
-        lp_hot_tags = [
-            "民法 184 (侵權行為)", "釋字 748 (同性婚姻)", "111 憲判字第 16 號 (臨檢救濟)",
-            "108 台上大 1719 (借名處分)", "109 台上大 908 (純經濟損失)", "刑法 19 (原因自由行為)",
-            "刑法 339 (詐欺取財罪)", "民法 179 (不當得利)", "民訴 277 (舉證責任分配)",
-            "刑訴 158-4 (證據排除法則)", "公司法 185 (重大營業行為)", "保險法 64 (據實說明義務)",
-            "民法 87 (通謀虛偽意思表示)", "行政程序法 117 (違法處分撤銷)", "刑法 31 (共同正犯與身分犯)", "民法 244 (撤銷詐害債權)"
-        ]
-
-        cols_per_row = 4
-        for r_i in range(0, len(lp_hot_tags), cols_per_row):
-            t_cols = st.columns(cols_per_row)
-            for c_i in range(cols_per_row):
-                tag_idx = r_i + c_i
-                if tag_idx < len(lp_hot_tags):
-                    tag_name = lp_hot_tags[tag_idx]
-                    with t_cols[c_i]:
-                        if st.button(f"🏷️ {tag_name}", key=f"btn_lp_tag_{tag_idx}", use_container_width=True):
-                            clean_tag = re.sub(r'[\(\)（）]', '', tag_name)
-                            st.session_state["lp_search_query"] = clean_tag
-                            st.session_state["lp_exec_search"] = True
-                            st.rerun()
-
-        st.markdown("---")
+        # 極速全域搜尋列
 
         # 法學檢索風格搜尋列
         cur_lp_val = st.session_state.get("lp_search_query", "")
@@ -2143,28 +2089,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
         st.subheader("🌿 裁判審級更迭與歷審脈絡鏈 (JudgementChain 審級溯源專區)")
         st.caption("完整比照「審級脈絡溯源系統」獨家專利之『歷審裁判鏈 (Judgement History Pipeline)』！自動溯源地方法院事實審 ➔ 高等法院事實/上訴審 ➔ 最高法院法律審 ➔ 大法庭終局定錨 / 憲法法庭，精準剖析各審級裁判見解之翻轉與定錨、法律攻防爭點、區別對比矩陣與司律二試上位卷 IRAC 開標示範！")
 
-        # 1. 快速挑選指標性審級更迭裁判
-        st.markdown("##### 💡 司律必考經典歷審脈絡與見解逆轉指標案件（點選一鍵深度剖析）：")
-        hist_presets = [
-            ("108 台上大 1719 (借名處分有權說)", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定"),
-            ("111 憲判字第 16 號 (警察臨檢救濟)", "憲法法庭 111年憲判字第16號判決"),
-            ("109 台上大 908 (侵權純經濟損失)", "最高法院 109 年度台上大字第 908 號民事大法庭裁定"),
-            ("臺南地院 106 亡 40 (重大災難死亡宣告)", "臺灣臺南地方法院106年度亡字第40號民事裁定"),
-            ("108 台上大 897 (保險法64與民法92)", "最高法院 108 年度台上大字第 897 號民事大法庭裁定"),
-            ("108 台上大 3594 (毒品販賣既未遂標準)", "最高法院 108 年度台上大字第 3594 號刑事大法庭裁定")
-        ]
-        h_row1 = st.columns(3)
-        h_row2 = st.columns(3)
-        for h_i, (h_lbl, h_cid) in enumerate(hist_presets):
-            target_col = h_row1[h_i] if h_i < 3 else h_row2[h_i - 3]
-            with target_col:
-                if st.button(f"📌 {h_lbl}", key=f"btn_hist_preset_{h_i}", use_container_width=True):
-                    st.session_state["target_history_case_id"] = h_cid
-                    st.session_state.pop("case_history_result", None)
-                    st.session_state["history_auto_exec"] = True
-                    st.rerun()
 
-        st.markdown("---")
 
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
         cur_hist_val = st.session_state.get("target_history_case_id", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
@@ -2239,16 +2164,16 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             st.subheader(f"🌿 【{h_cid}】裁判審級更迭與歷審脈絡鏈報告")
 
             # 視覺化審級節點卡片流 (Visual Instance Pipeline Flow)
-            if p_info and p_info.get("chain"):
-                st.markdown(f"#### 🏛️ 審級更迭演進軌跡：【{p_info.get('topic')}】")
-                chain_nodes = p_info.get("chain", [])
-                for n_idx, node in enumerate(chain_nodes):
-                    inst = node.get("instance", "")
+            stages = (p_info.get("timeline_stages") or p_info.get("chain")) if p_info else None
+            if p_info and stages:
+                st.markdown(f"#### 🏛️ 審級更迭演進軌跡：【{p_info.get('topic') or p_info.get('title')}】")
+                for n_idx, node in enumerate(stages):
+                    inst = node.get("stage") or node.get("instance", "")
                     court_name = node.get("court", "")
                     c_no = node.get("case_no", "")
-                    holding_txt = node.get("holding", "")
-                    res_txt = node.get("result", "")
-                    reversal = node.get("reversal", False)
+                    holding_txt = node.get("holding_summary") or node.get("holding", "")
+                    res_txt = node.get("ruling") or node.get("result", "")
+                    reversal = "逆轉" in inst or "逆轉" in res_txt or "改判" in res_txt or node.get("reversal", False)
 
                     reversal_badge = "🚨 【見解逆轉改判！】" if reversal else "✅ 【見解推進 / 定錨】"
 
@@ -2266,11 +2191,11 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
     </div>
 </div>
 """, unsafe_allow_html=True)
-                    if n_idx < len(chain_nodes) - 1:
+                    if n_idx < len(stages) - 1:
                         st.markdown("<div style='text-align: center; font-size: 1.3em; color: #888; margin: -2px 0;'>⬇️ <em>上訴審理 / 見解演進轉折</em></div>", unsafe_allow_html=True)
 
                 st.write("")
-                st.info(f"💡 **審級更迭分歧核心點**：\n{p_info.get('distinguishing_points')}")
+                st.info(f"💡 **審級更迭分歧核心點**：\n{p_info.get('distinguishing_insight') or p_info.get('distinguishing_points', '')}")
                 st.success(f"✍️ **司律上位卷作答策略**：\n{p_info.get('exam_strategy')}")
                 st.divider()
 
@@ -2358,21 +2283,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             if sel_preset_q_topic and sel_preset_q_topic != "-- 💡 快選此考科高頻核心爭點（點選自動帶入） --":
                 st.session_state["ai_query_input_text"] = available_sub_topics[sel_preset_q_topic]
 
-        # 專業布林邏輯精確搜尋範本快選
-        st.caption("💡 **專業布林邏輯精確搜尋**：支援 `＆`（且）、`＋`（或）、`－`（排除）、`( )`（優先組合）：")
-        b_c1, b_c2, b_c3 = st.columns(3)
-        with b_c1:
-            if st.button("📌 (借名登記 ＋ 信託) ＆ (108台上大1719 － 善意)", key="btn_bool_ex1", use_container_width=True):
-                st.session_state["ai_query_input_text"] = "(借名登記 ＋ 信託) ＆ (108台上大字1719 － 善意受讓)"
-                st.rerun()
-        with b_c2:
-            if st.button("📌 (洗錢防制法 ＋ 詐欺) ＆ (人頭帳戶 － 幫助犯)", key="btn_bool_ex2", use_container_width=True):
-                st.session_state["ai_query_input_text"] = "(洗錢防制法 ＋ 詐欺) ＆ (人頭帳戶 － 幫助犯)"
-                st.rerun()
-        with b_c3:
-            if st.button("📌 (民法184 ＋ 侵權) ＆ (純經濟損失 － 故意)", key="btn_bool_ex3", use_container_width=True):
-                st.session_state["ai_query_input_text"] = "(民法184 ＋ 侵權行為) ＆ (純粹經濟上損失 － 故意)"
-                st.rerun()
+
 
         current_query_val = st.session_state.get("ai_query_input_text", "")
         query_text = st.text_area(
@@ -2481,8 +2392,8 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["app_mode"] = mode_options[3]
                     st.rerun()
 
-    # ==================== 子功能 5: 📜 AI 判決摘要精析 ====================
-    elif m5_active_tab == m5_sub_modes[4]:
+    # ==================== 子功能 4: 📜 AI 判決摘要精析 ====================
+    elif m5_active_tab == m5_sub_modes[3]:
         st.subheader("📜 AI 判決深度摘要精析")
         st.caption("精準解構各級法院裁判書，嚴格提煉六大核心結構：【主文】、【案例事實】、【案件爭點】、【雙方所述】、【法院心證】及【個人評析與相似判決對照】。")
 
@@ -2504,7 +2415,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state.pop("judgment_summary_result", None)
 
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
-        
+
         current_case_id_val = st.session_state.get("target_summary_case_id", "")
         default_tag_idx = 0
         if current_case_id_val:
@@ -2597,7 +2508,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
 
             st.divider()
             st.markdown("##### 🔗 本判決深度應用與跨功能聯動：")
-            ac1, ac2, ac3, ac4 = st.columns(4)
+            ac1, ac2, ac3 = st.columns(3)
             with ac1:
                 st.download_button(
                     label=f"💾 下載本案 AI 摘要 (.md)",
@@ -2607,16 +2518,11 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     use_container_width=True
                 )
             with ac2:
-                if st.button("🌿 溯源歷審脈絡鏈", use_container_width=True, key="btn_sum_to_hist"):
-                    st.session_state["target_history_case_id"] = s_id
-                    st.session_state["m5_sub_mode_idx"] = 2
+                if st.button("🔄 帶入此判決進行【案例橫向比對】", use_container_width=True, key="btn_pass_to_cmp"):
+                    st.session_state["target_compare_case_a"] = s_id
+                    st.session_state["m5_sub_mode_idx"] = 4
                     st.rerun()
             with ac3:
-                if st.button("🔄 帶入【案例橫向比對】", use_container_width=True, key="btn_pass_to_cmp"):
-                    st.session_state["target_compare_case_a"] = s_id
-                    st.session_state["m5_sub_mode_idx"] = 5
-                    st.rerun()
-            with ac4:
                 if st.button("📝 帶入試卷評分作為評分標準", use_container_width=True, key="btn_pass_sum_to_eval"):
                     st.session_state["question_text_content"] = f"【本案事實與法律爭點依據】：\n裁判字號：{s_id}\n請綜合上述爭議事實，分析當事人間之法律關係並予評析。"
                     st.session_state["rubric_text_content"] = s_md
@@ -2624,27 +2530,10 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["app_mode"] = mode_options[0]
                     st.rerun()
 
-    # ==================== 子功能 6: 🔄 案例橫向比對與分歧研析 ====================
-    elif m5_active_tab == m5_sub_modes[5]:
+    # ==================== 子功能 5: 🔄 案例橫向比對與分歧研析 ====================
+    elif m5_active_tab == m5_sub_modes[4]:
         st.subheader("🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)")
         st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
-
-        # 快速帶入經典對抗案例組
-        st.markdown("##### 💡 經典爭議對照裁判組（一鍵載入比對）：")
-        preset_pairs = [
-            ("借名處分有權 vs 無權", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定", "最高法院 96 年度台上字第 2851 號判決", "借名登記出名人未經同意處分標的物之效力"),
-            ("臨檢盤查救濟途徑", "憲法法庭 111年憲判字第16號判決", "司法院釋字第535號解釋", "警察職權行使法臨檢盤查與異議救濟正當法律程序"),
-            ("侵權純經濟損失保護", "最高法院 109 年度台上大字第 908 號民事大法庭裁定", "臺灣高等法院 102 年度上易字第 586 號判決", "民法第184條純粹經濟上損失之保護要件與過失涵攝"),
-            ("死亡宣告特別災難要件", "臺灣臺南地方法院106年度亡字第40號", "最高法院110年度台上字第4015號", "民法第8條特別災難失蹤期間起算與公證力要件")
-        ]
-        p_cols = st.columns(len(preset_pairs))
-        for pp_idx, (pp_lbl, pp_a, pp_b, pp_top) in enumerate(preset_pairs):
-            with p_cols[pp_idx]:
-                if st.button(f"⚖️ {pp_lbl}", key=f"btn_preset_cmp_{pp_idx}", use_container_width=True):
-                    st.session_state["target_compare_case_a"] = pp_a
-                    st.session_state["target_compare_case_b"] = pp_b
-                    st.session_state["target_compare_topic"] = pp_top
-                    st.session_state.pop("case_comparison_result", None)
 
         all_precedents_tags = ["-- 📚 從本機 1,256 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
 
@@ -2756,30 +2645,17 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")
     st.caption("完美對標權威法學庫 2025/2026 最新主推「AI摘要」旗艦功能！支援數萬字長篇裁判書、最高法院大法庭裁定、憲法法庭判決、金管會/經濟部/法務部部會長篇函釋，一鍵秒級萃取六大標準化法學精髓！")
     st.divider()
-
-    st.markdown("##### 💡 經典權威判解與重大行政函釋一鍵快選（即刻體驗）：")
-    d_cols = st.columns(len(BUILTIN_LANDMARK_DOCS))
-    for d_idx, doc_item in enumerate(BUILTIN_LANDMARK_DOCS):
-        with d_cols[d_idx]:
-            d_short_label = doc_item['doc_type'].split(' ')[1] if ' ' in doc_item['doc_type'] else doc_item['doc_type']
-            if st.button(f"📌 {d_short_label}", key=f"btn_sum_doc_{d_idx}", use_container_width=True):
-                st.session_state["sum_input_title"] = doc_item["title"]
-                st.session_state["sum_input_type"] = doc_item["doc_type"]
-                st.session_state["sum_input_text"] = doc_item["text"]
-                st.toast(f"已載入：{doc_item['title'][:15]}...", icon="📜")
-                st.rerun()
-
     col_d1, col_d2 = st.columns([3, 1])
     with col_d1:
-        default_d_title = st.session_state.get("sum_input_title", BUILTIN_LANDMARK_DOCS[0]["title"])
-        doc_title_in = st.text_input("文書名稱 / 案號字號：", value=default_d_title, key="txt_sum_doc_title")
+        default_d_title = st.session_state.get("sum_input_title", "")
+        doc_title_in = st.text_input("文書名稱 / 案號字號：", value=default_d_title, placeholder="例如：最高法院 108 年度台上大字第 1719 號、經濟部經商字第 10802422030 號函...", key="txt_sum_doc_title")
     with col_d2:
         type_options = ["🏛️ 最高法院/高院裁判書", "📜 憲法法庭判決/釋字", "📑 中央部會行政函釋 (經濟部/金管會)", "📋 行政訴願決定書", "🎓 法學期刊名家評釋論文"]
         default_d_type = st.session_state.get("sum_input_type", type_options[0])
         type_idx = type_options.index(default_d_type) if default_d_type in type_options else 0
         doc_type_in = st.selectbox("文書種類：", type_options, index=type_idx, key="sel_sum_doc_type")
 
-    default_d_text = st.session_state.get("sum_input_text", BUILTIN_LANDMARK_DOCS[0]["text"])
+    default_d_text = st.session_state.get("sum_input_text", "")
     doc_full_text = st.text_area(
         "請貼上欲進行 AI 摘要之長篇裁判全文、大法庭裁定理由或主管機關行政函釋：",
         value=default_d_text,
@@ -2962,13 +2838,13 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             sel_agency = st.selectbox("主管機關篩選：", agencies_filter, key="browse_agency_filter")
         with c_a2:
             search_ruling_kw = st.text_input("輸入函釋字號、法條或關鍵字（如：大同條款、生成式AI、內線交易、合理保密措施...）：", key="browse_ruling_kw")
-            
+
         filtered_rulings = all_rulings_pool
         if sel_agency != "全部機關":
             filtered_rulings = [r for r in filtered_rulings if sel_agency in r.get("agency", "")]
         if search_ruling_kw:
             filtered_rulings = [r for r in filtered_rulings if search_ruling_kw in r.get("doc_number", "") or search_ruling_kw in r.get("title", "") or search_ruling_kw in r.get("holding", "") or search_ruling_kw in r.get("law_name", "")]
-            
+
         st.caption(f"共篩選出 **{len(filtered_rulings)} 筆** 主管機關行政函釋：")
         with st.container(height=350):
             for r in filtered_rulings:
@@ -2994,11 +2870,11 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
             anno = get_article_annotations(law_name=lname, article_no=ano, content=content)
             precedents = anno.get("precedents", [])
             notes = anno.get("notes", [])
-            
+
             # 整合預載之核心法規命令與六法中所有關聯命令（包含公司登記辦法、公開發行公司董事會議事辦法等）
             raw_key_regs = get_law_key_regulations(lname)
             raw_mapped_orders = anno.get("orders", [])
-            
+
             key_regulations = []
             seen_reg_names = set()
             for r in raw_key_regs:
@@ -3006,7 +2882,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                 if r_name and r_name not in seen_reg_names:
                     seen_reg_names.add(r_name)
                     key_regulations.append(r)
-            
+
             for o in raw_mapped_orders:
                 o_name = o.get("name")
                 if o_name and o_name not in seen_reg_names:
@@ -3070,25 +2946,19 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                             if p.get('exam_application_hint'):
                                 st.success(f"✍️ **國考作答指示：** {p.get('exam_application_hint')}")
 
-                            c_p0, c_p1, c_p2 = st.columns([1.5, 1.4, 1.4])
-                            with c_p0:
-                                if st.button(f"🌿 審級更迭脈絡", key=f"btn_tab_hist_{idx}_{p_idx}", use_container_width=True):
-                                    st.session_state["target_history_case_id"] = p.get("case_id", "")
-                                    st.session_state["m5_sub_mode_idx"] = 2
-                                    st.session_state["app_mode"] = mode_options[4]
-                                    st.rerun()
+                            c_p1, c_p2 = st.columns(2)
                             with c_p1:
                                 if st.button(f"⚡ 產出本判決 AI 深度摘要", key=f"btn_tab_sum_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_summary_case_id"] = p.get("case_id", "")
                                     st.session_state["target_summary_subject"] = lname
-                                    st.session_state["m5_sub_mode_idx"] = 4
+                                    st.session_state["m5_sub_mode_idx"] = 3
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             with c_p2:
                                 if st.button(f"🔄 帶入進行案例橫向比對", key=f"btn_tab_cmp_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_compare_case_a"] = p.get("case_id", "")
                                     st.session_state["target_compare_topic"] = f"{lname} {ano} 相關裁判見解分歧"
-                                    st.session_state["m5_sub_mode_idx"] = 5
+                                    st.session_state["m5_sub_mode_idx"] = 4
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             st.markdown("---")
@@ -3105,13 +2975,13 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                             reg_desc = reg["desc"]
                             art_count = reg.get("article_count", 0)
                             reg_details = reg.get("details")
-                            
+
                             badge_count = f"共 {art_count} 條全文" if art_count > 0 else "施行細則"
                             with st.expander(f"📘 《{reg_name}》 (`{reg_type}`) ｜ 📚 {badge_count}", expanded=(r_idx == 0 and idx == 0)):
                                 st.markdown(f"**規範主旨/適用範圍**：\n{reg_desc}")
                                 if reg.get("key_articles_hint"):
                                     st.info(f"💡 **國考與實務核心考點條文**：\n{reg['key_articles_hint']}")
-                                
+
                                 raw_arts = (reg_details.get("articles") if reg_details else None) or reg.get("articles") or []
                                 arts = []
                                 for a in raw_arts:
@@ -3122,14 +2992,14 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
 
                                 if arts:
                                     st.markdown(f"##### 📖 《{reg_name}》條文全文點閱系統 (共收錄 {len(arts)} 條)")
-                                    
+
                                     read_mode = st.radio(
                                         f"條文檢視模式 ({reg_name})：",
                                         ["🔍 依條號選取詳細研讀", "📜 展開瀏覽全法規所有條文", "🔎 條文內關鍵字搜尋"],
                                         horizontal=True,
                                         key=f"reg_mode_{idx}_{r_idx}"
                                     )
-                                    
+
                                     if read_mode == "🔍 依條號選取詳細研讀":
                                         art_options = [f"{a['no']} - {a['content'][:35]}..." if len(a['content']) > 35 else f"{a['no']} - {a['content']}" for a in arts]
                                         chosen_art_str = st.selectbox(
@@ -3158,7 +3028,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                                 st.markdown("---")
                                         else:
                                             st.caption("請輸入關鍵字以即時過濾法規命令條文。")
-                                
+
                                 # 跳轉與外鏈按鈕列
                                 btn_col1, btn_col2 = st.columns([1, 1])
                                 with btn_col1:
@@ -3176,7 +3046,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                         st.link_button(f"🌐 前往全國法規資料庫官方查看《{reg_name}》", reg_details["url"])
                     else:
                         st.info("此法規母法目前無直接對應之核心法規命令，或直接以母法本體為規範依據。")
-                        
+
                     # 任意調閱全國 10,452 部行政命令任意法規
                     with st.expander(f"🔍 任意調閱全台 10,452 部其他行政法規命令與施行細則全文 (ChOrder.json)"):
                         all_orders_map = get_chorder_regulations_map()
@@ -3209,7 +3079,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                             r_holding = r_item.get("holding", "")
                             r_analysis = r_item.get("content_analysis", "")
                             r_hint = r_item.get("exam_point_hint", "")
-                            
+
                             st.markdown(f"##### 🏢 【{agency_badge}】`{doc_no}` ｜ 📅 {r_date}")
                             st.markdown(f"**🌟 函釋主旨**：**{r_title}**")
                             st.info(f"**核心要旨（Holding）：**\n{r_holding}")

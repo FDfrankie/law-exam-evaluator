@@ -1103,6 +1103,127 @@ class LegalIssueQueryEngine:
             }
         }
 
+    def generate_case_history_timeline(
+        self,
+        case_id: str,
+        case_text: str = ""
+    ) -> Dict[str, Any]:
+        """
+        七法 (Lawsnote) 裁判審級更迭與歷審脈絡鏈 (Judgement History / Instance Pipeline)：
+        精準溯源裁判於各級法院之演進歷程：
+        1. 一審事實審 (地方法院): 兩造起訴與答辯、事實認定、一審裁判主文。
+        2. 二審事實審/上訴審 (高等法院): 二審論理、是否逆轉或變更見解、爭點發酵。
+        3. 三審法律審 (最高法院): 上訴第三審法律爭議、違背法令指摘、廢棄發回或自為判決。
+        4. 大法庭終局裁定 / 憲法法庭判決: 統一見解、廢棄舊判例之定錨效力。
+        5. 歷審見解更迭對比 (Distinguishing & Evolution Matrix)。
+        6. 國考二試上位卷 IRAC 開標與作答示範。
+        """
+        preset_info = get_precedent_history_chain(case_id)
+        local_rec = get_precedent_by_id(case_id)
+
+        preset_context = ""
+        if preset_info:
+            preset_context = f"""
+【權威歷審脈絡鏈已知數據】：
+- 案號與主題：{preset_info.get('case_id')} ({preset_info.get('topic') or preset_info.get('title')})
+- 歷審審級路徑：
+"""
+            stages = preset_info.get("timeline_stages") or preset_info.get("chain", [])
+            for node in stages:
+                stg = node.get("stage") or node.get("instance", "")
+                c_no = node.get("case_no", "")
+                ct = node.get("court", "")
+                hold = node.get("holding_summary") or node.get("holding", "")
+                rul = node.get("ruling") or node.get("result", "")
+                preset_context += f"  * [{stg}] {ct} `{c_no}` - {hold} (結果: {rul})\n"
+            insight = preset_info.get("distinguishing_insight") or preset_info.get("distinguishing_points", "")
+            preset_context += f"- 審級更迭分歧核心：{insight}\n"
+            preset_context += f"- 國考上位卷作答策略：{preset_info.get('exam_strategy')}\n"
+
+        local_context = ""
+        if local_rec:
+            local_context = f"""
+【本機資料庫裁判摘要】：
+- 案號：{local_rec.get('case_id')} ({local_rec.get('court')} {local_rec.get('level')})
+- 爭點領域：{local_rec.get('title')} ({local_rec.get('sub_category')})
+- 核心要旨：{local_rec.get('holding')}
+- 引用法規：{', '.join(local_rec.get('laws_cited', []))}
+- 學說評析：{local_rec.get('scholarly_views')}
+- 國考作答提示：{local_rec.get('exam_application_hint')}
+"""
+
+        user_text_context = ""
+        if case_text.strip():
+            user_text_context = f"\n【使用者提供之裁判內容節錄】：\n{case_text.strip()[:6000]}\n"
+
+        prompt = f"""
+你是一位台灣「司法院前最高法院研究法官」兼「律師司法官高等考試權威講座名師」，精通台灣民刑事及公法訴訟各級法院審級流轉與見解更迭。
+現在請針對以下司法裁判進行【七法 (Lawsnote) 規格 裁判審級更迭與歷審脈絡鏈 (Judgement History Pipeline)】的深度剖析：
+
+目標裁判：【{case_id}】
+
+{preset_context}
+{local_context}
+{user_text_context}
+
+請嚴謹、精確、體系分明地輸出以下七大結構化區塊：
+
+### 一、🏛️ 裁判基本資訊與定錨位階
+- 案件字號、承審法院、所屬程序（民事/刑事/行政/憲法）、裁判時點。
+- 本裁判於司法實務體系中的定位（如：最高法院大法庭裁定、憲法法庭判決、最高法院具參考價值裁判）。
+
+### 二、🌿 裁判審級更迭脈絡圖 (Instance Evolution Pipeline)
+請以清晰的 ASCII 或 Markdown 流程呈現案件自起訴至終局裁判的審級路徑，例如：
+`【一審事實審：臺灣ＯＯ地方法院】 ➔ 【二審事實審：臺灣高等法院（見解是否逆轉）】 ➔ 【三審法律審：最高法院】 ➔ 【大法庭終局定錨 / 憲法法庭】`
+
+### 三、🔍 歷審攻防與論理深度剖析
+1. **一審事實審（地方法院）**：
+   - 原告/檢察官起訴主張 vs 被告抗辯
+   - 一審法院認定之主要事實與判決結論
+2. **二審事實審 / 上訴審（高等法院）**：
+   - 上訴理由與攻防焦點
+   - 二審是否逆轉改判？其法律心證與事實認定之關鍵轉折點為何？
+3. **三審法律審（最高法院）**：
+   - 上訴第三審之違背法令指摘核心
+   - 最高法院各庭間過去見解是否有歧異？發回或自為判決之法理剖析
+4. **大法庭終局定錨 / 憲法法庭判決（若屬大法庭或憲判字）**：
+   - 為何提案大法庭？本案提案法律問題之精準文字
+   - 大法庭終局裁定主文與核心法理
+   - 是否廢棄或變更早期特定判例、決議？（明確指明被廢止之判例字號）
+
+### 四、⚖️ 審級更迭與各審級見解對比矩陣 (Distinguishing Table)
+請繪製 Markdown 對比表格：
+| 審級與法院 | 案號字號 | 裁判結果 | 法律見解與心證核心 | 關鍵轉折 / 歧異點 |
+| :--- | :--- | :--- | :--- | :--- |
+| 一審事實審 (地院) | ... | ... | ... | ... |
+| 二審上訴審 (高院) | ... | ... | ... | ... |
+| 三審法律審 (最高院) | ... | ... | ... | ... |
+| 大法庭 / 憲法法庭 | ... | ... | ... | ... |
+
+### 五、📚 學說論戰與實務評析
+- 學界主流（通說）對本案各審級判決之評價
+- 有力學說之批評反思與不同見解
+
+### 六、⚠️ 裁判有效性狀態與引用防禦警示
+- 🟢 現行有效主流見解 / 🟡 各庭見解歧異中 / 🔴 舊判例已遭大法庭廢棄（考生切勿援用）
+- 在訴訟實戰與國家考試中，如何避免誤用已廢止之舊見解
+
+### 七、✍️ 司律二試上位卷 IRAC 作答示範（開標與審級深度論述心法）
+- **開標示範**：如何俐落破題並引述大法庭字號
+- **爭點論述**：如何將「歷審爭議演進」作為上位卷加分亮點寫入考卷
+- **事實涵攝與結論**：示範具體涵攝事實之得分文句
+
+請直接輸出繁體中文 Markdown 報告，文字必須專業、權威，具備最高司法研究等級！
+"""
+        response_text = self._call_model(prompt)
+        return {
+            "case_id": case_id,
+            "preset_info": preset_info,
+            "local_rec": local_rec,
+            "markdown_result": response_text,
+            "external_search_urls": generate_judicial_search_urls(case_id)
+        }
+
     def unified_legal_search(
         self,
         query: str,
@@ -1114,7 +1235,8 @@ class LegalIssueQueryEngine:
         statute_target: str = "",
         case_year: str = "",
         case_word: str = "",
-        case_num: str = ""
+        case_num: str = "",
+        time_filter: str = "全部時間 (不限年份)"
     ) -> Dict[str, Any]:
         """
         全方位法學統一檢索樞紐：
@@ -1122,6 +1244,7 @@ class LegalIssueQueryEngine:
         1. 本地權威判解庫 (1,256 筆裁判/大法庭/憲判字/高院/筆記地院)
         2. 司律核心法條庫 (六法全書關聯條號)
         3. 外部審級脈絡 / 專業法學庫 / 司法院 30 年判決跨庫直連
+        4. 七法時間軸過濾滑桿 (time_filter)
         """
         clean_q = query.strip()
         precedents = search_local_precedents(
@@ -1135,7 +1258,8 @@ class LegalIssueQueryEngine:
             statute_target=statute_target,
             case_year=case_year,
             case_word=case_word,
-            case_num=case_num
+            case_num=case_num,
+            time_filter=time_filter
         )
 
         statute_query = statute_target.strip() or clean_q
