@@ -3898,6 +3898,71 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                 st.session_state["app_mode"] = mode_options[3]
                 st.rerun()
 
+    # 批次匯入司法院開放資料擴充大庫區塊
+    st.divider()
+    with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (Open Data ZIP/JSON) 至本機庫", expanded=False):
+        st.markdown("""
+司法院資料開放平臺（`opendata.judicial.gov.tw`）每月份提供全國各級法院裁判打包壓縮包（ZIP）。  
+您可以直接在此將下載好的 **ZIP 或 JSON 檔案** 上傳，系統將自動解析為標準裁判紀錄，並無縫併入本機裁判庫，讓全台裁判庫容量直接擴充至數萬至數十萬筆！
+""")
+        uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip 或 .json)：", type=["zip", "json"], key="uploader_opendata_zip")
+        if uploaded_op_file is not None:
+            if st.button("🚀 立即解析並擴充至本機裁判庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
+                with st.spinner(f"正在深度解壓並解析【{uploaded_op_file.name}】中的裁判書..."):
+                    try:
+                        from import_judicial_opendata import parse_official_opendata_record, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
+                        import zipfile, json
+                        
+                        incoming_records = []
+                        if uploaded_op_file.name.endswith(".zip"):
+                            with zipfile.ZipFile(uploaded_op_file) as zf:
+                                for fn in zf.namelist():
+                                    if fn.endswith(".json"):
+                                        try:
+                                            with zf.open(fn) as jf:
+                                                c = json.load(jf)
+                                                items = c if isinstance(c, list) else [c]
+                                                for it in items:
+                                                    p = parse_official_opendata_record(it)
+                                                    if p and p.get("case_id"):
+                                                        incoming_records.append(p)
+                                        except Exception:
+                                            continue
+                        elif uploaded_op_file.name.endswith(".json"):
+                            c = json.load(uploaded_op_file)
+                            items = c if isinstance(c, list) else [c]
+                            for it in items:
+                                p = parse_official_opendata_record(it)
+                                if p and p.get("case_id"):
+                                    incoming_records.append(p)
+                        
+                        if not incoming_records:
+                            st.warning("檔案中未找到符合司法院標準欄位之裁判書 JSON。")
+                        else:
+                            # 讀取現有大庫並合併
+                            with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
+                                cur_catalog = json.load(f)
+                            existing_ids = {x.get("case_id") for x in cur_catalog if x.get("case_id")}
+                            
+                            new_added = 0
+                            for rec in incoming_records:
+                                cid = rec.get("case_id")
+                                if cid and cid not in existing_ids:
+                                    cur_catalog.append(rec)
+                                    existing_ids.add(cid)
+                                    new_added += 1
+                            
+                            # 存檔
+                            with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
+                            with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
+                            
+                            st.success(f"🎉 成功擴充 {new_added:,} 筆裁判！本機裁判大庫總筆數已提升至：{len(cur_catalog):,} 筆！")
+                            st.rerun()
+                    except Exception as ie:
+                        st.error(f"開放資料匯入失敗: {ie}")
+
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
 elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)":
     st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")

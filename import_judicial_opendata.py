@@ -167,26 +167,139 @@ def import_scoring_standards_judgments() -> List[Dict[str, Any]]:
     return imported_list
 
 
-def import_opendata_zip(zip_path: Path) -> int:
-    """解壓並匯入司法院資料開放平台下載之 ZIP 壓縮包"""
-    if not zip_path.exists():
-        print(f"  ❌ 找不到指定的壓縮包: {zip_path}")
-        return 0
+def parse_official_opendata_record(data: dict) -> Optional[Dict[str, Any]]:
+    """
+    解析司法院資料開放平台官方標準 JSON 裁判物件：
+    欄位結構：
+    - JID: 例如 "TPAA,108,上,625,20191219,1"
+    - JYEAR: "108"
+    - JCASE: "上"
+    - JNO: "625"
+    - JDATE: "20191219"
+    - JTITLE: "區域計畫法"
+    - JFULL: "最高行政法院判決 108年度上字第625號..."
+    """
+    jid = data.get("JID") or data.get("jid") or ""
+    year = str(data.get("JYEAR") or data.get("year") or "").strip()
+    track = str(data.get("JCASE") or data.get("case") or "").strip()
+    no = str(data.get("JNO") or data.get("no") or "").strip()
+    title = data.get("JTITLE") or data.get("title") or "行政法事件"
+    jfull = data.get("JFULL") or data.get("jfull") or data.get("content") or ""
 
-    print(f"📦 正在解壓司法院 Open Data ZIP: {zip_path.name}...")
-    imported_count = 0
-    with zipfile.ZipFile(zip_path, 'r') as z:
-        for fname in z.namelist():
-            if fname.endswith(".json"):
-                try:
-                    with z.open(fname) as jf:
-                        j_data = json.load(jf)
-                        # 司法院標準 Open Data 格式支援
-                        # JID, JYEAR, JCASE, JNO, JDATE, JTITLE, JFULL
-                        pass
-                except Exception:
-                    continue
-    return imported_count
+    if not jfull and not (year and track and no):
+        return None
+
+    # 從 JFULL 或 JID 判斷審理法院
+    court = "最高法院"
+    if "最高行政" in jfull[:60] or jid.startswith("TPA"):
+        court = "最高行政法院"
+    elif "臺北高等行政" in jfull[:60] or "台北高等行政" in jfull[:60] or jid.startswith("TPB"):
+        court = "臺北高等行政法院"
+    elif "臺中高等行政" in jfull[:60] or "台中高等行政" in jfull[:60] or jid.startswith("TCB"):
+        court = "臺中高等行政法院"
+    elif "高雄高等行政" in jfull[:60] or jid.startswith("KSB"):
+        court = "高雄高等行政法院"
+    elif "智慧財產" in jfull[:60] or jid.startswith("IPC"):
+        court = "智慧財產及商業法院"
+    elif "最高法院" in jfull[:60] or jid.startswith("TPS"):
+        court = "最高法院"
+    elif "高等法院" in jfull[:60] or jid.startswith("TPH"):
+        court = "臺灣高等法院"
+    else:
+        m_c = re.search(r'^(臺灣[^\s0-9]+?法院|福建[^\s0-9]+?法院|最高[^\s0-9]+?法院|智慧財產[^\s0-9]+?法院)', jfull)
+        if m_c:
+            court = m_c.group(1)
+
+    # 判斷審級層級
+    level = "地方法院裁判"
+    if "最高行政法院" in court:
+        level = "最高行政法院裁判（終審）"
+    elif "最高法院" in court:
+        level = "最高法院裁判（終審）"
+    elif "高等行政" in court:
+        level = "高等行政法院裁判"
+    elif "高等法院" in court:
+        level = "高等法院裁判"
+    elif "智慧財產" in court:
+        level = "智慧財產法院裁判"
+
+    # 書類種類判定 (判決 / 裁定)
+    doc_type = "判決"
+    if "裁定" in jfull[:60]:
+        doc_type = "裁定"
+
+    # 組合權威 Case ID
+    case_id = f"{court} {year} 年度{track}字第 {no} 號{doc_type}"
+
+    # 主文節錄
+    m_main = re.search(r'主\s*文\s*[:：\n]([\s\S]+?)(?:理\s*由|事\s*實|\n\s*[一二三四五]、)', jfull)
+    holding_content = clean_text(m_main.group(1)) if m_main else ""
+    if not holding_content:
+        holding_content = jfull[:500].strip()
+
+    laws = re.findall(r'(?:行政訴訟法|行政程序法|區域計畫法|行政罰法|民法|刑法|公司法|民事訴訟法|刑事訴訟法|憲法)第[0-9\-]+條(?:之[0-9]+)?', jfull)[:6]
+
+    return {
+        "case_id": case_id,
+        "court": court,
+        "level": level,
+        "subject": "公法學與行政訴訟法" if "行政" in court else "法學專業實務",
+        "sub_category": title,
+        "date": data.get("JDATE", ""),
+        "title": f"{case_id}（{title}）",
+        "laws_cited": list(set(laws)),
+        "issue": f"【案件爭執主題】：{title}。涉及主管機關行政處分、法定構成要件與法律效果認定。",
+        "holding": holding_content[:800],
+        "scholarly_views": f"裁判重點論理：{jfull[300:900].strip()[:350]}..." if len(jfull) > 300 else "",
+        "exam_application_hint": f"二試或實務若遇【{title}】爭端，應引述本案判旨見解：「審查其處分是否具備法定構成要件與比例原則。」",
+        "full_text": jfull[:12000],
+        "source": "judicial_open_data"
+    }
+
+
+def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any]]:
+    """批量掃描並匯入目錄或 ZIP 檔中的司法院 Open Data JSON 裁判"""
+    imported = []
+    seen = set()
+
+    # 1. 處理目錄中的所有 JSON 檔案
+    if target_dir_or_zip.is_dir():
+        for j_path in target_dir_or_zip.glob("**/*.json"):
+            try:
+                with open(j_path, "r", encoding="utf-8") as f:
+                    content = json.load(f)
+                    if isinstance(content, list):
+                        items = content
+                    else:
+                        items = [content]
+                    for item in items:
+                        parsed = parse_official_opendata_record(item)
+                        if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
+                            imported.append(parsed)
+                            seen.add(parsed["case_id"])
+            except Exception:
+                continue
+
+    # 2. 處理 ZIP 檔案
+    elif target_dir_or_zip.is_file() and target_dir_or_zip.suffix.lower() == ".zip":
+        print(f"📦 正在解壓讀取 Open Data ZIP: {target_dir_or_zip.name}...")
+        with zipfile.ZipFile(target_dir_or_zip, 'r') as z:
+            for fname in z.namelist():
+                if fname.endswith(".json"):
+                    try:
+                        with z.open(fname) as jf:
+                            content = json.load(jf)
+                            items = content if isinstance(content, list) else [content]
+                            for item in items:
+                                parsed = parse_official_opendata_record(item)
+                                if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
+                                    imported.append(parsed)
+                                    seen.add(parsed["case_id"])
+                    except Exception:
+                        continue
+
+    print(f"  ✅ 成功解析官方 Open Data 裁判書 {len(imported):,} 筆！")
+    return imported
 
 
 def merge_and_save_all_precedents():
@@ -203,11 +316,15 @@ def merge_and_save_all_precedents():
 
     existing_cids = {x.get("case_id") for x in existing_items if x.get("case_id")}
 
-    print("\n🚀 [第 2 步] 匯入 scoring_standards 真實裁判庫...")
+    print("\n🚀 [第 2 步] 匯入 scoring_standards 真實裁判庫與 judicial_opendata 檔案夾...")
     new_records = import_scoring_standards_judgments()
 
+    # 掃描 OPENDATA_DUMP_DIR 中的所有 json / zip
+    opendata_records = import_opendata_folder_or_zip(OPENDATA_DUMP_DIR)
+    all_incoming = new_records + opendata_records
+
     added_count = 0
-    for r in new_records:
+    for r in all_incoming:
         cid = r.get("case_id")
         if cid and cid not in existing_cids:
             existing_items.append(r)
