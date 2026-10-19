@@ -85,6 +85,7 @@ def archive_uploaded_question(
         first_line = content.strip().splitlines()[0]
         clean_title = first_line[:30] + ("..." if len(first_line) > 30 else "")
 
+    q_file_path = QUESTIONS_DIR / f"{q_id}.json"
     record = {
         "question_id": q_id,
         "title": clean_title,
@@ -94,11 +95,13 @@ def archive_uploaded_question(
         "uploader": uploader,
         "source": source,
         "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "word_count": len(content.strip())
+        "uploaded_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "word_count": len(content.strip()),
+        "path": str(q_file_path),
+        "file_path": str(q_file_path)
     }
 
     # 1. 寫入獨立收藏檔案 (供備份與後續下載)
-    q_file_path = QUESTIONS_DIR / f"{q_id}.json"
     try:
         with open(q_file_path, "w", encoding="utf-8") as f:
             json.dump(record, f, ensure_ascii=False, indent=2)
@@ -136,8 +139,12 @@ def archive_uploaded_note(
     timestamp_str = now.strftime("%Y%m%d_%H%M%S")
     note_id = f"n_{uuid.uuid4().hex[:8]}_{timestamp_str}"
 
-    safe_name = re.sub(r'[\\/*?:"<>|]', '_', filename)
-    archive_filename = f"{subject}_{safe_name}_{timestamp_str}.pdf" if not safe_name.lower().endswith(".pdf") else f"{subject}_{safe_name[:-4]}_{timestamp_str}.pdf"
+    orig_ext = Path(filename).suffix.lower()
+    if not orig_ext:
+        orig_ext = ".pdf"
+    stem_name = Path(filename).stem
+    safe_stem = re.sub(r'[\\/*?:"<>|]', '_', stem_name)
+    archive_filename = f"{subject}_{safe_stem}_{timestamp_str}{orig_ext}"
 
     target_path = NOTES_DIR / archive_filename
 
@@ -160,7 +167,9 @@ def archive_uploaded_note(
         "summary": summary,
         "uploader": uploader,
         "path": str(target_path),
-        "created_at": now.strftime("%Y-%m-%d %H:%M:%S")
+        "file_path": str(target_path),
+        "created_at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "uploaded_at": now.strftime("%Y-%m-%d %H:%M:%S")
     }
 
     # 2. 追加至社群筆記總表
@@ -199,32 +208,74 @@ def archive_uploaded_note(
 
     return record
 
-def search_community_questions(subject: str = "全部科目", keyword: str = "") -> List[Dict[str, Any]]:
-    """篩選檢索社群題目"""
+def search_community_questions(
+    subject_or_kw: str = "全部科目",
+    kw_or_subject: str = "",
+    subject: Optional[str] = None,
+    keyword: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    篩選檢索社群題目，全方位相容 search_community_questions(cq_kw) 與 (subject, keyword) 調用方式
+    """
+    common_subjects = {"民法", "民事訴訟法", "刑法", "刑事訴訟法", "行政法", "憲法", "公司法", "證券交易法", "保險法", "智慧財產權法", "勞動與社會法", "勞動法", "公法", "商事法", "全部科目", "跨領域綜合"}
+    if subject is None:
+        if subject_or_kw in common_subjects:
+            subject = subject_or_kw
+            keyword = kw_or_subject if keyword is None else keyword
+        else:
+            if not kw_or_subject and keyword is None:
+                keyword = subject_or_kw
+                subject = "全部科目"
+            else:
+                subject = subject_or_kw
+                keyword = kw_or_subject if keyword is None else keyword
+    if keyword is None:
+        keyword = kw_or_subject
+
     questions = load_community_questions()
     results = []
     for q in questions:
-        if subject != "全部科目" and subject != "跨領域綜合":
+        if subject and subject not in ["全部科目", "跨領域綜合"]:
             if q.get("subject") != subject and subject not in q.get("subject", ""):
                 continue
         if keyword:
             kw = keyword.strip()
-            if kw not in q.get("title", "") and kw not in q.get("content", "") and kw not in q.get("subject", ""):
+            if kw and (kw not in q.get("title", "") and kw not in q.get("content", "") and kw not in q.get("subject", "")):
                 continue
         results.append(q)
     return results
 
-def search_community_notes(subject: str = "全部科目", keyword: str = "") -> List[Dict[str, Any]]:
-    """篩選檢索社群筆記"""
+def search_community_notes(
+    subject_or_kw: str = "全部科目",
+    kw_or_subject: str = "",
+    subject: Optional[str] = None,
+    keyword: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """篩選檢索社群筆記，全方位相容 (keyword) 與 (subject, keyword) 調用方式"""
+    common_subjects = {"民法", "民事訴訟法", "刑法", "刑事訴訟法", "行政法", "憲法", "公司法", "證券交易法", "保險法", "智慧財產權法", "勞動與社會法", "勞動法", "公法", "商事法", "全部科目"}
+    if subject is None:
+        if subject_or_kw in common_subjects:
+            subject = subject_or_kw
+            keyword = kw_or_subject if keyword is None else keyword
+        else:
+            if not kw_or_subject and keyword is None:
+                keyword = subject_or_kw
+                subject = "全部科目"
+            else:
+                subject = subject_or_kw
+                keyword = kw_or_subject if keyword is None else keyword
+    if keyword is None:
+        keyword = kw_or_subject
+
     notes = load_community_notes()
     results = []
     for n in notes:
-        if subject != "全部科目":
+        if subject and subject != "全部科目":
             if n.get("subject") != subject and subject not in n.get("subject", ""):
                 continue
         if keyword:
             kw = keyword.strip()
-            if kw not in n.get("filename", "") and kw not in n.get("original_name", "") and kw not in n.get("summary", ""):
+            if kw and (kw not in n.get("filename", "") and kw not in n.get("original_name", "") and kw not in n.get("summary", "")):
                 continue
         results.append(n)
     return results

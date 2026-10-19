@@ -32,8 +32,28 @@ class LawExamGenerator:
         if USE_MODERN_GENAI:
             self.client = genai.Client(api_key=self.api_key)
         else:
+            if legacy_genai is None:
+                raise RuntimeError("未安裝 google-genai 或 google-generativeai 套件！")
             legacy_genai.configure(api_key=self.api_key)
             self.model = legacy_genai.GenerativeModel(model_name=model_name)
+
+    def _make_config(self, temperature: float = 0.3, response_mime_type: Optional[str] = "application/json") -> Any:
+        """根據目前載入之 SDK 動態生成安全相容之生成配置物件或字典"""
+        if USE_MODERN_GENAI:
+            kwargs = {"temperature": temperature}
+            if response_mime_type:
+                kwargs["response_mime_type"] = response_mime_type
+            return genai_types.GenerateContentConfig(**kwargs)
+        else:
+            kwargs = {"temperature": temperature}
+            if response_mime_type:
+                kwargs["response_mime_type"] = response_mime_type
+            try:
+                if legacy_genai is not None and hasattr(legacy_genai, "types") and hasattr(legacy_genai.types, "GenerationConfig"):
+                    return legacy_genai.types.GenerationConfig(**kwargs)
+            except Exception:
+                pass
+            return kwargs
 
     def _call_model(self, prompt: Any, generation_config: Any = None) -> Any:
         models_to_try = get_gemini_models_to_try(self.model_name)
@@ -41,18 +61,27 @@ class LawExamGenerator:
         for m_name in models_to_try:
             try:
                 if USE_MODERN_GENAI:
-                    temp = getattr(generation_config, "temperature", 0.3) if generation_config else 0.3
-                    mime = getattr(generation_config, "response_mime_type", "application/json") if generation_config else "application/json"
-                    cfg = genai_types.GenerateContentConfig(
-                        temperature=temp,
-                        response_mime_type=mime
-                    )
+                    if isinstance(generation_config, genai_types.GenerateContentConfig):
+                        cfg = generation_config
+                    elif isinstance(generation_config, dict):
+                        cfg = genai_types.GenerateContentConfig(**generation_config)
+                    elif generation_config is not None:
+                        temp = getattr(generation_config, "temperature", 0.3)
+                        mime = getattr(generation_config, "response_mime_type", None)
+                        cfg = genai_types.GenerateContentConfig(
+                            temperature=temp,
+                            response_mime_type=mime
+                        )
+                    else:
+                        cfg = genai_types.GenerateContentConfig(temperature=0.3)
                     return self.client.models.generate_content(
                         model=m_name,
                         contents=prompt,
                         config=cfg
                     )
                 else:
+                    if legacy_genai is None:
+                        raise RuntimeError("Neither google-genai nor google-generativeai is installed.")
                     mod = legacy_genai.GenerativeModel(model_name=m_name)
                     return mod.generate_content(prompt, generation_config=generation_config)
             except Exception as e:
@@ -165,7 +194,7 @@ class LawExamGenerator:
 """
             resp = self._call_model(
                 prompt,
-                generation_config=genai.types.GenerationConfig(
+                generation_config=self._make_config(
                     temperature=0.35,
                     response_mime_type="application/json"
                 )
@@ -177,7 +206,7 @@ class LawExamGenerator:
                 # 容錯重試一次
                 resp_retry = self._call_model(
                     prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
-                    generation_config=genai.types.GenerationConfig(temperature=0.2, response_mime_type="application/json")
+                    generation_config=self._make_config(temperature=0.2, response_mime_type="application/json")
                 )
                 batch_items = self._parse_json_safely(resp_retry.text)
 
@@ -246,7 +275,7 @@ class LawExamGenerator:
 """
         response = self._call_model(
             prompt,
-            generation_config=genai.types.GenerationConfig(
+            generation_config=self._make_config(
                 temperature=0.35,
                 response_mime_type="application/json"
             )
@@ -280,9 +309,10 @@ class LawExamGenerator:
 """
         response = self._call_model(
             prompt,
-            generation_config=genai_types.GenerateContentConfig(
-                temperature=0.3
-            ) if USE_MODERN_GENAI else None
+            generation_config=self._make_config(
+                temperature=0.3,
+                response_mime_type=None
+            )
         )
         return response.text
 

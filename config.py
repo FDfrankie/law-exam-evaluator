@@ -1,11 +1,15 @@
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-# Load local .env
-env_path = Path(__file__).resolve().parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+try:
+    from dotenv import load_dotenv
+    env_path = Path(__file__).resolve().parent / ".env"
+    if env_path.exists():
+        try:
+            load_dotenv(env_path)
+        except Exception:
+            pass
+except ImportError:
+    pass
 
 def get_gemini_api_key() -> str:
     """Get Gemini API Key from Streamlit Secrets or Environment Variables"""
@@ -20,20 +24,18 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
-# 現代化 Gemini 3.x 模型後備階梯（依序降級，全面防禦單一模型額度耗盡或服務變更）
+# 現代化 Gemini 核心模型後備階梯（依序降級，保證模型 ID 有效，避免 404 重試延遲）
 GEMINI_FALLBACK_MODELS = [
-    "gemini-3.7-flash",
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
-    "gemini-3.8-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-2.5-pro",
+    "gemini-1.5-pro",
+    "gemini-2.0-flash-lite",
     "gemini-flash-latest",
-    "gemini-pro-latest",
-    "gemini-3.1-pro-preview"
+    "gemini-pro-latest"
 ]
 
 def get_gemini_models_to_try(primary_model: str = None) -> list:

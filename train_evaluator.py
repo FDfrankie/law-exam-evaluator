@@ -82,9 +82,9 @@ class LawExamSFTDataset(Dataset):
         )
         input_ids = enc["input_ids"].squeeze(0)
         attention_mask = enc["attention_mask"].squeeze(0)
-        # Labels are same as input_ids for Causal LM, pad tokens masked with -100
+        # Labels are same as input_ids for Causal LM, pad tokens masked with -100 (preserve EOS learning)
         labels = input_ids.clone()
-        labels[labels == self.tokenizer.pad_token_id] = -100
+        labels[attention_mask == 0] = -100
 
         return {
             "input_ids": input_ids,

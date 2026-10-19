@@ -206,6 +206,35 @@ st.set_page_config(
 
 init_directories()
 
+try:
+    from ingest_user_notes_to_sft import (
+        get_google_drive_notes_list,
+        read_note_text,
+        sync_all_drive_notes_to_samsung_notes,
+        distill_single_note_file
+    )
+except ImportError:
+    try:
+        import ingest_user_notes_to_sft as _iun
+        get_google_drive_notes_list = getattr(_iun, "get_google_drive_notes_list", lambda: [])
+        read_note_text = getattr(_iun, "read_note_text", lambda p, **kw: "")
+        sync_all_drive_notes_to_samsung_notes = getattr(_iun, "sync_all_drive_notes_to_samsung_notes", lambda: 0)
+        distill_single_note_file = getattr(_iun, "distill_single_note_file", lambda p, **kw: [])
+    except Exception:
+        get_google_drive_notes_list = lambda: []
+        read_note_text = lambda p, **kw: ""
+        sync_all_drive_notes_to_samsung_notes = lambda: 0
+        distill_single_note_file = lambda p, **kw: []
+
+@st.cache_data(ttl=300)
+def load_all_drive_notes():
+    try:
+        return get_google_drive_notes_list()
+    except Exception:
+        return []
+
+drive_notes = load_all_drive_notes()
+
 
 # 司律考科學門體系完整分類表（涵蓋一試、二試、法研所、司法特考全領域 38+ 考科）
 LAW_DOMAIN_TAXONOMY = {
@@ -1060,6 +1089,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         if sync_btn:
                             with st.spinner("正在掃描雲端硬碟各科筆記..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
                                 st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
                                 st.rerun()
 
@@ -1102,6 +1132,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         if sync_btn_single:
                             with st.spinner("正在掃描雲端硬碟各科筆記..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
                                 st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
                                 st.rerun()
 
@@ -1125,6 +1156,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
                     with st.spinner("正在同步..."):
                         c = sync_all_drive_notes_to_samsung_notes()
+                        load_all_drive_notes.clear()
                         st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
                         st.rerun()
         except Exception as e_drive:
@@ -1812,7 +1844,10 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                             st.markdown(model_ans)
                 with c_m3_b3:
                     if st.button(f"🔍 帶入法學檢索樞紐剖析爭點", key=f"btn_m3_query_{m3_q_idx}", use_container_width=True):
-                        st.session_state["ai_query_input_text"] = f"{m3_q['subject']} {m3_q_fn} 實戰考點與實務見解"
+                        target_query = f"{m3_q['subject']} {m3_q_fn} 實戰考點與實務見解"
+                        st.session_state["lp_search_query"] = target_query
+                        st.session_state["lp_exec_search"] = True
+                        st.session_state["ai_query_input_text"] = target_query
                         st.session_state["m5_sub_mode_idx"] = 1
                         st.session_state["app_mode"] = mode_options[4]
                         st.rerun()
@@ -1904,6 +1939,9 @@ elif app_mode == "📖 高分權威擬答生成":
     if "question_text_content" in st.session_state and st.session_state["question_text_content"]:
         if not st.session_state["m4_target_question"]:
             st.session_state["m4_target_question"] = st.session_state["question_text_content"]
+            st.session_state["m4_text_area_input"] = st.session_state["question_text_content"]
+    elif st.session_state.get("m4_target_question") and "m4_text_area_input" not in st.session_state:
+        st.session_state["m4_text_area_input"] = st.session_state["m4_target_question"]
 
     if "📸" in m4_input_mode:
         m4_up_file = st.file_uploader(
@@ -1964,6 +2002,7 @@ elif app_mode == "📖 高分權威擬答生成":
 
                         if transcribed:
                             st.session_state["m4_target_question"] = transcribed
+                            st.session_state["m4_text_area_input"] = transcribed
                             st.success("✅ 題目辨識並謄錄成功！已自動帶入下方編輯框：")
                         else:
                             st.warning("未能從上傳檔案中提取到題目文字。")
@@ -2000,6 +2039,7 @@ elif app_mode == "📖 高分權威擬答生成":
     with col_m4_clear:
         if st.button("✖️ 清空題目", key="btn_m4_clear"):
             st.session_state["m4_target_question"] = ""
+            st.session_state["m4_text_area_input"] = ""
             st.rerun()
 
     target_q = st.text_area(
@@ -2489,11 +2529,12 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             st.divider()
             st.markdown("##### 🔗 本案脈絡鏈深度應用與跨模組聯動：")
             ac1, ac2, ac3, ac4 = st.columns(4)
+            clean_h_cid = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', h_cid)
             with ac1:
                 st.download_button(
                     label="💾 下載審級脈絡報告 (.md)",
                     data=h_md,
-                    file_name=f"裁判審級更迭脈絡_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', h_cid)}.md",
+                    file_name=f"裁判審級更迭脈絡_{clean_h_cid}.md",
                     mime="text/markdown",
                     use_container_width=True
                 )
@@ -2787,18 +2828,19 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             st.divider()
             st.markdown("##### 🔗 本判決深度應用與跨功能聯動：")
             ac1, ac2, ac3 = st.columns(3)
+            clean_s_id = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', s_id)
             with ac1:
                 st.download_button(
                     label=f"💾 下載本案 AI 摘要 (.md)",
                     data=s_md,
-                    file_name=f"AI判決摘要_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', s_id)}.md",
+                    file_name=f"AI判決摘要_{clean_s_id}.md",
                     mime="text/markdown",
                     use_container_width=True
                 )
             with ac2:
                 if st.button("🔄 帶入此判決進行【案例橫向比對】", use_container_width=True, key="btn_pass_to_cmp"):
                     st.session_state["target_compare_case_a"] = s_id
-                    st.session_state["m5_sub_mode_idx"] = 4
+                    st.session_state["m5_sub_mode_idx"] = 5
                     st.rerun()
             with ac3:
                 if st.button("📝 帶入試卷評分作為評分標準", use_container_width=True, key="btn_pass_sum_to_eval"):
@@ -2930,11 +2972,12 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 st.divider()
                 st.markdown("##### 🔗 爭點各說成果轉化與實戰演練：")
                 dr_c1, dr_c2, dr_c3 = st.columns(3)
+                clean_d_top = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', d_top)[:15]
                 with dr_c1:
                     st.download_button(
                         label="💾 下載爭點各說判決歸納報告 (.md)",
                         data=d_md,
-                        file_name=f"爭點各說判決歸納_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', d_top)[:15]}.md",
+                        file_name=f"爭點各說判決歸納_{clean_d_top}.md",
                         mime="text/markdown",
                         use_container_width=True
                     )
@@ -2947,7 +2990,9 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.rerun()
                 with dr_c3:
                     if st.button("📖 帶入高分擬答生成 (依 IRAC 鋪陳各說與定錨)", use_container_width=True, key="btn_pass_doc_to_ans"):
-                        st.session_state["m4_target_question"] = f"請針對【{d_top}】之爭議事實與法律爭執，依 IRAC 架構撰寫標準上位卷擬答，務必完整並列各說並涵攝最高法院定錨見解。"
+                        m4_q_text = f"請針對【{d_top}】之爭議事實與法律爭執，依 IRAC 架構撰寫標準上位卷擬答，務必完整並列各說並涵攝最高法院定錨見解。"
+                        st.session_state["m4_target_question"] = m4_q_text
+                        st.session_state["m4_text_area_input"] = m4_q_text
                         st.session_state["app_mode"] = mode_options[3]
                         st.rerun()
 
@@ -3043,12 +3088,13 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
 
                 st.divider()
                 st.markdown("##### 🔗 比對報告應用與後續演練：")
-                cc_col1, cc_col2 = st.columns(2)
+                clean_ca_id = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', ca_id)
+                clean_cb_id = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', cb_id)
                 with cc_col1:
                     st.download_button(
                         label="💾 下載兩大案例橫向比對報告 (.md)",
                         data=c_md,
-                        file_name=f"案例橫向比對_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', ca_id)}_vs_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', cb_id)}.md",
+                        file_name=f"案例橫向比對_{clean_ca_id}_vs_{clean_cb_id}.md",
                         mime="text/markdown",
                         use_container_width=True
                     )
@@ -3549,7 +3595,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
         with r1_cols[idx]:
             if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r1_{idx}"):
                 st.session_state["sum_citation_search"] = code_val
-                st.session_state["txt_citation_search_input"] = code_val
+                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
                 st.session_state["sum_input_title"] = ""
                 st.session_state["sum_input_text"] = ""
                 st.session_state.pop("last_ai_sum_res", None)
@@ -3560,7 +3606,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
         with r2_cols[idx]:
             if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r2_{idx}"):
                 st.session_state["sum_citation_search"] = code_val
-                st.session_state["txt_citation_search_input"] = code_val
+                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
                 st.session_state["sum_input_title"] = ""
                 st.session_state["sum_input_text"] = ""
                 st.session_state.pop("last_ai_sum_res", None)
@@ -3570,20 +3616,21 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 
     # 第一步：先打字號 (裁判案號 / 行政函釋字號)
     cur_cite_val = st.session_state.get("sum_citation_search", "")
+    cite_rev = st.session_state.get("citation_rev", 0)
     col_sc1, col_sc2, col_sc3 = st.columns([5, 1.2, 1])
     with col_sc1:
         citation_input = st.text_input(
             "🔍 第一步：請先輸入裁判案號或行政函釋字號（例如：108台上908民、108台上大1719裁、40台上86例、院字2949、重上更一15、經商字第 10702425580 號...）：",
             value=cur_cite_val,
             placeholder="輸入裁判字號縮寫或函釋公文字號（支援 108台上908民、108台上大1719裁、40台上86例、院字2949、重上更一15、111憲判16、經商字第...）",
-            key="txt_citation_search_input"
+            key=f"txt_citation_search_input_{cite_rev}"
         )
     with col_sc2:
         btn_search_cite = st.button("🔍 查找字號", type="primary", use_container_width=True, key="btn_trigger_search_cite")
     with col_sc3:
         if st.button("✖️ 清除重置", use_container_width=True, key="btn_clear_citation_search"):
             st.session_state["sum_citation_search"] = ""
-            st.session_state["txt_citation_search_input"] = ""
+            st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
             st.session_state["sum_input_text"] = ""
             st.session_state["sum_input_title"] = ""
             st.session_state.pop("last_ai_sum_res", None)
@@ -3780,11 +3827,12 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
         st.divider()
         st.subheader("🔗 摘要成果一鍵轉化為司律考卷戰力：")
         s_act1, s_act2, s_act3 = st.columns(3)
+        clean_act_title = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', active_title)[:15]
         with s_act1:
             st.download_button(
                 "📥 下載完整 Markdown 摘要報告",
                 data=sum_res.get("markdown_result", ""),
-                file_name=f"AI摘要_{re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', active_title)[:15]}.md",
+                file_name=f"AI摘要_{clean_act_title}.md",
                 mime="text/markdown",
                 use_container_width=True
             )
@@ -3797,7 +3845,9 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                 st.rerun()
         with s_act3:
             if st.button("📖 帶入高分擬答生成", use_container_width=True, key="btn_sum_to_ans"):
-                st.session_state["m4_target_question"] = f"請就【{active_title}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
+                m4_q_text = f"請就【{active_title}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
+                st.session_state["m4_target_question"] = m4_q_text
+                st.session_state["m4_text_area_input"] = m4_q_text
                 st.session_state["app_mode"] = mode_options[3]
                 st.rerun()
 
@@ -4040,14 +4090,14 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                                 if st.button(f"⚡ 產出本判決 AI 深度摘要", key=f"btn_tab_sum_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_summary_case_id"] = p.get("case_id", "")
                                     st.session_state["target_summary_subject"] = lname
-                                    st.session_state["m5_sub_mode_idx"] = 3
+                                    st.session_state["m5_sub_mode_idx"] = 4
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             with c_p2:
                                 if st.button(f"🔄 帶入進行案例橫向比對", key=f"btn_tab_cmp_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_compare_case_a"] = p.get("case_id", "")
                                     st.session_state["target_compare_topic"] = f"{lname} {ano} 相關裁判見解分歧"
-                                    st.session_state["m5_sub_mode_idx"] = 4
+                                    st.session_state["m5_sub_mode_idx"] = 5
                                     st.session_state["app_mode"] = mode_options[4]
                                     st.rerun()
                             st.markdown("---")
@@ -4499,6 +4549,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                         if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
                             with st.spinner("正在同步..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
                                 st.success(f"同步完成！新增/更新 {c} 份筆記。")
                                 st.rerun()
                 elif sel_sft_note:
@@ -4526,9 +4577,10 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                                 except Exception as de:
                                     st.error(f"蒸餾處理失敗: {de}")
                     with c_btn_a2:
-                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
+                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes_single"):
                             with st.spinner("正在同步..."):
                                 c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
                                 st.success(f"同步完成！新增/更新 {c} 份筆記。")
                                 st.rerun()
             else:
@@ -4536,6 +4588,7 @@ elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
                 if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
                     with st.spinner("正在同步..."):
                         c = sync_all_drive_notes_to_samsung_notes()
+                        load_all_drive_notes.clear()
                         st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
                         st.rerun()
 

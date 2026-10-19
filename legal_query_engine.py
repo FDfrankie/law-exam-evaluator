@@ -20,7 +20,10 @@ try:
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
 except ImportError:
-    import google.generativeai as legacy_genai
+    try:
+        import google.generativeai as legacy_genai
+    except ImportError:
+        legacy_genai = None
     USE_MODERN_GENAI = False
 
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
@@ -1259,6 +1262,7 @@ class LegalIssueQueryEngine:
             )
 
         cases_context_str = "\n\n".join(cases_context_list)
+        custom_ctx_block = f"【使用者自訂補充事實/背景】：\n{custom_context.strip()}\n----------------------------------------" if custom_context.strip() else ""
 
         prompt = f"""
 你是一位台灣「司法院前最高法院大法庭研究法官」兼「律師司法官高等考試典試委員長」，精通司法實務見解脈絡與學說各說（甲說、乙說、丙說、折衷說、現行大法庭統一見解）。
@@ -1272,7 +1276,7 @@ class LegalIssueQueryEngine:
 【本機權威裁判庫與歷審脈絡鏈檢索結果】：
 {cases_context_str if cases_context_str else '（請本於台灣司法裁判演進全集與歷年大法庭/憲法裁判深入梳理）'}
 ----------------------------------------
-{f"【使用者自訂補充事實/背景】：\n{custom_context.strip()}\n----------------------------------------" if custom_context.strip() else ""}
+{custom_ctx_block}
 
 請嚴格遵循標準繁體中文 Markdown 格式輸出，具備以下各大必備區塊：
 

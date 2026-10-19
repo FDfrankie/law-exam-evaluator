@@ -716,6 +716,7 @@ def crawl_and_synthesize_admin_rulings(law_name: str, article_no: str, content: 
     if not api_key:
         raise ValueError("未檢測到 GEMINI_API_KEY！")
 
+    clean_art_no = re.sub(r'[第條\s]', '', str(article_no)).replace('之', '-')
     prompt = f"""
 你是一位台灣中央主管機關（經濟部商業司、經濟部智慧財產局、金管會證期局、法務部、勞動部）之法規委員會首席法制研究員。
 請針對【{law_name}】{article_no}，檢索、爬取並彙編成 1~3 筆最代表性、具法律拘束力與司律考試權威價值的「主管機關重要行政函釋（含解釋令、行政指導字號）」：
@@ -729,7 +730,7 @@ def crawl_and_synthesize_admin_rulings(law_name: str, article_no: str, content: 
     "id": "agency_topic_year",
     "law_name": "{law_name}",
     "article_target": "{article_no}",
-    "article_no_clean": "{re.sub(r'[第條\\s]', '', str(article_no)).replace('之', '-')}",
+    "article_no_clean": "{clean_art_no}",
     "agency": "主管機關名稱（如：經濟部商業司、經濟部智慧財產局、金融監督管理委員會證券期貨局、法務部）",
     "doc_number": "完整公文字號（例如：經商字第 10802424880 號函、智著字第 1120418 號函、金管證發字第 1090150022 號函）",
     "date": "發布日期（例如：2020-05-18）",
