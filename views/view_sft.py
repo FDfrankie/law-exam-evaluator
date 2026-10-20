@@ -9,12 +9,17 @@ import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+
 from config import DATA_DIR, GOOGLE_DRIVE_DATA_DIR
 from ingest_user_notes_to_sft import (
     get_google_drive_notes_list,
     read_note_text,
     sync_all_drive_notes_to_samsung_notes,
-    distill_single_note_file
+    distill_single_note_file,
+    merge_subject_pdfs,
+    extract_subject_text_corpus,
+    get_chapter_sort_key,
+    ingest_single_uploaded_file
 )
 from community_archive_engine import (
     archive_uploaded_question,

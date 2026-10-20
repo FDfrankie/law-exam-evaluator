@@ -1,9 +1,14 @@
 import streamlit as st
 import os
+import sys
 import json
 import re
 import time
-from config import DATA_DIR
+import tempfile
+import importlib
+from pathlib import Path
+
+from config import DATA_DIR, RAW_DATA_DIR
 from legal_summarizer_engine import (
     BooleanQueryParser,
     evaluate_boolean_query,
@@ -15,6 +20,28 @@ from legal_summarizer_engine import (
     construct_standard_citation_from_parsed
 )
 from views.constants import MODE_EVAL, MODE_ANS
+
+try:
+    from legal_query_engine import get_all_precedent_options
+except Exception:
+    get_all_precedent_options = lambda: []
+
+try:
+    import import_judicial_opendata
+    from import_judicial_opendata import (
+        SafeJudicialOpenDataClient,
+        parse_official_opendata_record,
+        extract_archive_to_temp,
+        OUTPUT_CATALOG_PATH,
+        REPO_CATALOG_PATH
+    )
+except Exception:
+    import_judicial_opendata = None
+    SafeJudicialOpenDataClient = None
+    parse_official_opendata_record = lambda x: None
+    extract_archive_to_temp = lambda a, b: False
+    OUTPUT_CATALOG_PATH = Path('data') / 'raw_exams' / 'precedents_catalog.json'
+    REPO_CATALOG_PATH = Path('data') / 'raw_exams' / 'precedents_catalog.json'
 
 def render_mode_summarizer():
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")

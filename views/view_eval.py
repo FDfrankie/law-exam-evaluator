@@ -3,11 +3,14 @@ import os
 import json
 import re
 import io
+from pathlib import Path
 from PIL import Image
 
 from config import DATA_DIR, get_gemini_api_key
 from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
+from community_archive_engine import load_community_questions, archive_uploaded_question
+from ingest_user_notes_to_sft import read_note_text
 from views.constants import MODE_EVAL
 from views.common import load_all_drive_notes
 

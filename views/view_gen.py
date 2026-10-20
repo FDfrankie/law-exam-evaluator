@@ -3,6 +3,9 @@ import os
 import json
 import re
 import time
+import random
+from pathlib import Path
+
 from config import GOOGLE_DRIVE_DATA_DIR
 from exam_generator import LawExamGenerator
 from core_issues_taxonomy import LAW_DOMAIN_TAXONOMY, get_subject_topics_taxonomy

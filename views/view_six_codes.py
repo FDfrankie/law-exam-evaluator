@@ -3,6 +3,9 @@ import os
 import json
 import re
 import time
+import base64
+from pathlib import Path
+
 from six_codes_engine import (
     SIX_CODES_TAXONOMY,
     get_laws_in_branch,
@@ -12,7 +15,8 @@ from six_codes_engine import (
     get_law_legislative_history,
     get_article_legislative_details,
     synthesize_article_legislative_details,
-    clear_six_codes_cache
+    clear_six_codes_cache,
+    load_six_codes_data
 )
 from six_codes_updater import update_law_amendments, load_amendments_history
 from admin_rulings_engine import (
@@ -366,7 +370,11 @@ def render_mode_six_codes():
                         st.caption("可在此直接搜尋並一鍵切換調閱任何相關法律（如：性侵害犯罪防治法、刑法、兒童及少年福利與權益保障法）或行政命令：")
                         col_rel1, col_rel2 = st.columns([3, 1])
                         with col_rel1:
-                            all_law_names = sorted(list(law_map.keys()))
+                            try:
+                                _, _, law_map = load_six_codes_data()
+                                all_law_names = sorted(list(law_map.keys()))
+                            except Exception:
+                                all_law_names = []
                             kw_rel_law = st.text_input("輸入欲聯結之法律名稱關鍵字：", placeholder="例如：性侵害犯罪防治法、個人資料保護法、刑法...", key=f"kw_rel_law_{idx}")
                         with col_rel2:
                             st.write("")

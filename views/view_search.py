@@ -3,26 +3,25 @@ import os
 import json
 import re
 import urllib.parse
+from pathlib import Path
 from config import DATA_DIR
-try:
-    from legal_query_engine import (
-        LegalIssueQueryEngine,
-        search_local_precedents,
-        get_all_precedent_options,
-        get_precedent_by_id,
-        get_precedents_catalog,
-        generate_judicial_search_urls,
-        search_precedents_advanced,
-        COMMON_CASE_WORDS,
-        COURTS_TAXONOMY,
-        JUDICIAL_TIME_RANGES,
-        get_precedent_history_chain,
-        PRESET_JUDGEMENT_HISTORIES,
-        extract_case_roc_year
-    )
-except Exception:
-    pass
+from legal_query_engine import (
+    LegalIssueQueryEngine,
+    search_local_precedents,
+    get_all_precedent_options,
+    get_precedent_by_id,
+    get_precedents_catalog,
+    generate_judicial_search_urls,
+    search_precedents_advanced,
+    COMMON_CASE_WORDS,
+    COURTS_TAXONOMY,
+    JUDICIAL_TIME_RANGES,
+    get_precedent_history_chain,
+    PRESET_JUDGEMENT_HISTORIES,
+    extract_case_roc_year
+)
 from core_issues_taxonomy import (
+    LAW_DOMAIN_TAXONOMY,
     get_taxonomy_chapters_for_subject,
     get_curated_issues_by_chapter,
     get_total_curated_issues_count

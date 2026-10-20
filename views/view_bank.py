@@ -2,11 +2,28 @@ import streamlit as st
 import os
 import json
 import re
+from pathlib import Path
+
 from config import DATA_DIR, RAW_DATA_DIR
 from exam_generator import LawExamGenerator
-from community_archive_engine import load_community_questions, search_community_questions
-from views.common import load_all_drive_notes
+from community_archive_engine import (
+    load_community_questions,
+    search_community_questions,
+    archive_uploaded_question
+)
+from ingest_user_notes_to_sft import read_note_text
+from views.common import load_all_drive_notes, reset_stage1_exam_state
 from views.constants import MODE_EVAL, MODE_SEARCH
+
+try:
+    from exam_bank_crawler import LawExamBankCrawler
+except Exception:
+    class LawExamBankCrawler:
+        def __init__(self):
+            p = Path(DATA_DIR) / 'raw_exams' / 'exams_catalog.json'
+            self.catalog = json.loads(p.read_text(encoding='utf-8')) if p.exists() else []
+        def run_all(self, max_pages=2):
+            pass
 
 def render_mode_bank():
     drive_notes = load_all_drive_notes()
