@@ -1,12 +1,3 @@
-import sys
-from pathlib import Path
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-_CORE = _ROOT / "core"
-if str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
 """
 One-Million-Scale Real Court Judgment Legal Reasoning & SFT Dataset Generator (Version 2.0)
 Synthesizes 1,000,000 diverse, highly structured, multi-task judicial reasoning and training triples

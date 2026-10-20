@@ -1,12 +1,3 @@
-import sys
-from pathlib import Path
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-_CORE = _ROOT / "core"
-if str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
 """
 手寫筆記與個人法學筆記 SFT 資料蒸餾引擎 (Ingest User Notes to SFT)
 1. 自動讀取 G:\\我的雲端硬碟\\LawExamData\\SamsungNotes 內的所有個人手寫/打字筆記（PDF、圖片、Word 等 68+ 份筆記）

@@ -1,12 +1,3 @@
-import sys
-from pathlib import Path
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-_CORE = _ROOT / "core"
-if str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
 """
 法學名師與課輔講義資源整合管道 (Ingest Academic Resources)
 自動讀取 G:\\我的雲端硬碟\\資源 內各法學考科講義與簡報（過濾近代物理與DLCV等非關科目），

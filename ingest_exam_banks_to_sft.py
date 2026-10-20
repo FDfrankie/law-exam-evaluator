@@ -1,12 +1,3 @@
-import sys
-from pathlib import Path
-_ROOT = Path(__file__).resolve().parent.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-_CORE = _ROOT / "core"
-if str(_CORE) not in sys.path:
-    sys.path.insert(0, str(_CORE))
-
 """
 國家考試與頂尖法研所真題題庫 SFT 訓練資料蒸餾引擎 (Ingest Exam Banks to SFT)
 1. 完整蒸餾《司律一試行政法 300 題全真模擬題庫暨詳解》（300 題完整解析、選項對比與實務見解）

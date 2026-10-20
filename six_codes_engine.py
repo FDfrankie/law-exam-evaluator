@@ -84,16 +84,6 @@ _CACHED_LAW_MAP: Optional[Dict[str, List[Dict[str, Any]]]] = None
 _CACHED_HISTORIES: Optional[Dict[str, Any]] = None
 _CACHED_LEGISLATIVE: Optional[Dict[str, Any]] = None
 
-try:
-    import streamlit as st
-    cache_resource_decorator = st.cache_resource
-except Exception:
-    def cache_resource_decorator(func=None, **kwargs):
-        if func:
-            return func
-        return lambda f: f
-
-@cache_resource_decorator
 def load_law_histories() -> Dict[str, Any]:
     """載入全國 11,803 部法律與法規命令之完整立法沿革與修正紀錄"""
     global _CACHED_HISTORIES
@@ -112,7 +102,6 @@ def load_law_histories() -> Dict[str, Any]:
     _CACHED_HISTORIES = catalog
     return _CACHED_HISTORIES
 
-@cache_resource_decorator
 def load_article_legislative_catalog() -> Dict[str, Any]:
     """載入司律核心爭點條文之官方立法理由與歷史舊條文對照庫"""
     global _CACHED_LEGISLATIVE
@@ -131,7 +120,6 @@ def load_article_legislative_catalog() -> Dict[str, Any]:
     _CACHED_LEGISLATIVE = catalog
     return _CACHED_LEGISLATIVE
 
-@cache_resource_decorator
 def load_six_codes_data() -> tuple:
     """載入六法條文與標註關聯目錄"""
     global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP
@@ -553,28 +541,6 @@ def get_unified_materials_catalog(meta_notes_cat: dict = None) -> Dict[str, List
                         "path": item.get("path", ""),
                         "size_kb": round(float(item.get("size_mb", 0.0)) * 1024, 1)
                     })
-
-    # 動態注入社群考生即時上傳之筆記 (零延遲、免阻塞覆寫 69MB 六法標註 JSON)
-    try:
-        from community_archive_engine import load_community_notes
-        c_notes = load_community_notes()
-        for cn in c_notes:
-            subj = cn.get("subject", "民法")
-            for t_law in [subj, "民法", "中華民國刑法", "中華民國憲法", "行政法", "公司法", "民事訴訟法"]:
-                if t_law == subj or (subj in t_law):
-                    if t_law not in unified:
-                        unified[t_law] = []
-                    if not any(x.get("filename") == cn.get("filename") for x in unified[t_law]):
-                        unified[t_law].insert(0, {
-                            "filename": cn.get("filename", ""),
-                            "subject": subj,
-                            "author": cn.get("uploader", "社群考生"),
-                            "path": cn.get("path", "") or cn.get("file_path", ""),
-                            "size_kb": float(cn.get("size_kb", 0.0) or 0.0),
-                            "is_community_upload": True
-                        })
-    except Exception:
-        pass
 
     return unified
 

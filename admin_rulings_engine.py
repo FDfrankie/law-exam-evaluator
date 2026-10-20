@@ -495,16 +495,6 @@ LANDMARK_ADMIN_RULINGS: List[Dict[str, Any]] = [
 
 _CACHED_CHORDER_MAP: Optional[Dict[str, Any]] = None
 
-try:
-    import streamlit as st
-    cache_resource_decorator = st.cache_resource
-except Exception:
-    def cache_resource_decorator(func=None, **kwargs):
-        if func:
-            return func
-        return lambda f: f
-
-@cache_resource_decorator
 def get_chorder_regulations_map() -> Dict[str, Any]:
     """延遲加載 ChOrder.json 中 10,452 部法規命令與施行細則全文"""
     global _CACHED_CHORDER_MAP
@@ -514,7 +504,7 @@ def get_chorder_regulations_map() -> Dict[str, Any]:
     possible_paths = [
         Path(DATA_DIR) / "national_laws" / "ChOrder.json",
         Path(__file__).resolve().parent / "data" / "national_laws" / "ChOrder.json",
-        Path(DATA_DIR) / "national_laws" / "ChOrder.json"
+        Path(r"G:\我的雲端硬碟\LawExamData\national_laws\ChOrder.json")
     ]
     
     order_dict = {}

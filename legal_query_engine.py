@@ -36,16 +36,6 @@ CATALOG_PATHS = [
 
 _CACHED_CATALOG: Optional[List[Dict[str, Any]]] = None
 
-try:
-    import streamlit as st
-    cache_resource_decorator = st.cache_resource
-except Exception:
-    def cache_resource_decorator(func=None, **kwargs):
-        if func:
-            return func
-        return lambda f: f
-
-@cache_resource_decorator
 def get_precedents_catalog() -> List[Dict[str, Any]]:
     """載入權威裁判目錄庫 (含最高法院民刑大法庭、憲法法庭與大法官解釋)"""
     global _CACHED_CATALOG
