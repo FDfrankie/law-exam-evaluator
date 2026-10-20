@@ -139,9 +139,10 @@ def render_workspace():
     final_notes = None
 
     if stage == "一試 (選擇題 / 單選題)":
-        stage1_tab_ai, stage1_tab_300 = st.tabs([
+        stage1_tab_ai, stage1_tab_300, stage1_tab_upload = st.tabs([
             "🎲 AI 智慧命題模式（任意題數 & 支援手寫筆記 OCR 客製出題）",
-            "📖 司律一試 300+ 題全真跨科模擬題庫（民・刑・公・商跨科即時測驗）"
+            "📖 司律一試 300+ 題全真跨科模擬題庫（民・刑・公・商跨科即時測驗）",
+            "➕ 新增與收錄選擇題（單題錄入・長文智慧解析・JSON/TXT 批次上傳）"
         ])
 
         with stage1_tab_ai:
@@ -193,6 +194,7 @@ def render_workspace():
 
         with stage1_tab_300:
             st.markdown("#### 📖 司律一試 300+ 題全真跨科模擬題庫（涵蓋民法・刑法・憲法・行政法・民訴・刑訴・商事法）")
+            st.info("💡 **題庫擴充提示**：想手動錄入新題目、貼入考題長文或批次上傳題庫檔案？請點選上方【**➕ 新增與收錄選擇題**】分頁，新題目將永久存入題庫並即時加入下方抽題池！")
             st.write("全面收錄**行政法 300 題完整題庫**與**民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法 86 題跨科全真題目**，題題具備情境案例事實、四大嚴謹選項與 IRAC 權威實務見解解析（憲法判決、最高法院大法庭裁定、指標性重大原判例）。支援單科專精衝刺或全科跨領域大模考！")
 
             all_bank_mcqs = load_all_existing_stage1_mcqs()
@@ -209,7 +211,11 @@ def render_workspace():
                         "📑 行政法 (300 題模擬題庫・行政處分・行政契約・行政爭訟)",
                         "💼 民事訴訟法 (當事人適格・訴訟標的・爭點效・既判力)",
                         "🔍 刑事訴訟法 (強制處分令狀・科技偵查・證據排除・傳聞法則)",
-                        "🏢 商事法 (公司負責人義務・內線交易・保險告知義務)"
+                        "🏢 商事法 (公司負責人義務・內線交易・保險告知義務・票據)",
+                        "💡 智慧財產權法 (專利均等論・著作合理使用・營業秘密保密措施)",
+                        "🔨 勞動法與社會法 (不能勝任最後手段性・離職競業禁止代償)",
+                        "⚖️ 強制執行法與家事事件法 (除去租賃拍賣・暫時處分審查)",
+                        "🌐 國際私法與選試專業法規 (定性標準・公序良俗排除)"
                     ],
                     key="sel_stage1_bank_domain"
                 )
@@ -230,7 +236,15 @@ def render_workspace():
             elif "刑事訴訟法" in sel_domain_filter:
                 subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "刑事訴訟法"]
             elif "商事法" in sel_domain_filter:
-                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "商事法"]
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") in ["商事法", "公司法", "證券交易法", "保險法", "票據法"]]
+            elif "智慧財產權法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if "智慧財產" in q.get("subject", "") or "專利" in q.get("subject", "") or "著作" in q.get("subject", "") or "商標" in q.get("subject", "")]
+            elif "勞動法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if "勞動" in q.get("subject", "")]
+            elif "強制執行" in sel_domain_filter or "家事" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") in ["強制執行法", "家事事件法"]]
+            elif "國際私法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if "國際私法" in q.get("subject", "")]
             else:
                 subject_pool = [q for q in all_bank_mcqs if sel_domain_filter in q.get("subject", "") or sel_domain_filter in q.get("major_domain", "")]
 
