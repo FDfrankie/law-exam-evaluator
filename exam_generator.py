@@ -1,3 +1,4 @@
+from pathlib import Path
 """
 司律高階命題引擎（一試選擇題、二試申論題）與高分擬答生成模組
 全面比照司律一試 300 題全真模擬題庫規格：
@@ -22,7 +23,7 @@ except ImportError:
         legacy_genai = None
     USE_MODERN_GENAI = False
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try, RAW_DATA_DIR, DATA_DIR
 
 class LawExamGenerator:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
@@ -456,3 +457,208 @@ class LawExamGenerator:
             md += "---\n\n"
 
         return md
+
+def load_all_existing_stage1_mcqs() -> list:
+    """
+    全量載入既有一試全真題庫：
+    1. admin_law_300_mcqs.json (行政法 300 題全量題庫)
+    2. data/training_data/law_exam_exams_and_mcq_sft.jsonl (SFT 一試題庫)
+    3. 內建民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法全真精選選擇題
+    """
+    all_questions = []
+    seen_hashes = set()
+
+    # 1. 行政法 300 題
+    bank_paths = [
+        Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json",
+        Path(__file__).resolve().parent / "data" / "raw_exams" / "admin_law_300_mcqs.json",
+        Path(__file__).resolve().parent.parent / "raw_exams" / "admin_law_300_mcqs.json"
+    ]
+    for bp in bank_paths:
+        if bp.exists():
+            try:
+                data = json.loads(bp.read_text(encoding="utf-8"))
+                for q in data.get("questions", []):
+                    q_copy = dict(q)
+                    q_copy["subject"] = "行政法"
+                    q_copy["major_domain"] = "憲法與行政法"
+                    h = f"{q_copy.get('question', '')[:30]}_{q_copy.get('options', {}).get('A', '')[:10]}"
+                    if h not in seen_hashes:
+                        all_questions.append(q_copy)
+                        seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 2. 跨科全真模擬題庫 (民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法 86 題)
+    multi_bank_paths = [
+        Path(RAW_DATA_DIR) / "stage1_multi_subject_mcq_bank.json",
+        Path(__file__).resolve().parent / "data" / "raw_exams" / "stage1_multi_subject_mcq_bank.json",
+        Path(__file__).resolve().parent.parent / "raw_exams" / "stage1_multi_subject_mcq_bank.json"
+    ]
+    for mbp in multi_bank_paths:
+        if mbp.exists():
+            try:
+                mdata = json.loads(mbp.read_text(encoding="utf-8"))
+                for q in mdata:
+                    q_copy = dict(q)
+                    h = f"{q_copy.get('question', '')[:30]}_{q_copy.get('options', {}).get('A', '')[:10]}"
+                    if h not in seen_hashes:
+                        all_questions.append(q_copy)
+                        seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 3. SFT 題庫
+    sft_paths = [
+        Path(DATA_DIR) / "training_data" / "law_exam_exams_and_mcq_sft.jsonl",
+        Path(__file__).resolve().parent / "data" / "training_data" / "law_exam_exams_and_mcq_sft.jsonl"
+    ]
+    for sp in sft_paths:
+        if sp.exists():
+            try:
+                with open(sp, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if not line.strip(): continue
+                        item = json.loads(line)
+                        raw_in = item.get("input", "")
+                        raw_out = item.get("output", "")
+                        if "(A)" in raw_in and ("【正確解答】" in raw_out or "A" in raw_out):
+                            sub = item.get("subject", "綜合領域")
+                            opts = {}
+                            for opt_char in ["A", "B", "C", "D"]:
+                                m_opt = re.search(rf'\({opt_char}\)\s*([^\n\(]+)', raw_in)
+                                if m_opt:
+                                    opts[opt_char] = m_opt.group(1).strip()
+                            m_ans = re.search(r'【正確解答】[：:]\s*\(?([A-D])\)?', raw_out)
+                            ans_char = m_ans.group(1) if m_ans else "A"
+                            q_text_m = re.search(r'【案例事實與題目】[：:]\s*(.*?)(?=\(A\)|$)', raw_in, re.DOTALL)
+                            q_text = q_text_m.group(1).strip() if q_text_m else raw_in[:200]
+                            if len(opts) == 4:
+                                h = f"{q_text[:30]}_{opts.get('A', '')[:10]}"
+                                if h not in seen_hashes:
+                                    domain = "民法與民事訴訟法" if "民" in sub else (
+                                        "刑法與刑事訴訟法" if "刑" in sub else (
+                                            "憲法與行政法" if ("憲" in sub or "行政" in sub) else "商事法與綜合領域"
+                                        )
+                                    )
+                                    all_questions.append({
+                                        "question_no": len(all_questions) + 1,
+                                        "subject": sub,
+                                        "major_domain": domain,
+                                        "category": item.get("category", "法學核心爭點"),
+                                        "question": q_text,
+                                        "options": opts,
+                                        "answer": ans_char,
+                                        "explanation": raw_out
+                                    })
+                                    seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 3. 內建跨科全真精選題庫
+    curated_mcqs = [
+        {
+            "question_no": len(all_questions) + 1,
+            "subject": "民法",
+            "major_domain": "民法與民事訴訟法",
+            "category": "物權與借名登記處分",
+            "question": "甲將其所有之A房地借名登記於乙名下，約定乙未得甲同意不得處分。後乙未經同意將A房地出賣並移轉登記於知情之惡意第三人丙。依最高法院108年度台上大字第1719號民事大法庭裁定見解，下列敘述何者最正確？",
+            "options": {
+                "A": "乙之移轉行為屬無權處分，因丙為惡意，故效力未定",
+                "B": "乙本於物權登記名義人之處分權能而為移轉，無論丙善意或惡意均屬有權處分，丙有效取得所有權",
+                "C": "甲得依民法第767條第1項前段規定，直接請求丙塗銷登記",
+                "D": "乙之處分行為效力未定，俟甲承認後始生效力"
+            },
+            "answer": "B",
+            "explanation": "【解析】：依最高法院108年度台上大字第1719號裁定，出名人擅自處分借名登記不動產，無論第三人善意或惡意均為有權處分，第三人有效取得所有權。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 2,
+            "subject": "刑法",
+            "major_domain": "刑法與刑事訴訟法",
+            "category": "毒品販賣既遂與未遂",
+            "question": "甲意圖營利，與便衣員警乙談妥以2萬元購買海洛因5公克，約定於捷運站交付。甲攜毒品赴約，自口袋取出尚未交給乙且未收受價金即遭逮捕。依最高法院108年度台上大字第3594號刑事大法庭裁定，甲應如何論處？",
+            "options": {
+                "A": "甲成立販賣第一級毒品既遂罪，因買賣意思合致即既遂",
+                "B": "甲成立販賣第一級毒品未遂罪，因尚未交付毒品且未取得價金",
+                "C": "甲不成立犯罪，因員警係陷害教唆",
+                "D": "甲僅成立意圖販賣而持有第一級毒品罪"
+            },
+            "answer": "B",
+            "explanation": "【解析】：最高法院108年度台上大字第3594號刑事大法庭裁定定錨：販賣毒品必須已交付毒品或收受價金移轉占有始成立既遂；僅達成買賣合意尚未交付者僅成立未遂。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 3,
+            "subject": "憲法",
+            "major_domain": "憲法與行政法",
+            "category": "正當法律程序與身體權",
+            "question": "警察攔停涉嫌酒駕之甲，甲拒絕吐氣測試，警遂依道交條例強制將甲移送醫院抽血。依憲法法庭111年憲判字第1號判決意旨，下列敘述何者最正確？",
+            "options": {
+                "A": "警察強制抽血完全合憲，因公共交通安全法益優先",
+                "B": "強制抽血干預人身自由、身體權與隱私權，欠缺事前令狀審查或事後法定救濟程序，牴觸憲法正當法律程序原則",
+                "C": "只要經警察分局長書面許可即可強制抽血",
+                "D": "強制抽血屬非侵入性處分，毋庸受令狀原則拘束"
+            },
+            "answer": "B",
+            "explanation": "【解析】：111年憲判字第1號判決宣告：道交條例授權警察逕行強制移送抽血檢測規定牴觸憲法第8條、第22條，違反正當法律程序與令狀原則。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 4,
+            "subject": "民事訴訟法",
+            "major_domain": "民法與民事訴訟法",
+            "category": "爭點效與既判力",
+            "question": "甲請求乙給付價金100萬元，法院審理後於理由認定契約有效，但因消滅時效完成而駁回甲之訴確定。嗣後甲請求乙受領標的物，乙再度主張契約無效。下列敘述何者最正確？",
+            "options": {
+                "A": "前訴理由中契約有效之判斷具備民事訴訟法第400條第1項之既判力",
+                "B": "前案理由中之重大爭點判斷經兩造實質攻防，依爭點效理論，當事人不得為相反主張，法院亦不得為矛盾判斷",
+                "C": "判決理由中之判斷絕對不生拘束力，乙於後訴可恣意重啟爭辯",
+                "D": "時效抗辯之成立表示主文實質確定契約無效"
+            },
+            "answer": "B",
+            "explanation": "【解析】：依最高法院實務通說，理由中判斷雖無既判力，但本於誠信原則適用「爭點效」，兩造充分言詞辯論之主要爭點於後訴具拘束力。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 5,
+            "subject": "刑事訴訟法",
+            "major_domain": "刑法與刑事訴訟法",
+            "category": "違法取證與證據排除法則",
+            "question": "警察無搜索票違法進入甲宅扣得海洛因磚。檢察官起訴提出該扣案毒品為證。依刑事訴訟法第158條之4及實務定錨見解，法院應如何處理？",
+            "options": {
+                "A": "違法搜索扣押之物證絕對不具證據能力，一律排除",
+                "B": "物證具客觀不變性，程序違法不影響證據能力",
+                "C": "法院應審酌人權保障與公共利益均衡維護，綜合權衡八大要素決定該物證有無證據能力",
+                "D": "只要甲事後自白，違法搜索瑕疵即告補正"
+            },
+            "answer": "C",
+            "explanation": "【解析】：依刑訴第158條之4及93台上664判例，公務員違法取證之證據能力應本於利益均衡原則綜合權衡八大要素決定。故選 (C)。"
+        },
+        {
+            "question_no": len(all_questions) + 6,
+            "subject": "商事法",
+            "major_domain": "商事法與綜合領域",
+            "category": "保險法告知義務與除斥期間",
+            "question": "甲投保人壽保險隱匿罹癌事實，承保逾2年後因癌身故，受益人請求理賠。保險人主張依民法第92條撤銷投保意思表示拒賠。依最高法院108年度台上大字第897號裁定，下列敘述何者最正確？",
+            "options": {
+                "A": "保險人仍得於民法1年除斥期間內撤銷契約",
+                "B": "保險法第64條第3項之2年除斥期間具排他性，逾2年後保險人不得再依民法第92條撤銷意思表示",
+                "C": "因甲出於詐欺惡意，民法第92條撤銷權無除斥期間之適用",
+                "D": "保險契約自始因詐欺而當然無效"
+            },
+            "answer": "B",
+            "explanation": "【解析】：108台上大897裁定終局定錨：保險人解除權應專依保險法第64條第3項，逾2年除斥期間後不得再依民法第92條撤銷。故選 (B)。"
+        }
+    ]
+
+    for cm in curated_mcqs:
+        h = f"{cm['question'][:30]}_{cm['options']['A'][:10]}"
+        if h not in seen_hashes:
+            all_questions.append(cm)
+            seen_hashes.add(h)
+
+    for idx, q in enumerate(all_questions, 1):
+        q["global_index"] = idx
+
+    return all_questions
