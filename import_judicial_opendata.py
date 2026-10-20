@@ -223,8 +223,7 @@ def import_scoring_standards_judgments() -> List[Dict[str, Any]]:
         Path(STANDARDS_DIR),
         Path(DATA_DIR) / "scoring_standards",
         Path(__file__).resolve().parent / "data" / "scoring_standards",
-        Path(__file__).resolve().parent.parent / "scoring_standards",
-        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/scoring_standards")
+        Path(__file__).resolve().parent.parent / "scoring_standards"
     ]
     standards_files = []
     for sd in search_dirs:
@@ -541,17 +540,12 @@ def merge_and_save_all_precedents():
     print(f"  🎉 本次新增無重複裁判共 {added_count:,} 筆！")
     print(f"  🌟 全庫裁判總量大幅提升至：{len(existing_items):,} 筆！")
 
-    print("\n🚀 [第 3 步] 寫入主庫與專案鏡像庫...")
+    print("\n🚀 [第 3 步] 寫入裁判主庫...")
     OUTPUT_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f_out:
         json.dump(existing_items, f_out, ensure_ascii=False, indent=2)
 
-    REPO_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f_repo:
-        json.dump(existing_items, f_repo, ensure_ascii=False, indent=2)
-
     print(f"  ✅ 主庫存檔完畢：{OUTPUT_CATALOG_PATH} ({OUTPUT_CATALOG_PATH.stat().st_size / (1024*1024):.2f} MB)")
-    print(f"  ✅ 鏡像存檔完畢：{REPO_CATALOG_PATH} ({REPO_CATALOG_PATH.stat().st_size / (1024*1024):.2f} MB)")
     print("=" * 75)
     return len(existing_items)
 

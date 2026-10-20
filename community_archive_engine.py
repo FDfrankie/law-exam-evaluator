@@ -51,12 +51,19 @@ def load_community_questions() -> List[Dict[str, Any]]:
     return []
 
 def load_community_notes() -> List[Dict[str, Any]]:
-    """讀取所有社群考生上傳收藏之講義筆記"""
+    """讀取所有社群考生上傳收藏之講義筆記（自動過濾 0 KB 測試廢棄檔）"""
     init_community_archives()
     try:
         if NOTES_CATALOG_FILE.exists():
             with open(NOTES_CATALOG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                raw_list = json.load(f)
+                cleaned = [
+                    item for item in raw_list
+                    if float(item.get("size_kb", 0.0) or 0.0) > 0.0
+                    and "test_note" not in str(item.get("filename", "")).lower()
+                    and "test_note" not in str(item.get("original_name", "")).lower()
+                ]
+                return cleaned
     except Exception:
         return []
     return []
@@ -172,7 +179,7 @@ def archive_uploaded_note(
         "uploaded_at": now.strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    # 2. 追加至社群筆記總表
+    # 2. 追加至社群筆記總表 (輕量快速寫入，嚴格禁止阻塞覆寫 69MB 六法 metadata)
     notes_catalog = load_community_notes()
     notes_catalog.insert(0, record)
     try:
@@ -180,31 +187,6 @@ def archive_uploaded_note(
             json.dump(notes_catalog, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"Failed to update community notes catalog: {e}")
-
-    # 3. 實時注入六法標註 metadata (六法即刻可查閱)
-    meta_path = Path(DATA_DIR) / "national_laws" / "six_codes_annotated_metadata.json"
-    if meta_path.exists():
-        try:
-            with open(meta_path, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-
-            nc = meta.get("notes_catalog", {})
-            if subject not in nc:
-                nc[subject] = []
-
-            # 加入前排
-            nc[subject].insert(0, {
-                "filename": archive_filename,
-                "size_kb": size_kb,
-                "path": str(target_path),
-                "is_community_upload": True
-            })
-            meta["notes_catalog"] = nc
-
-            with open(meta_path, "w", encoding="utf-8") as f:
-                json.dump(meta, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"Failed to inject into six codes metadata: {e}")
 
     return record
 

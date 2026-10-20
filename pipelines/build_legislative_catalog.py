@@ -1,3 +1,12 @@
+import sys
+from pathlib import Path
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+_CORE = _ROOT / "core"
+if str(_CORE) not in sys.path:
+    sys.path.insert(0, str(_CORE))
+
 """
 構建全國六法核心考點條文之「立法及修正理由與歷史條文對照庫 (article_legislative_catalog.json)」
 收錄公司法、民法、刑法、證券交易法、保險法、刑事訴訟法、民事訴訟法、行政程序法、行政訴訟法、憲法訴訟法等

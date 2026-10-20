@@ -41,6 +41,7 @@ data/community_archives/
 .ipynb_checkpoints/
 
 # 系統隱藏檔與雲端硬碟同步衝突檔
+.vscode/
 .DS_Store
 Thumbs.db
 desktop.ini
