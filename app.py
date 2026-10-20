@@ -812,12 +812,23 @@ with st.sidebar:
         else:
             st.session_state["app_mode"] = MODE_HOME
 
+    # 雙向導航同步機制：
+    # 1. 若頁面內按鈕要求切換（st.session_state["app_mode"] 被按鈕程式化變更且與前次渲染不同），同步至 Radio
+    # 2. 若使用者於側邊欄點選 Radio，同步至 st.session_state["app_mode"]
+    # 3. 杜絕因強制覆寫 Radio 導致的「點選後紅點跳一下但頁面不切換」現象
+    last_rendered_mode = st.session_state.get("_last_rendered_mode", None)
+
+    if last_rendered_mode is None:
+        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
+    elif st.session_state["app_mode"] != last_rendered_mode:
+        # 頁面內按鈕或外部程式要求切換目標模式
+        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
+    elif "main_app_nav_radio" in st.session_state and st.session_state["main_app_nav_radio"] in mode_options:
+        # 使用者點擊了側邊欄 Radio 元件
+        st.session_state["app_mode"] = st.session_state["main_app_nav_radio"]
+
     cur_mode = st.session_state["app_mode"]
     cur_idx = mode_options.index(cur_mode) if cur_mode in mode_options else 0
-
-    # 確保 Radio 元件狀態與 session_state 嚴格同步，使用穩定唯一的 key 杜絕點選跳走
-    if st.session_state.get("main_app_nav_radio") != cur_mode:
-        st.session_state["main_app_nav_radio"] = cur_mode
 
     app_mode = st.radio(
         "選擇功能模式：",
@@ -826,6 +837,7 @@ with st.sidebar:
         key="main_app_nav_radio"
     )
     st.session_state["app_mode"] = app_mode
+    st.session_state["_last_rendered_mode"] = app_mode
     api_key = get_gemini_api_key()
     if not api_key:
         st.warning("⚠️ 尚未偵測到 API Key！請在 Streamlit Cloud 的 Secrets 設定 `GEMINI_API_KEY`，或在下方直接輸入：")
