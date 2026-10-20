@@ -29,6 +29,23 @@ OPENDATA_DUMP_DIR = Path(DATA_DIR) / "judicial_opendata"
 OPENDATA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
+import ssl
+from requests.adapters import HTTPAdapter
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+class _LegacySSLAdapter(HTTPAdapter):
+    """自訂 SSL Adapter：停用 X.509 嚴格驗證以支援缺少 Subject Key Identifier 之司法院伺服器"""
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        if hasattr(ssl, "VERIFY_X509_STRICT"):
+            ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
 class JudicialOpenDataClient:
     """
     司法院裁判書開放 API (RESTful) 客戶端
@@ -45,24 +62,29 @@ class JudicialOpenDataClient:
         self.username = username
         self.password = password
         self.token = ""
+        import requests
+        self._session = requests.Session()
+        self._session.mount("https://", _LegacySSLAdapter())
+        self._session.headers.update({
+            "Content-Type": "application/json",
+            "User-Agent": "LawExamData/1.0"
+        })
 
     def authenticate(self, username: str = None, password: str = None) -> Dict[str, Any]:
         """使用帳號密碼登入取得 Token (效期 6 小時)"""
-        import requests
         u = username or self.username
         p = password or self.password
         if not u or not p:
             return {"success": False, "error": "帳號或密碼不可為空"}
 
-        headers = {"Content-Type": "application/json"}
         payload = {"user": u, "password": p}
         try:
-            # 司法院政府伺服器憑證常有 Missing Subject Key Identifier 或自簽根憑證問題，故使用 verify=False 確保連線暢通
-            resp = requests.post(self.AUTH_URL, headers=headers, json=payload, timeout=15, verify=False)
+            resp = self._session.post(self.AUTH_URL, json=payload, timeout=20, verify=False)
             if resp.status_code == 200:
                 res_json = resp.json()
-                if "Token" in res_json:
-                    self.token = res_json["Token"]
+                tk = res_json.get("Token") or res_json.get("token")
+                if tk:
+                    self.token = tk
                     self.username = u
                     self.password = p
                     return {"success": True, "token": self.token}
@@ -75,17 +97,18 @@ class JudicialOpenDataClient:
 
     def fetch_jlist(self, token: str = None) -> Dict[str, Any]:
         """取得 7 日前異動之裁判書清單"""
-        import requests
         tk = token or self.token
         if not tk:
             return {"success": False, "error": "請先提供或驗證取得 Token"}
 
-        headers = {"Content-Type": "application/json"}
         payload = {"token": tk}
         try:
-            resp = requests.post(self.JLIST_URL, headers=headers, json=payload, timeout=20, verify=False)
+            resp = self._session.post(self.JLIST_URL, json=payload, timeout=30, verify=False)
             if resp.status_code == 200:
-                return {"success": True, "data": resp.json()}
+                data = resp.json()
+                if isinstance(data, dict) and ("error" in data or "Error" in data):
+                    return {"success": False, "error": data.get("error") or data.get("Error")}
+                return {"success": True, "data": data}
             else:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
         except Exception as e:
@@ -93,24 +116,26 @@ class JudicialOpenDataClient:
 
     def fetch_jdoc(self, jid: str, token: str = None) -> Dict[str, Any]:
         """依裁判 ID (jid) 取得裁判書全文與 metadata"""
-        import requests
         tk = token or self.token
         if not tk:
             return {"success": False, "error": "請先提供或驗證取得 Token"}
 
-        headers = {"Content-Type": "application/json"}
         payload = {"token": tk, "j": jid.strip()}
         try:
-            resp = requests.post(self.JDOC_URL, headers=headers, json=payload, timeout=25, verify=False)
+            resp = self._session.post(self.JDOC_URL, json=payload, timeout=30, verify=False)
             if resp.status_code == 200:
                 data = resp.json()
-                if isinstance(data, dict) and "error" in data:
-                    return {"success": False, "error": data["error"]}
+                if isinstance(data, dict) and ("error" in data or "Error" in data):
+                    return {"success": False, "error": data.get("error") or data.get("Error")}
                 return {"success": True, "data": data}
             else:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
         except Exception as e:
             return {"success": False, "error": f"裁判調閱失敗: {e}"}
+
+
+JudicialOpenDataAPI = JudicialOpenDataClient
+SafeJudicialOpenDataClient = JudicialOpenDataClient
 
 
 def clean_text(s: str) -> str:
@@ -194,7 +219,21 @@ def parse_judgment_jid(jid_raw: str) -> Dict[str, Any]:
 
 def import_scoring_standards_judgments() -> List[Dict[str, Any]]:
     """從本機 scoring_standards 提煉並轉換真實裁判庫"""
-    standards_files = glob.glob(str(SCORING_STANDARDS_DIR / "*.json"))
+    search_dirs = [
+        Path(STANDARDS_DIR),
+        Path(DATA_DIR) / "scoring_standards",
+        Path(__file__).resolve().parent / "data" / "scoring_standards",
+        Path(__file__).resolve().parent.parent / "scoring_standards",
+        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/scoring_standards")
+    ]
+    standards_files = []
+    for sd in search_dirs:
+        if sd.exists():
+            flist = glob.glob(str(sd / "*.json"))
+            if flist:
+                standards_files = flist
+                break
+
     print(f"📦 正在掃描本機 scoring_standards 資料夾，共找到 {len(standards_files):,} 篇真實裁判檔案...")
 
     imported_list = []
@@ -202,6 +241,9 @@ def import_scoring_standards_judgments() -> List[Dict[str, Any]]:
 
     for idx, fpath in enumerate(standards_files):
         try:
+            st_f = os.stat(fpath)
+            if hasattr(st_f, "st_flags") and (st_f.st_flags & 0x40000000):
+                continue
             with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
@@ -351,28 +393,19 @@ def parse_official_opendata_record(data: dict) -> Optional[Dict[str, Any]]:
 
 
 def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
-    """解壓 ZIP, RAR, 7Z 等格式壓縮檔至指定臨時目錄"""
+    """多引擎解壓 ZIP, RAR, 7Z 等格式壓縮檔至指定臨時目錄"""
     ext = archive_path.suffix.lower()
+    
+    # 1. ZIP
     if ext == ".zip":
         try:
-            with zipfile.ZipFile(archive_path, 'r') as z:
+            with zipfile.ZipFile(archive_path, "r") as z:
                 z.extractall(extract_dir)
             return True
         except Exception:
             pass
 
-    # 嘗試使用 7z 命令列（本機預裝之 7-Zip，支援 RAR, 7Z, ZIP, TAR, GZ 等全格式）
-    for cmd_7z in [r"C:\Program Files\7-Zip\7z.exe", r"C:\Program Files (x86)\7-Zip\7z.exe", "7z"]:
-        try:
-            import subprocess
-            res = subprocess.run([cmd_7z, "x", str(archive_path), f"-o{str(extract_dir)}", "-y"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60)
-            if res.returncode == 0:
-                return True
-        except Exception:
-            pass
-
-    # 嘗試使用 rarfile (若為 RAR 檔)
+    # 2. Python 套件 (rarfile, py7zr)
     if ext == ".rar":
         try:
             import rarfile
@@ -381,23 +414,46 @@ def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
             return True
         except Exception:
             pass
-
-    # 嘗試使用 libarchive
-    try:
-        import libarchive.public
-        import os
-        prev_cwd = os.getcwd()
+    elif ext == ".7z":
         try:
-            os.chdir(str(extract_dir))
-            libarchive.public.extract_file(str(archive_path))
+            import py7zr
+            with py7zr.SevenZipFile(archive_path, mode="r") as z:
+                z.extractall(extract_dir)
             return True
-        finally:
-            os.chdir(prev_cwd)
-    except Exception:
-        pass
+        except Exception:
+            pass
+
+    # 3. 系統命令列工具 (7z, unrar, bsdtar, unar, WinRAR)
+    cli_tools = [
+        "7z",
+        r"C:\Program Files\7-Zip\7z.exe",
+        r"C:\Program Files (x86)\7-Zip\7z.exe",
+        "unrar",
+        r"C:\Program Files\WinRAR\UnRAR.exe",
+        r"C:\Program Files\WinRAR\WinRAR.exe",
+        "bsdtar",
+        "unar"
+    ]
+    for tool in cli_tools:
+        try:
+            import subprocess
+            if "7z" in tool.lower():
+                cmd = [tool, "x", str(archive_path), f"-o{str(extract_dir)}", "-y"]
+            elif "unrar" in tool.lower() or "winrar" in tool.lower():
+                cmd = [tool, "x", "-y", str(archive_path), str(extract_dir)]
+            elif "bsdtar" in tool.lower():
+                cmd = [tool, "-xf", str(archive_path), "-C", str(extract_dir)]
+            elif "unar" in tool.lower():
+                cmd = [tool, "-o", str(extract_dir), "-f", str(archive_path)]
+            else:
+                continue
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
+            if res.returncode == 0:
+                return True
+        except Exception:
+            pass
 
     return False
-
 
 def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any]]:
     """批量掃描並匯入目錄或 ZIP/RAR/7Z 檔中的司法院 Open Data JSON 裁判"""
@@ -465,7 +521,14 @@ def merge_and_save_all_precedents():
 
     # 掃描 OPENDATA_DUMP_DIR 中的所有 json / zip
     opendata_records = import_opendata_folder_or_zip(OPENDATA_DUMP_DIR)
-    all_incoming = new_records + opendata_records
+    all_incoming = list(new_records) + list(opendata_records)
+
+    try:
+        from legal_query_engine import EXTENDED_JUDICIAL_AUTHORITIES
+        for auth in EXTENDED_JUDICIAL_AUTHORITIES:
+            all_incoming.append(auth)
+    except Exception:
+        pass
 
     added_count = 0
     for r in all_incoming:

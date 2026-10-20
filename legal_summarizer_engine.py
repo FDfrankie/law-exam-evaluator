@@ -1102,6 +1102,40 @@ BUILTIN_LANDMARK_DOCS: List[Dict[str, Any]] = [
 ]
 
 
+try:
+    from legal_query_engine import EXTENDED_JUDICIAL_AUTHORITIES
+    _existing_b_titles = {b.get("title", "") for b in BUILTIN_LANDMARK_DOCS}
+    for auth in EXTENDED_JUDICIAL_AUTHORITIES:
+        if auth.get("case_id") not in _existing_b_titles:
+            lines = [
+                "【權威字號】：" + auth.get("case_id", ""),
+                "【機關與位階】：" + auth.get("court", "") + "（" + auth.get("level", "") + "）",
+                "【案由與主題】：" + auth.get("title", ""),
+                "【涉及法條】：" + "、".join(auth.get("laws_cited", [])),
+                "",
+                "【核心法律爭點】：",
+                auth.get("issue", ""),
+                "",
+                "【判例／決議／座談會核心要旨】：",
+                auth.get("holding", ""),
+                "",
+                "【學說與實務對照】：",
+                auth.get("scholarly_views", ""),
+                "",
+                "【司律二試國考作答指引】：",
+                auth.get("exam_application_hint", "")
+            ]
+            BUILTIN_LANDMARK_DOCS.append({
+                "id": "AUTH_" + re.sub(r"[^0-9a-zA-Z]", "_", auth.get("case_id", "")),
+                "doc_type": auth.get("level", ""),
+                "title": auth.get("case_id", ""),
+                "text": "\n".join(lines)
+            })
+            _existing_b_titles.add(auth.get("case_id"))
+except Exception:
+    pass
+
+
 def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
     """
     全方位法學字號檢索引擎（裁判字號・大法官解釋・憲判字・中央主管機關長篇函釋）：

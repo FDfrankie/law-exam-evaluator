@@ -24,15 +24,16 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 # 現代化 Gemini 核心模型後備階梯（依序降級，保證模型 ID 有效，避免 404 重試延遲）
 GEMINI_FALLBACK_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.8-pro",
+    "gemini-3.1-pro-preview",
     "gemini-2.5-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash",
-    "gemini-2.5-pro",
-    "gemini-1.5-pro",
     "gemini-2.0-flash-lite",
     "gemini-flash-latest",
     "gemini-pro-latest"

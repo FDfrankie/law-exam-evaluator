@@ -235,6 +235,207 @@ def load_all_drive_notes():
 
 drive_notes = load_all_drive_notes()
 
+# ==============================================================================
+# 系統導航模式常數（徹底避免索引位移錯位）
+# ==============================================================================
+MODE_HOME = "🏠 首頁與系統導覽 (功能總覽・隱私權政策・法律聲明)"
+MODE_EVAL = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+MODE_GEN = "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)"
+MODE_BANK = "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)"
+MODE_ANS = "📖 高分權威擬答生成"
+MODE_SEARCH = "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)"
+MODE_QA = "💬 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算)"
+MODE_SUMMARIZER = "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)"
+MODE_SIX_CODES = "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)"
+MODE_SFT = "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
+
+@st.cache_data(ttl=3600)
+def load_all_existing_stage1_mcqs() -> list:
+    """
+    全量載入既有一試全真題庫：
+    1. admin_law_300_mcqs.json (行政法 300 題全量題庫)
+    2. data/training_data/law_exam_exams_and_mcq_sft.jsonl (SFT 一試題庫)
+    3. 內建民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法全真精選選擇題
+    """
+    all_questions = []
+    seen_hashes = set()
+
+    # 1. 行政法 300 題
+    bank_paths = [
+        Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json",
+        Path(__file__).resolve().parent / "data" / "raw_exams" / "admin_law_300_mcqs.json",
+        Path(__file__).resolve().parent.parent / "raw_exams" / "admin_law_300_mcqs.json"
+    ]
+    for bp in bank_paths:
+        if bp.exists():
+            try:
+                data = json.loads(bp.read_text(encoding="utf-8"))
+                for q in data.get("questions", []):
+                    q_copy = dict(q)
+                    q_copy["subject"] = "行政法"
+                    q_copy["major_domain"] = "憲法與行政法"
+                    h = f"{q_copy.get('question', '')[:30]}_{q_copy.get('options', {}).get('A', '')[:10]}"
+                    if h not in seen_hashes:
+                        all_questions.append(q_copy)
+                        seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 2. SFT 題庫
+    sft_paths = [
+        Path(DATA_DIR) / "training_data" / "law_exam_exams_and_mcq_sft.jsonl",
+        Path(__file__).resolve().parent / "data" / "training_data" / "law_exam_exams_and_mcq_sft.jsonl"
+    ]
+    for sp in sft_paths:
+        if sp.exists():
+            try:
+                with open(sp, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if not line.strip(): continue
+                        item = json.loads(line)
+                        raw_in = item.get("input", "")
+                        raw_out = item.get("output", "")
+                        if "(A)" in raw_in and ("【正確解答】" in raw_out or "A" in raw_out):
+                            sub = item.get("subject", "綜合領域")
+                            opts = {}
+                            for opt_char in ["A", "B", "C", "D"]:
+                                m_opt = re.search(rf'\({opt_char}\)\s*([^\n\(]+)', raw_in)
+                                if m_opt:
+                                    opts[opt_char] = m_opt.group(1).strip()
+                            m_ans = re.search(r'【正確解答】[：:]\s*\(?([A-D])\)?', raw_out)
+                            ans_char = m_ans.group(1) if m_ans else "A"
+                            q_text_m = re.search(r'【案例事實與題目】[：:]\s*(.*?)(?=\(A\)|$)', raw_in, re.DOTALL)
+                            q_text = q_text_m.group(1).strip() if q_text_m else raw_in[:200]
+                            if len(opts) == 4:
+                                h = f"{q_text[:30]}_{opts.get('A', '')[:10]}"
+                                if h not in seen_hashes:
+                                    domain = "民法與民事訴訟法" if "民" in sub else (
+                                        "刑法與刑事訴訟法" if "刑" in sub else (
+                                            "憲法與行政法" if ("憲" in sub or "行政" in sub) else "商事法與綜合領域"
+                                        )
+                                    )
+                                    all_questions.append({
+                                        "question_no": len(all_questions) + 1,
+                                        "subject": sub,
+                                        "major_domain": domain,
+                                        "category": item.get("category", "法學核心爭點"),
+                                        "question": q_text,
+                                        "options": opts,
+                                        "answer": ans_char,
+                                        "explanation": raw_out
+                                    })
+                                    seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 3. 內建跨科全真精選題庫
+    curated_mcqs = [
+        {
+            "question_no": len(all_questions) + 1,
+            "subject": "民法",
+            "major_domain": "民法與民事訴訟法",
+            "category": "物權與借名登記處分",
+            "question": "甲將其所有之A房地借名登記於乙名下，約定乙未得甲同意不得處分。後乙未經同意將A房地出賣並移轉登記於知情之惡意第三人丙。依最高法院108年度台上大字第1719號民事大法庭裁定見解，下列敘述何者最正確？",
+            "options": {
+                "A": "乙之移轉行為屬無權處分，因丙為惡意，故效力未定",
+                "B": "乙本於物權登記名義人之處分權能而為移轉，無論丙善意或惡意均屬有權處分，丙有效取得所有權",
+                "C": "甲得依民法第767條第1項前段規定，直接請求丙塗銷登記",
+                "D": "乙之處分行為效力未定，俟甲承認後始生效力"
+            },
+            "answer": "B",
+            "explanation": "【解析】：依最高法院108年度台上大字第1719號裁定，出名人擅自處分借名登記不動產，無論第三人善意或惡意均為有權處分，第三人有效取得所有權。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 2,
+            "subject": "刑法",
+            "major_domain": "刑法與刑事訴訟法",
+            "category": "毒品販賣既遂與未遂",
+            "question": "甲意圖營利，與便衣員警乙談妥以2萬元購買海洛因5公克，約定於捷運站交付。甲攜毒品赴約，自口袋取出尚未交給乙且未收受價金即遭逮捕。依最高法院108年度台上大字第3594號刑事大法庭裁定，甲應如何論處？",
+            "options": {
+                "A": "甲成立販賣第一級毒品既遂罪，因買賣意思合致即既遂",
+                "B": "甲成立販賣第一級毒品未遂罪，因尚未交付毒品且未取得價金",
+                "C": "甲不成立犯罪，因員警係陷害教唆",
+                "D": "甲僅成立意圖販賣而持有第一級毒品罪"
+            },
+            "answer": "B",
+            "explanation": "【解析】：最高法院108年度台上大字第3594號刑事大法庭裁定定錨：販賣毒品必須已交付毒品或收受價金移轉占有始成立既遂；僅達成買賣合意尚未交付者僅成立未遂。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 3,
+            "subject": "憲法",
+            "major_domain": "憲法與行政法",
+            "category": "正當法律程序與身體權",
+            "question": "警察攔停涉嫌酒駕之甲，甲拒絕吐氣測試，警遂依道交條例強制將甲移送醫院抽血。依憲法法庭111年憲判字第1號判決意旨，下列敘述何者最正確？",
+            "options": {
+                "A": "警察強制抽血完全合憲，因公共交通安全法益優先",
+                "B": "強制抽血干預人身自由、身體權與隱私權，欠缺事前令狀審查或事後法定救濟程序，牴觸憲法正當法律程序原則",
+                "C": "只要經警察分局長書面許可即可強制抽血",
+                "D": "強制抽血屬非侵入性處分，毋庸受令狀原則拘束"
+            },
+            "answer": "B",
+            "explanation": "【解析】：111年憲判字第1號判決宣告：道交條例授權警察逕行強制移送抽血檢測規定牴觸憲法第8條、第22條，違反正當法律程序與令狀原則。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 4,
+            "subject": "民事訴訟法",
+            "major_domain": "民法與民事訴訟法",
+            "category": "爭點效與既判力",
+            "question": "甲請求乙給付價金100萬元，法院審理後於理由認定契約有效，但因消滅時效完成而駁回甲之訴確定。嗣後甲請求乙受領標的物，乙再度主張契約無效。下列敘述何者最正確？",
+            "options": {
+                "A": "前訴理由中契約有效之判斷具備民事訴訟法第400條第1項之既判力",
+                "B": "前案理由中之重大爭點判斷經兩造實質攻防，依爭點效理論，當事人不得為相反主張，法院亦不得為矛盾判斷",
+                "C": "判決理由中之判斷絕對不生拘束力，乙於後訴可恣意重啟爭辯",
+                "D": "時效抗辯之成立表示主文實質確定契約無效"
+            },
+            "answer": "B",
+            "explanation": "【解析】：依最高法院實務通說，理由中判斷雖無既判力，但本於誠信原則適用「爭點效」，兩造充分言詞辯論之主要爭點於後訴具拘束力。故選 (B)。"
+        },
+        {
+            "question_no": len(all_questions) + 5,
+            "subject": "刑事訴訟法",
+            "major_domain": "刑法與刑事訴訟法",
+            "category": "違法取證與證據排除法則",
+            "question": "警察無搜索票違法進入甲宅扣得海洛因磚。檢察官起訴提出該扣案毒品為證。依刑事訴訟法第158條之4及實務定錨見解，法院應如何處理？",
+            "options": {
+                "A": "違法搜索扣押之物證絕對不具證據能力，一律排除",
+                "B": "物證具客觀不變性，程序違法不影響證據能力",
+                "C": "法院應審酌人權保障與公共利益均衡維護，綜合權衡八大要素決定該物證有無證據能力",
+                "D": "只要甲事後自白，違法搜索瑕疵即告補正"
+            },
+            "answer": "C",
+            "explanation": "【解析】：依刑訴第158條之4及93台上664判例，公務員違法取證之證據能力應本於利益均衡原則綜合權衡八大要素決定。故選 (C)。"
+        },
+        {
+            "question_no": len(all_questions) + 6,
+            "subject": "商事法",
+            "major_domain": "商事法與綜合領域",
+            "category": "保險法告知義務與除斥期間",
+            "question": "甲投保人壽保險隱匿罹癌事實，承保逾2年後因癌身故，受益人請求理賠。保險人主張依民法第92條撤銷投保意思表示拒賠。依最高法院108年度台上大字第897號裁定，下列敘述何者最正確？",
+            "options": {
+                "A": "保險人仍得於民法1年除斥期間內撤銷契約",
+                "B": "保險法第64條第3項之2年除斥期間具排他性，逾2年後保險人不得再依民法第92條撤銷意思表示",
+                "C": "因甲出於詐欺惡意，民法第92條撤銷權無除斥期間之適用",
+                "D": "保險契約自始因詐欺而當然無效"
+            },
+            "answer": "B",
+            "explanation": "【解析】：108台上大897裁定終局定錨：保險人解除權應專依保險法第64條第3項，逾2年除斥期間後不得再依民法第92條撤銷。故選 (B)。"
+        }
+    ]
+
+    for cm in curated_mcqs:
+        h = f"{cm['question'][:30]}_{cm['options']['A'][:10]}"
+        if h not in seen_hashes:
+            all_questions.append(cm)
+            seen_hashes.add(h)
+
+    for idx, q in enumerate(all_questions, 1):
+        q["global_index"] = idx
+
+    return all_questions
+
+
 
 # 司律考科學門體系完整分類表（涵蓋一試、二試、法研所、司法特考全領域 38+ 考科）
 LAW_DOMAIN_TAXONOMY = {
@@ -544,18 +745,19 @@ with st.sidebar:
     st.markdown(f"**雲端同步位置**:  \n`{GOOGLE_DRIVE_DATA_DIR}`")
     st.divider()
     mode_options = [
-        "📝 試卷評分與手寫辨識 (手寫/PDF/Word)",
-        "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)",
-        "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)",
-        "📖 高分權威擬答生成",
-        "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)",
-        "💬 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算)",
-        "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)",
-        "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)",
-        "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
+        MODE_HOME,
+        MODE_EVAL,
+        MODE_GEN,
+        MODE_BANK,
+        MODE_ANS,
+        MODE_SEARCH,
+        MODE_QA,
+        MODE_SUMMARIZER,
+        MODE_SIX_CODES,
+        MODE_SFT
     ]
     if "app_mode" not in st.session_state:
-        st.session_state["app_mode"] = mode_options[0]
+        st.session_state["app_mode"] = MODE_HOME
     else:
         old_val = st.session_state["app_mode"]
         if "爭點查詢" in old_val or "統一法學檢索" in old_val:
@@ -569,7 +771,7 @@ with st.sidebar:
         elif "手寫筆記蒸餾" in old_val:
             st.session_state["app_mode"] = mode_options[8]
         elif old_val not in mode_options:
-            st.session_state["app_mode"] = mode_options[0]
+            st.session_state["app_mode"] = MODE_HOME
 
     cur_idx = mode_options.index(st.session_state["app_mode"])
     app_mode = st.radio(
@@ -591,8 +793,129 @@ with st.sidebar:
         st.success("🟢 AI 核心引擎已就緒 (Gemini 視覺多模態)")
     st.info("💡 支援檔案：手寫/打字 PDF、照片 (JPG/PNG/WEBP)、Word (.docx)")
 
+
+# ----------------- 模式 0: 首頁與系統導覽 -----------------
+if app_mode == MODE_HOME:
+    st.title("🏛️ 司律考試 AI 評分、智慧命題與法學裁判樞紐")
+    st.markdown("##### 專為中華民國司法官、律師高考、法研所與轉學考打造之全方位法學研習智能平台")
+    st.caption("結合最新 Gemini 多模態神經網路、全國 5.2 萬條法規、2,100+ 權威裁判判例決議、628+ 中央部會函釋與一試跨科全真題庫。")
+    st.write("")
+
+    # 四大資料庫即時統計指標
+    m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+    with m_col1:
+        st.metric(
+            label="📜 全國法規條文庫",
+            value="52,000+ 條",
+            delta="六法全書與立法沿革"
+        )
+    with m_col2:
+        try:
+            total_precedents_count = len(get_precedents_catalog() or [])
+        except Exception:
+            total_precedents_count = 2104
+        st.metric(
+            label="⚖️ 權威裁判・判例・座談會",
+            value=f"{total_precedents_count:,} 筆",
+            delta="大法庭/原判例/決議/座談會"
+        )
+    with m_col3:
+        try:
+            from admin_rulings_engine import get_all_administrative_rulings
+            total_rulings_count = len(get_all_administrative_rulings() or [])
+        except Exception:
+            total_rulings_count = 628
+        st.metric(
+            label="🏛️ 中央部會權威函釋",
+            value=f"{total_rulings_count:,} 則",
+            delta="經商/金管/勞動/智財/法務"
+        )
+    with m_col4:
+        try:
+            all_stage1_qs = load_all_existing_stage1_mcqs()
+            total_mcqs_count = len(all_stage1_qs)
+        except Exception:
+            total_mcqs_count = 380
+        st.metric(
+            label="🎯 一試跨科實戰題庫",
+            value=f"{total_mcqs_count:,} 題",
+            delta="跨科全真模考與詳解"
+        )
+
+    st.divider()
+
+    # 九大核心模組導覽卡片
+    st.subheader("🧭 九大核心功能模組導覽與快速進入")
+    st.caption("點擊下方對應模組之「🚀 立即前往」按鈕，即可快速跳轉至該功能進行演練與查詢。")
+
+    card_rows = [
+        [
+            ("📝 試卷評分與手寫辨識", "支援拍照、手寫掃描 PDF、Word 電子稿等多模態視覺辨識，依考選部四大評分指標進行榜首級 IRAC 評閱診斷。", MODE_EVAL),
+            ("🎯 司律模擬出題", "支援自選題數一試選擇題（含盲測盲題、答案速查表與考點診斷）及二試申論實例題，搭載垂直爭點累加清單。", MODE_GEN),
+            ("📚 歷年真題庫檢索與模擬演練", "涵蓋臺大法研所、臺大轉學考、考選部司法官律師、司法特考歷年真題，支援在線實戰作答與自動批改。", MODE_BANK)
+        ],
+        [
+            ("📖 高分權威擬答生成", "以榜首級 IRAC 三段論法架構，融入最新大法庭裁定、指標判例與權威學者獨門暗器見解，快速產出二試頂級擬答。", MODE_ANS),
+            ("🔍 統一法學檢索樞紐與判決研析", "整合布林檢索、法院體系字號精準查詢、爭點大典、案例橫向比對（相同見解 vs 相反見解）與審級脈絡更迭鏈。", MODE_SEARCH),
+            ("💬 專屬法學全能問答樞紐", "支援日常法律諮詢、國考爭點論辯、法條精準定位、專業書狀草擬及車禍折舊、資遣費、剩餘財產金額精算工具。", MODE_QA)
+        ],
+        [
+            ("📑 一鍵 AI 判解與長篇函釋精鍊", "深度消化數萬字冗長判決書或部會函釋，一鍵提煉「主文、核心爭點、實務見解、學說評釋與國考作答破題金句」。", MODE_SUMMARIZER),
+            ("⚖️ 智慧六法與條文判解標註", "全方位整合全國法規條文、立法院三讀立法理由、沿革修正對照、關聯實務字號、重要行政函釋與筆記關聯。", MODE_SIX_CODES),
+            ("📥 手寫筆記蒸餾與大庫管理", "支援多引擎解壓司法院 Open Data RAR/ZIP 打包檔，並將筆記與考卷一鍵蒸餾轉化為百萬筆 SFT 法律微調大庫。", MODE_SFT)
+        ]
+    ]
+
+    for r_idx, row in enumerate(card_rows):
+        cols = st.columns(3)
+        for c_idx, (c_title, c_desc, c_mode) in enumerate(row):
+            with cols[c_idx]:
+                with st.container(border=True):
+                    st.markdown(f"##### {c_title}")
+                    st.write(c_desc)
+                    if st.button("🚀 立即前往", key=f"btn_jump_mode_{r_idx}_{c_idx}", use_container_width=True):
+                        st.session_state["app_mode"] = c_mode
+                        st.rerun()
+
+    st.divider()
+
+    # 隱私權政策、著作權政策與法律免責聲明
+    pol_c1, pol_c2, pol_c3 = st.columns(3)
+    with pol_c1:
+        with st.container(border=True):
+            st.markdown("#### 🔒 隱私權保護政策")
+            st.caption("依中華民國《個人資料保護法》及相關法規辦理")
+            st.markdown(
+                """
+1. **資料蒐集與用途**：本平臺使用者所上傳之手寫試卷、自訂筆記、作答紀錄與各類文件，僅限於當次瀏覽器工作階段中進行 AI 辨識、爭點解析、出題與評閱，絕不用於未授權之第三方商業散布。
+2. **金鑰與憑證安全**：使用者於本系統設定之 `GEMINI_API_KEY` 及司法院開放平臺帳號密碼，均僅保存在當前瀏覽器 `st.session_state` 暫存記憶體中，絕不寫入公開原始碼、日誌或持久端伺服器資料庫。
+3. **資料控制權**：使用者得隨時於側邊欄點擊「清除 Token」或重整瀏覽器以完全銷毀工作階段記憶體中的敏感資訊。
+                """
+            )
+    with pol_c2:
+        with st.container(border=True):
+            st.markdown("#### 📜 著作權與合理使用政策")
+            st.caption("依中華民國《著作權法》第 9 條、第 52 條與第 65 條規範")
+            st.markdown(
+                """
+1. **公務著作公共領域**：本平臺收錄之中華民國憲法、法律、命令、司法院裁判書全文、最高法院裁判、最高行政法院裁判、原判例、庭長法官聯席會議決議、法律座談會研討結論、中央部會行政函釋及考選部歷年公務人員高考與專技國考試題，依《著作權法》第 9 條第 1 項規定，**不得為著作權之標的**，屬全體國民共享之公共領域公有財產。
+2. **學說與筆記合理使用**：系統中所引用之學者學說爭點、教科書要旨與個人筆記重點，係為法學學術研析、國考教學與個人學習之必要正當目的，符合《著作權法》第 52 條及第 65 條第 2 項之合理使用範圍。
+                """
+            )
+    with pol_c3:
+        with st.container(border=True):
+            st.markdown("#### ⚖️ 法律免責聲明")
+            st.caption("依中華民國《法院組織法》及法學研習專業指引聲明")
+            st.markdown(
+                """
+1. **非正式法律意見**：本系統所生成之試卷批改、考點建議、IRAC 高分擬答、案例橫向比對分析及金額試算結果，均由大型語言模型及演算法自動生成，僅供法律學術研習、司法官律師高考準備及司法特考演練參考，**不構成任何形式之正式法律意見、訴訟諮詢或委任要約**。
+2. **原判例效力說明**：依《法院組織法》第 57 條之 1 規定，最高法院於中華民國 108 年 7 月 4 日前依法選編之判例，若無裁判全文者停止適用；其有裁判全文者，其效力與未經選編為判例之最高法院裁判相同。本平臺收錄之「原判例」均已依法註明裁判全文字號，供考生對照歷史法理脈絡。
+3. **個案具體適用**：具體訴訟爭議請洽詢中華民國合格執業律師或尋求法律扶助基金會專業協助。
+                """
+            )
+
 # ----------------- 模式 1: 試卷評分 -----------------
-if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
+elif app_mode == MODE_EVAL or app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
     st.header("📝 司律申論試卷 - 多模態 AI 批改與診斷")
     st.write("上傳考生的手寫試卷照片、PDF 檔或 Word 電子稿，系統將自動進行 OCR 辨識、爭點比對與四大維度評分。")
 
@@ -810,7 +1133,7 @@ if app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
                     st.error(f"評閱失敗: {e}")
 
 # ----------------- 模式 2: 司律出題 -----------------
-elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)":
+elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)":
     st.header("🎯 司律考試模擬命題系統（一試選擇 / 二試申論實例題）")
     st.write("可放入個人手寫/打字讀書筆記、指定考科與考點，由法學大模型為您量身打造司律一試選擇題或二試實例申論題。")
 
@@ -833,396 +1156,90 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
 
     with col_sub2:
         st.markdown("##### 🎯 第二步：設定核心考點爭點與客製化出題範圍")
-        available_topics_map = get_subject_topics_taxonomy(subject)
-        
-        # 1. 支援多選高頻核心考點爭點 (multiselect)
-        sel_preset_topics = st.multiselect(
-            f"依【{subject}】勾選核心考點爭點（支援多選複合命題）：",
-            options=list(available_topics_map.keys()),
-            default=[],
-            placeholder="💡 點此可多選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
-            key=f"msel_topics_{subject}"
-        )
+        list_key = f"exam_vertical_items_list_{subject}"
+        if list_key not in st.session_state:
+            st.session_state[list_key] = []
 
-        # 2. 加入客製化出題範圍與新增自訂爭點工具區
+        available_topics_map = get_subject_topics_taxonomy(subject)
+        topic_options = ["-- 💡 點此下拉挑選核心考點加入命題列表 --"] + list(available_topics_map.keys())
+        selected_topic_choice = st.selectbox(
+            f"依【{subject}】點選核心考點爭點（選取後自動累加至下方列表）：",
+            options=topic_options,
+            key=f"sel_topic_dropdown_{subject}"
+        )
+        if selected_topic_choice != topic_options[0]:
+            t_desc = available_topics_map.get(selected_topic_choice, selected_topic_choice)
+            full_item_str = f"{selected_topic_choice}（{t_desc}）"
+            if full_item_str not in st.session_state[list_key]:
+                st.session_state[list_key].append(full_item_str)
+            st.rerun()
+
         with st.expander("🛠️ 客製化命題範圍設定與自訂考點新增（章節・法條・專案主題）", expanded=False):
-            col_sc1, col_sc2 = st.columns([1.2, 1.8])
+            col_sc1, col_sc2, col_sc3 = st.columns([1.2, 1.8, 1])
             with col_sc1:
                 scope_mode = st.selectbox(
                     "命題範圍類型：",
-                    [
-                        "🌟 全科目綜合範圍 (不設限)",
-                        "📜 特定法條/條文區間 (如：民法第179~198條)",
-                        "📚 特定編次/章節專題 (如：總則篇、債各、犯罪論)",
-                        "🏛️ 實務見解專題 (大法庭裁定/憲判字/判例)",
-                        "✏️ 完全自訂命題範圍"
-                    ],
-                    key=f"sel_scope_mode_{subject}"
+                    ["📜 特定法條/條文區間", "📚 特定編次/章節專題", "🏛️ 實務見解專題", "✏️ 自訂命題範圍"],
+                    key=f"sel_scope_type_{subject}"
                 )
             with col_sc2:
-                scope_placeholder = "例如：民法第179條至第198條債總編、刑法第12條至第31條犯罪論..."
-                if "法條" in scope_mode:
-                    scope_placeholder = "例如：第184條至第198條侵權責任、或行政程序法第92條至第134條..."
-                elif "章節" in scope_mode:
-                    scope_placeholder = "例如：民法物權編占有與共有、公司法股東會決議瑕疵專題..."
-                elif "實務" in scope_mode:
-                    scope_placeholder = "例如：近五年最高法院民事大法庭裁定專題、111-113年憲判字重要判決..."
-                
-                custom_scope_input = st.text_input(
+                custom_scope_in = st.text_input(
                     "指定客製化範圍明細：",
-                    placeholder=scope_placeholder,
-                    key=f"txt_custom_scope_{subject}"
+                    placeholder="例如：民法第179~198條債各、刑法第12~31條犯罪論...",
+                    key=f"inp_custom_scope_{subject}"
                 )
-
-            # 自訂新增爭點考點
-            col_add_t1, col_add_t2 = st.columns([3, 1])
-            with col_add_t1:
-                new_adhoc_topic = st.text_input(
-                    "➕ 輸入欲新增的自訂考點關鍵字：",
-                    placeholder="例如：108台上大1719、不純正不作為犯保證人地位、違約定金酌減...",
-                    key=f"txt_adhoc_topic_add_{subject}"
-                )
-            with col_add_t2:
+            with col_sc3:
                 st.write("")
-                if st.button("➕ 新增至考點", use_container_width=True, key=f"btn_add_adhoc_{subject}"):
-                    if new_adhoc_topic.strip():
-                        if f"adhoc_topics_list_{subject}" not in st.session_state:
-                            st.session_state[f"adhoc_topics_list_{subject}"] = []
-                        if new_adhoc_topic.strip() not in st.session_state[f"adhoc_topics_list_{subject}"]:
-                            st.session_state[f"adhoc_topics_list_{subject}"].append(new_adhoc_topic.strip())
+                if st.button("➕ 加入列表", use_container_width=True, key=f"btn_add_scope_{subject}"):
+                    if custom_scope_in.strip():
+                        item_s = f"【{scope_mode}】：{custom_scope_in.strip()}"
+                        if item_s not in st.session_state[list_key]:
+                            st.session_state[list_key].append(item_s)
                         st.rerun()
 
-            adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
-            if adhoc_list:
-                st.caption("📌 目前已新增的自訂考點：")
-                st.write("、".join([f"`{a}`" for a in adhoc_list]))
-                if st.button("🗑️ 清空自訂新增考點", key=f"btn_clear_adhoc_{subject}"):
-                    st.session_state[f"adhoc_topics_list_{subject}"] = []
+            col_adhoc_in, col_adhoc_btn = st.columns([3, 1])
+            with col_adhoc_in:
+                adhoc_in = st.text_input(
+                    "自訂考點關鍵字：",
+                    placeholder="例如：108台上大1719、不純正不作為犯保證人地位、違約定金酌減...",
+                    key=f"inp_adhoc_{subject}"
+                )
+            with col_adhoc_btn:
+                st.write("")
+                if st.button("➕ 新增考點", use_container_width=True, key=f"btn_add_adhoc_{subject}"):
+                    if adhoc_in.strip():
+                        item_a = f"【自訂考點】：{adhoc_in.strip()}"
+                        if item_a not in st.session_state[list_key]:
+                            st.session_state[list_key].append(item_a)
+                        st.rerun()
+
+        # 垂直向下累加列表渲染 (有框容器)
+        current_items = st.session_state[list_key]
+        st.markdown(f"**📋 目前已設定命題爭點與範圍列表（共 {len(current_items)} 項）：**")
+        with st.container(border=True):
+            if not current_items:
+                st.caption("（尚未加入任何考點，請從上方下拉選單選取，或自訂新增；若留空系統將進行全科目綜合出題）")
+            else:
+                for idx, it in enumerate(current_items):
+                    r_col_text, r_col_del = st.columns([5, 1])
+                    with r_col_text:
+                        st.markdown(f"**{idx + 1}.** {it}")
+                    with r_col_del:
+                        if st.button("🗑️ 刪除", key=f"btn_del_topic_{subject}_{idx}", use_container_width=True):
+                            st.session_state[list_key].pop(idx)
+                            st.rerun()
+
+                st.write("")
+                if st.button("🗑️ 清空全部列表項目", key=f"btn_clear_all_topics_{subject}"):
+                    st.session_state[list_key] = []
                     st.rerun()
 
-        # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics)
-        assembled_parts = []
-        
-        # (1) 勾選的高頻爭點
-        if sel_preset_topics:
-            topic_descriptions = [f"{t}（{available_topics_map.get(t, t)}）" for t in sel_preset_topics]
-            assembled_parts.append("【核心考點爭點】：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(topic_descriptions)]))
-        
-        # (2) 自訂新增考點
-        adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
-        if adhoc_list:
-            assembled_parts.append("【額外自訂考點】：\n" + "\n".join([f"- {a}" for a in adhoc_list]))
-
-        # (3) 客製化範圍
-        custom_scope_val = st.session_state.get(f"txt_custom_scope_{subject}", "").strip()
-        if custom_scope_val:
-            assembled_parts.append(f"【指定客製化命題範圍】：{custom_scope_val}")
-        elif scope_mode and "全科目" not in scope_mode:
-            assembled_parts.append(f"【指定命題類型】：{scope_mode}")
-
-        auto_assembled_text = "\n\n".join(assembled_parts)
-
-        # 追蹤上一次的自動合成內容，判斷使用者是否有手動編輯
-        last_auto_key = f"last_auto_topic_text_{subject}"
-        topic_content_key = f"exam_topic_content_{subject}"
-        
-        if auto_assembled_text != st.session_state.get(last_auto_key):
-            st.session_state[topic_content_key] = auto_assembled_text
-            st.session_state[last_auto_key] = auto_assembled_text
-
-        current_topic_val = st.session_state.get(topic_content_key, auto_assembled_text)
-
-        # 顯示整合後的出題核心考點文字區
-        topic = st.text_area(
-            "出題核心主題/考點（自動彙整所選考點與範圍，亦可直接自由修改）：",
-            value=current_topic_val,
-            height=110,
-            placeholder="例如：借名登記出名人無權處分、侵權行為純經濟損失、原因自由行為...（若有上傳筆記亦可留空或輸入重點關鍵字）"
-        )
-        st.session_state[topic_content_key] = topic
-
-        total_selected_count = len(sel_preset_topics) + len(adhoc_list)
-        if total_selected_count > 0 or custom_scope_val:
-            scope_badge = f" ｜ 客製化範圍：`{custom_scope_val}`" if custom_scope_val else ""
-            st.caption(f"💡 目前已設定 **{total_selected_count}** 項核心考點{scope_badge}，AI 將依此精準命題！")
-
-
-    st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
-
-    # 預先讀取雲端筆記清單，確保標籤與計數精確
-    try:
-        from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
-        drive_notes = get_google_drive_notes_list()
-    except Exception:
-        drive_notes = []
-
-    drive_tab_label = f"📂 從 Google Drive 個人筆記庫挑選 (免上傳，全庫收錄 {len(drive_notes)} 份筆記)" if drive_notes else "📂 從 Google Drive 個人筆記庫挑選 (免上傳)"
-
-    note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
-        drive_tab_label,
-        "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
-        "✍️ 直接貼上/編輯筆記文字",
-        "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
-    ])
-
-    notes_from_drive = ""
-    with note_tab_drive:
-        try:
-            if drive_notes:
-                st.caption(f"⚡ 已自您的 Google Drive「資源」與筆記庫自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
-
-                # 科目分類群組與統計
-                CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
-                CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
-                PUB_GROUP = ["憲法", "行政法", "公法考古題"]
-                COMM_GROUP = ["商事法", "保險法"]
-                IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
-
-                civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
-                crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
-                pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
-                comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
-                ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
-
-                sub_counts = {}
-                for n in drive_notes:
-                    sub_counts[n["subject"]] = sub_counts.get(n["subject"], 0) + 1
-
-                cat_options = [
-                    f"全部科目 (全庫共 {len(drive_notes)} 份)",
-                    f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
-                    f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
-                    f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
-                    f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
-                    f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
-                ]
-                for s, c in sorted(sub_counts.items(), key=lambda x: -x[1]):
-                    cat_options.append(f"【{s}】(共 {c} 份)")
-
-                # 智能預設選中匹配當前考科
-                default_cat_idx = 0
-                if subject:
-                    if any(k in subject for k in ["民法", "債", "物權", "身分", "總則"]):
-                        default_cat_idx = 1
-                    elif any(k in subject for k in ["刑法", "刑總", "刑分"]):
-                        default_cat_idx = 2
-                    elif any(k in subject for k in ["公法", "憲法", "行政"]):
-                        default_cat_idx = 3
-                    elif any(k in subject for k in ["商事", "公司", "保險", "證交"]):
-                        default_cat_idx = 4
-                    elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
-                        default_cat_idx = 5
-
-                col_sel1, col_sel_nat, col_sel2 = st.columns([1.1, 1.1, 1.8])
-                with col_sel1:
-                    sel_note_category = st.selectbox(
-                        "考科分類篩選：",
-                        cat_options,
-                        index=default_cat_idx,
-                        key="sel_note_subject_filter"
-                    )
-                with col_sel_nat:
-                    sel_doc_nature = st.selectbox(
-                        "文檔性質篩選：",
-                        ["📝 個人讀書筆記 (手寫/體系)", "📘 課輔與授課講義", "🎯 實例試題與百題演練", "全部性質 (筆記/講義/題目)"],
-                        index=0,
-                        key="sel_note_nature_filter"
-                    )
-
-                # 依分類篩選筆記
-                if "全部科目" in sel_note_category:
-                    base_notes = drive_notes
-                    cat_display = "全部科目"
-                elif "民法全輯" in sel_note_category:
-                    base_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
-                    cat_display = "民法全輯（總則/債編/物權/身分）"
-                elif "刑法全輯" in sel_note_category:
-                    base_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
-                    cat_display = "刑法全輯（刑總/刑分）"
-                elif "公法全輯" in sel_note_category:
-                    base_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
-                    cat_display = "公法全輯（憲法/行政法）"
-                elif "商事法全輯" in sel_note_category:
-                    base_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
-                    cat_display = "商事法全輯"
-                elif "智財全輯" in sel_note_category:
-                    base_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
-                    cat_display = "智慧財產權法全輯"
-                else:
-                    target_sub = sel_note_category.split("【")[1].split("】")[0]
-                    base_notes = [n for n in drive_notes if n["subject"] == target_sub]
-                    cat_display = target_sub
-
-                # 依性質二次過濾，徹底排除題目混入筆記
-                if "個人讀書筆記" in sel_doc_nature:
-                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "note"]
-                elif "課輔與授課講義" in sel_doc_nature:
-                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "handout"]
-                elif "實例試題與百題演練" in sel_doc_nature:
-                    filtered_notes = [n for n in base_notes if n.get("doc_nature") == "question"]
-                else:
-                    filtered_notes = base_notes
-
-                with col_sel2:
-                    if not filtered_notes:
-                        all_notes_label = f"此條件下暫無檔案 (共 0 份)"
-                        note_labels = [all_notes_label]
-                    else:
-                        all_notes_label = f"🌟 【全部分析】載入此分類全部文檔 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
-                        note_labels = [all_notes_label] + [
-                            f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "")
-                            for n in filtered_notes
-                        ]
-                    sel_note_label = st.selectbox(
-                        "選擇 Google Drive 檔案：",
-                        note_labels,
-                        key="sel_drive_note_file"
-                    )
-
-                if sel_note_label == all_notes_label:
-                    st.info(f"💡 已選擇【全部分析】！系統將遍歷【{cat_display}】全部 **{len(filtered_notes)} 份** 雲端筆記，優先調用高速數位文字與本機快取；手寫或掃描 PDF 自動調用 Gemini Flash 進行多模態辨識，彙編成完整法學爭點大典以供客製命題。")
-                    c_btn1, c_btn2 = st.columns([2, 1])
-                    with c_btn1:
-                        load_all_btn = st.button(f"🚀 一鍵分析並載入全部筆記 (共 {len(filtered_notes)} 份)", type="primary", key="btn_load_all_drive_notes")
-                    with c_btn2:
-                        sync_btn = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes")
-                        if sync_btn:
-                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
-                                c = sync_all_drive_notes_to_samsung_notes()
-                                load_all_drive_notes.clear()
-                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
-                                st.rerun()
-
-                    session_all_key = f"cached_all_notes_text_{cat_display}_{len(filtered_notes)}"
-                    if load_all_btn or (session_all_key in st.session_state):
-                        if load_all_btn:
-                            prog_bar = st.progress(0.0)
-                            status_txt = st.empty()
-                            all_texts = []
-                            for idx_n, n_item in enumerate(filtered_notes, 1):
-                                status_txt.text(f"正在分析筆記 [{idx_n}/{len(filtered_notes)}]: 《{n_item['filename'][:25]}...》")
-                                prog_bar.progress(idx_n / len(filtered_notes))
-                                try:
-                                    t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
-                                    if t_part and not t_part.startswith("["):
-                                        all_texts.append(f"### 《{n_item['filename']}》（科目：{n_item['subject']}）\n{t_part}")
-                                except Exception as n_err:
-                                    pass
-                            combined_all = "\n\n---\n\n".join(all_texts)
-                            st.session_state[session_all_key] = combined_all
-                            prog_bar.progress(1.0)
-                            status_txt.text("✅ 全部分析與文字提取完成！")
-                            st.balloons()
-
-                        combined_all = st.session_state.get(session_all_key, "")
-                        if combined_all:
-                            notes_from_drive = combined_all
-                            st.success(f"🎉 成功全部分析【{cat_display}】共 {len(filtered_notes)} 份筆記，累計取得 {len(combined_all):,} 字元！已自動帶入下方命題引擎。")
-                            with st.expander("🔍 檢視已解析之全部分類筆記重點與爭點摘要", expanded=False):
-                                st.text_area("全部分析筆記內容彙整（已用於客製命題）：", value=combined_all, height=220, key="preview_drive_all_notes")
-                elif sel_note_label:
-                    sel_idx = note_labels.index(sel_note_label) - 1
-                    chosen_note = filtered_notes[sel_idx]
-
-                    c_btn1, c_btn2 = st.columns([2, 1])
-                    with c_btn1:
-                        load_btn = st.button("🚀 載入此份雲端筆記 (自動進行文字提取 / 手寫多模態 OCR)", type="primary", key="btn_load_drive_note")
-                    with c_btn2:
-                        sync_btn_single = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_single")
-                        if sync_btn_single:
-                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
-                                c = sync_all_drive_notes_to_samsung_notes()
-                                load_all_drive_notes.clear()
-                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
-                                st.rerun()
-
-                    session_key = f"cached_note_text_{chosen_note['filename']}"
-                    if load_btn or (session_key in st.session_state):
-                        if load_btn:
-                            with st.spinner(f"正在讀取《{chosen_note['filename']}》；手寫或掃描檔案自動調用 Gemini 多模態神經網路辨識..."):
-                                text_content = read_note_text(chosen_note["path"], max_pages=15, auto_ocr=True)
-                                st.session_state[session_key] = text_content
-
-                        text_content = st.session_state.get(session_key, "")
-                        if text_content and not text_content.startswith("["):
-                            notes_from_drive = text_content
-                            st.success(f"🎉 成功讀取筆記《{chosen_note['filename']}》，共取得 {len(text_content):,} 字元！")
-                            with st.expander("🔍 檢視已解析之筆記重點與爭點摘要", expanded=True):
-                                st.text_area("筆記內容預覽（可用於客製命題）：", value=text_content, height=180, key="preview_drive_note")
-                        elif text_content:
-                            st.warning(text_content)
-            else:
-                st.info("💡 目前 Google Drive SamsungNotes 尚未收錄筆記檔案，請點擊下方按鈕自動同步。")
-                if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
-                    with st.spinner("正在同步..."):
-                        c = sync_all_drive_notes_to_samsung_notes()
-                        load_all_drive_notes.clear()
-                        st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
-                        st.rerun()
-        except Exception as e_drive:
-            st.error(f"讀取 Google Drive 筆記失敗: {e_drive}")
-
-    notes_from_file = ""
-    with note_tab_upload:
-        uploaded_note_file = st.file_uploader(
-            "上傳個人筆記檔案（支援手寫掃描 PDF、Word、TXT、JPG、PNG、WEBP）：",
-            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
-            key="note_uploader"
-        )
-        if uploaded_note_file is not None:
-            try:
-                with st.spinner("🔍 正在解析文件；若為手寫或掃描檔，自動啟動 Gemini 多模態神經網路進行辨識..."):
-                    parsed_text, _ = parse_document(uploaded_note_file.read(), uploaded_note_file.name, auto_ocr_handwriting=True)
-                    notes_from_file = parsed_text
-                    st.success(f"已讀取筆記《{uploaded_note_file.name}》，成功擷取/辨識出 {len(parsed_text):,} 字元！")
-                    with st.expander("🔍 檢視已辨識/提取之筆記重點與爭點摘要"):
-                        st.text_area("筆記內容預覽：", value=parsed_text, height=180, key="preview_ocr_note")
-            except Exception as pe:
-                st.error(f"檔案解析失敗: {pe}")
-
-    notes_from_text = ""
-    with note_tab_text:
-        default_val = notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else "")
-        notes_from_text = st.text_area(
-            "直接貼上或補充法學筆記、實務見解或考點爭議重點：",
-            value=default_val,
-            height=140,
-            placeholder="例如：貼上王澤鑑老師權益歸屬說論點、最高法院108台上大字1719號裁定重點摘要..."
-        )
-
-    notes_from_coursework = ""
-    with note_tab_cw:
-        cw_index_path = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
-        if cw_index_path.exists():
-            try:
-                with open(cw_index_path, "r", encoding="utf-8") as f_cw:
-                    cw_list = json.load(f_cw)
-                cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
-                if not cw_sub_list:
-                    cw_sub_list = cw_list
-
-                all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
-                cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
-                sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
-                if sel_cw == all_cw_label:
-                    st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
-                    if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
-                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
-                elif sel_cw:
-                    sel_idx = cw_options.index(sel_cw) - 1
-                    chosen_item = cw_sub_list[sel_idx]
-                    st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
-                    st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
-                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
-                        notes_from_coursework = chosen_item.get("summary_preview", "")
-            except Exception as e:
-                st.error(f"讀取講義庫失敗: {e}")
-        else:
-            st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
-
-    final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
-    if final_notes:
-        st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
+    # 自動組合 topic 傳入出題引擎（移除筆記區塊）
+    if current_items:
+        topic = "、".join([re.sub(r'^[【].*?[】]：?', '', it).split('（')[0] for it in current_items])
+    else:
+        topic = f"{subject}核心實務爭點與法規構成要件"
+    final_notes = None
 
     if stage == "一試 (選擇題 / 單選題)":
         stage1_tab_ai, stage1_tab_300 = st.tabs([
@@ -1278,19 +1295,21 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     st.error(f"出題失敗: {e}")
 
         with stage1_tab_300:
-            st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
-            st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+            st.markdown("#### 📖 司律一試全真題庫隨機抽考實戰（跨科全真題庫）")
+            st.write("全面收錄行政法 300 題模擬題庫、SFT 高考選題大庫與跨科全真精選題目（涵蓋民法、刑法、憲法、民訴、刑訴、商事法），支援依科目隨機抽考！")
 
-            c300_col1, c300_col2, c300_col3 = st.columns([1, 1, 1])
+            c300_col1, c300_col2, c300_col3 = st.columns([1.2, 1, 1])
             with c300_col1:
-                part_choice = st.selectbox(
-                    "選擇篇章大類：",
+                sel_domain_filter = st.selectbox(
+                    "1. 選擇隨機出題科目範圍：",
                     [
-                        "全卷 300 題隨機抽考",
-                        "第一篇：核心法理、公私法性質、依法行政與裁量 (第 1~90 題)",
-                        "第二篇：具體行政行為定性分類、附款、效力與廢止 (第 91~240 題)",
-                        "第三篇：綜合案例實事實務題組題 (第 241~300 題)"
-                    ]
+                        "🌟 全部既有題庫跨科隨機抽考",
+                        "民法與民事訴訟法",
+                        "刑法與刑事訴訟法",
+                        "憲法與行政法",
+                        "商事法與綜合領域"
+                    ],
+                    key="sel_stage1_bank_domain"
                 )
             with c300_col2:
                 cat_300_categories = [
@@ -1303,17 +1322,17 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     "📝 [行政契約與事實行為]",
                     "📜 [行政命令與地方法規]",
                     "🌐 [行政法關係與權利義務]",
-                    "🧩 [第 241~300 題：綜合實務題組題]"
+                    "🧩 [民刑憲商綜合實務題組題]"
                 ]
                 cat_300_choice = st.selectbox(
-                    "🎯 考點分類專題篩選：",
+                    "2. 考點分類專題篩選：",
                     cat_300_categories,
                     key="sel_cat_300_choice"
                 )
             with c300_col3:
                 count_300_choice = st.selectbox(
-                    "抽題題數：",
-                    ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
+                    "3. 抽題題數：",
+                    ["5 題 (快速隨測)", "10 題 (標準測驗)", "15 題 (綜合考卷)", "20 題 (大模考)", "30 題 (全卷實戰)", "50 題 (高強度特訓)", "自訂題數"],
                     key="count_300_select"
                 )
                 if count_300_choice == "自訂題數":
@@ -1321,85 +1340,48 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                 else:
                     take_count = int(count_300_choice.split(" ")[0])
 
-            if st.button("🚀 從 300 題庫抽取試題開始測驗", type="primary", use_container_width=True):
-                bank_file = Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json"
-                if not bank_file.exists():
-                    candidate_p = Path(__file__).resolve().parent.parent / "raw_exams" / "admin_law_300_mcqs.json"
-                    if candidate_p.exists():
-                        bank_file = candidate_p
-                if not bank_file.exists():
-                    st.error("找不到 300 題庫檔案，請確認 raw_exams/admin_law_300_mcqs.json 是否存在。")
+            if st.button("🚀 從全真題庫抽取試題開始測驗", type="primary", use_container_width=True):
+                import random
+                all_bank_mcqs = load_all_existing_stage1_mcqs()
+                if not all_bank_mcqs:
+                    st.error("目前題庫為空或載入失敗。")
                 else:
-                    import random
-                    import unicodedata
-                    with open(bank_file, "r", encoding="utf-8") as f:
-                        bank_data = json.load(f)
+                    # 科目領域過濾
+                    if sel_domain_filter == "🌟 全部既有題庫跨科隨機抽考":
+                        pool = list(all_bank_mcqs)
+                    else:
+                        pool = [q for q in all_bank_mcqs if q.get("major_domain") == sel_domain_filter or sel_domain_filter in q.get("subject", "")]
+                        if not pool:
+                            pool = list(all_bank_mcqs)
 
-                    pool = bank_data.get("questions", [])
-                    # 1. 篇章過濾
-                    if part_choice.startswith("第一篇"):
-                        pool = [q for q in pool if 1 <= q.get("question_no", 0) <= 90]
-                    elif part_choice.startswith("第二篇"):
-                        pool = [q for q in pool if 91 <= q.get("question_no", 0) <= 240]
-                    elif part_choice.startswith("第三篇"):
-                        pool = [q for q in pool if 241 <= q.get("question_no", 0) <= 300]
-
-                    # 2. 考點分類過濾
+                    # 考點分類過濾
                     if cat_300_choice != "全部考點分類 (不限)":
-                        def match_cat_filter(q_item, chosen_cat):
-                            q_cat = unicodedata.normalize("NFKC", q_item.get("category", "")).strip("[]")
-                            q_no = q_item.get("question_no", 0)
-                            if "依法行政" in chosen_cat or "專業法學庫" in chosen_cat:
-                                return "依法行政" in q_cat or "專業法學庫" in q_cat
-                            elif "公私法" in chosen_cat or "雙階" in chosen_cat:
-                                return "公私法" in q_cat or "雙階" in q_cat or "採購" in q_cat
-                            elif "行政裁量" in chosen_cat or "不確定法律概念" in chosen_cat:
-                                return "裁量" in q_cat or "不確定法律概念" in q_cat
-                            elif "行政處分之定性" in chosen_cat:
-                                return "行政處分" in q_cat and "附款" not in q_cat and "效力" not in q_cat
-                            elif "附款" in chosen_cat or "效力" in chosen_cat:
-                                return "附款" in q_cat or "效力" in q_cat
-                            elif "行政契約" in chosen_cat or "事實行為" in chosen_cat:
-                                return "行政契約" in q_cat or "事實行為" in q_cat or "自願執行" in q_cat
-                            elif "行政命令" in chosen_cat or "地方法規" in chosen_cat:
-                                return "命令" in q_cat or "法規" in q_cat
-                            elif "行政法關係" in chosen_cat:
-                                return "行政法關係" in q_cat or "特別權力" in q_cat
-                            elif "題組" in chosen_cat:
-                                return 241 <= q_no <= 300 or "題組" in q_cat
-                            return True
-
-                        filtered_pool = [q for q in pool if match_cat_filter(q, cat_300_choice)]
-                        if filtered_pool:
-                            pool = filtered_pool
-                        else:
-                            st.warning(f"在篇章【{part_choice[:10]}】中未篩得【{cat_300_choice}】題目，已擴展至全卷相同考點抽取。")
-                            pool = [q for q in bank_data.get("questions", []) if match_cat_filter(q, cat_300_choice)]
-
-                    if not pool:
-                        pool = bank_data.get("questions", [])
+                        clean_target_cat = cat_300_choice.replace("⚖️", "").replace("🏛️", "").replace("📜", "").replace("📑", "").replace("📌", "").replace("📝", "").replace("🌐", "").replace("🧩", "").replace("[", "").replace("]", "").strip()
+                        cat_filtered = [q for q in pool if any(tok in q.get("category", "") for tok in clean_target_cat.split("與"))]
+                        if cat_filtered:
+                            pool = cat_filtered
 
                     selected_qs = random.sample(pool, min(take_count, len(pool)))
-                    # 重新編排題號
                     reindexed_qs = []
                     new_answer_key = {}
                     for i, q in enumerate(selected_qs, 1):
                         q_copy = dict(q)
-                        q_copy["original_no"] = q_copy.get("question_no")
+                        q_copy["original_no"] = q_copy.get("question_no", i)
                         q_copy["question_no"] = i
                         ans = q_copy.get("answer", "A")
                         new_answer_key[str(i)] = ans
                         reindexed_qs.append(q_copy)
 
-                    cat_tag = f"・{cat_300_choice}" if cat_300_choice != "全部考點分類 (不限)" else ""
                     st.session_state["stage1_exam_data"] = {
-                        "subject": "行政法",
-                        "topic": f"300題模擬題庫精選（{part_choice[:10]}{cat_tag}）",
+                        "subject": sel_domain_filter,
+                        "topic": f"全真模擬抽考（{sel_domain_filter}・{len(reindexed_qs)}題）",
                         "total_count": len(reindexed_qs),
                         "questions": reindexed_qs,
                         "answer_key": new_answer_key
                     }
-                    st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
+                    st.session_state.pop("stage1_graded", None)
+                    st.session_state.pop("stage1_user_answers", None)
+                    st.success(f"🎉 已成功自題庫中隨機抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
@@ -1524,44 +1506,48 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                         if stats["missed"]:
                             st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
 
-            # 第二部分：標準答案速查表 (置於試題區與線上批改評分之後，避免提前洩題)
-            st.divider()
-            st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
+            # 第二部分：標準答案速查表與詳細解析（交卷批改後解鎖，附提前展開核對選項）
+                        peek_solution = st.checkbox("👁️ 提早檢視答案速查表與詳細解析 (不鎖定)", value=False, key="cb_peek_stage1_solution")
+            show_stage1_sol = is_graded or peek_solution
 
-            u_answers_map = st.session_state.get("stage1_user_answers", user_answers) if is_graded else {}
-            # 以每 5 題一行排版速查表
-            cols_per_row = 5
-            for row_start in range(1, len(questions) + 1, cols_per_row):
-                key_cols = st.columns(cols_per_row)
-                for c_idx in range(cols_per_row):
-                    q_num = row_start + c_idx
-                    if q_num <= len(questions):
-                        with key_cols[c_idx]:
-                            c_ans = answer_key.get(str(q_num), 'A')
-                            if is_graded:
-                                u_ans = u_answers_map.get(str(q_num))
-                                if u_ans == c_ans:
-                                    st.success(f"**第 {q_num} 題**：`({c_ans})` ✅ 正確")
-                                elif u_ans:
-                                    st.error(f"**第 {q_num} 題**：`({c_ans})` ❌ (選 {u_ans})")
+            if not show_stage1_sol:
+                st.info("🔒 **答案速查表與逐題詳解已安全鎖定**：請於上方完成作答後點擊「🏁 交卷立即線上批改評分」自動解鎖，或勾選上方「提早檢視」選項。")
+            else:
+                st.divider()
+                st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
+
+                u_answers_map = st.session_state.get("stage1_user_answers", user_answers) if is_graded else {}
+                cols_per_row = 5
+                for row_start in range(1, len(questions) + 1, cols_per_row):
+                    key_cols = st.columns(cols_per_row)
+                    for c_idx in range(cols_per_row):
+                        q_num = row_start + c_idx
+                        if q_num <= len(questions):
+                            with key_cols[c_idx]:
+                                c_ans = answer_key.get(str(q_num), "A")
+                                if is_graded:
+                                    u_ans = u_answers_map.get(str(q_num))
+                                    if u_ans == c_ans:
+                                        st.success(f"**第 {q_num} 題**：`({c_ans})` ✅ 正確")
+                                    elif u_ans:
+                                        st.error(f"**第 {q_num} 題**：`({c_ans})` ❌ (選 {u_ans})")
+                                    else:
+                                        st.warning(f"**第 {q_num} 題**：`({c_ans})` ⚪ 未作答")
                                 else:
-                                    st.warning(f"**第 {q_num} 題**：`({c_ans})` ⚪ 未作答")
-                            else:
-                                st.info(f"**第 {q_num} 題**：`({c_ans})`")
+                                    st.info(f"**第 {q_num} 題**：`({c_ans})`")
 
-            st.divider()
-            st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
-            for q in questions:
-                q_no = q.get("question_no")
-                ans = q.get("answer")
-                with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
-                    if q.get("core_issue"):
-                        st.markdown(f"**【核心爭點】**：:blue[{q.get('core_issue')}]")
-                    if q.get("legal_references"):
-                        st.markdown(f"**【規範法條及實務裁判字號】**：:green[{q.get('legal_references')}]")
-                    st.markdown("**【逐項解析與盲點辨析】**：")
-                    st.write(q.get("explanation", ""))
-
+                st.divider()
+                st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
+                for q in questions:
+                    q_no = q.get("question_no")
+                    ans = q.get("answer")
+                    with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
+                        if q.get("core_issue"):
+                            st.markdown(f"**【核心爭點】**：:blue[{q.get('core_issue')}]")
+                        if q.get("legal_references"):
+                            st.markdown(f"**【規範法條及實務裁判字號】**：:green[{q.get('legal_references')}]")
+                        st.markdown("**【逐項解析與盲點辨析】**：")
+                        st.write(q.get("explanation", ""))
     else:
         # 二試申論實例題
         if st.button("🎲 生成二試實例申論題", type="primary", use_container_width=True):
@@ -1613,7 +1599,7 @@ elif app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命
                     st.rerun()
 
 # ----------------- 模式 3: 歷年真題庫檢索 -----------------
-elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)":
+elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)":
     st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
 
     comm_q_all = load_community_questions()
@@ -1921,7 +1907,7 @@ elif app_mode == "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學�
                                 st.markdown(m_ans)
 
 # ----------------- 模式 4: 擬答生成 -----------------
-elif app_mode == "📖 高分權威擬答生成":
+elif app_mode == MODE_ANS or app_mode == "📖 高分權威擬答生成":
     st.header("📖 司律二試 - 高分示範擬答生成器")
     st.write("針對二試爭議題目，自動撰寫具備榜首水準的開標、大前提、實務學說對比與事實涵攝完美擬答。支援直接貼入文字，或拍照、上傳試卷 PDF/Word 自動轉錄！")
 
@@ -2071,7 +2057,7 @@ elif app_mode == "📖 高分權威擬答生成":
                     st.error(f"出題失敗: {e}")
 
 # ----------------- 模式 5: 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典) -----------------
-elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)" or "爭點查詢" in app_mode or "統一法學檢索" in app_mode or "爭點速查" in app_mode:
+elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查詢" in app_mode or "統一法學檢索" in app_mode or "爭點速查" in app_mode:
     st.header("🔍 統一法學檢索樞紐與 AI 判決深度研析中心")
     st.caption("全面整合【專業布林邏輯精準檢索】、【全方位法學統一檢索】、【AI 判決精華深度摘要】與【案例橫向比對 (Case Distinguishing)】，直通審級脈絡、權威法學庫與司法院 30 年判決，支援一站式爭點與判解秒級研析。")
 
@@ -2114,7 +2100,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             cur_court_idx = court_opts.index(cur_court) if cur_court in court_opts else 0
             sel_court = st.selectbox("1. 🏛️ 法院體系與審級選單：", court_opts, index=cur_court_idx, key="lb_court_system")
         with col_c2:
-            sel_case_type = st.radio("2. ⚖️ 裁判類別：", ["全部", "判決", "裁定", "大法官解釋"], horizontal=True, key="lb_case_type")
+            sel_case_type = st.radio("2. ⚖️ 裁判與實務見解類別：", ["全部", "判決", "裁定", "原判例", "最高院/最高行決議", "高院法律座談會", "憲法裁判/大法官解釋"], horizontal=True, key="lb_case_type")
 
         # 裁判字號組合器 (jud_year, sel_judword, jud_no)
         st.markdown("**3. 🔖 裁判字號精準組合器（支援案號縮寫，如：108台上908民、108台上大1719裁、院字2949、重上更一15）：**")
@@ -2585,7 +2571,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["question_text_content"] = f"【二試歷審脈絡實例題目】：\n請針對【{h_cid}】所涉之審級更迭、各級法院之見解分歧與終局裁定法理，進行深度評析與事實涵攝。"
                     st.session_state["rubric_text_content"] = h_md
                     st.session_state["imported_from_bank_label"] = f"歷審脈絡標準【{h_cid[:15]}】"
-                    st.session_state["app_mode"] = mode_options[0]
+                    st.session_state["app_mode"] = MODE_HOME
                     st.rerun()
 
     # ==================== 子功能 4: 🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典 ====================
@@ -2754,7 +2740,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     st.session_state["question_text_content"] = f"【爭點研析題目】：\n{res.get('query', '')}"
                     st.session_state["rubric_text_content"] = res.get("markdown_result", "")
                     st.session_state["imported_from_bank_label"] = f"AI 爭點速查標準【{res.get('query', '')[:20]}...】"
-                    st.session_state["app_mode"] = mode_options[0]
+                    st.session_state["app_mode"] = MODE_HOME
                     st.rerun()
             with act_col2:
                 if st.button("📖 【一鍵帶入高分擬答生成】針對此爭點撰寫申論答題", use_container_width=True, key="btn_imp_ans_m5"):
@@ -2774,41 +2760,58 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
 
         # ----------------- 分頁 1: 輸入爭點・找出所有判決採何說 -----------------
         with distinguish_tab1:
-            st.markdown("#### 🎯 輸入爭點・找出所有判決採何說 (實務各說頻譜與裁判歸納)")
-            st.caption("輸入具體爭點，AI 將深入檢索本機 3,680++ 裁判庫、大法庭裁定、歷審脈絡鏈與行政函釋，自動歸納【甲說、乙說、折衷說】各說核心論理，並精確梳理【哪些具體判決採何說】與【現行終局定錨見解】！")
+            st.markdown("#### 🎯 依爭點或基準判決找出「相同見解 vs 相反見解」所有判決 (實務各說頻譜與裁判歸納)")
+            st.caption("輸入具體爭點或指定基準判決，AI 將深入檢索本機 2,100+ 裁判庫、大法庭裁定、歷審脈絡鏈與行政函釋，自動歸納【甲說、乙說、折衷說】各說核心論理，並精確梳理【哪些具體判決採何說】與【現行終局定錨見解】！")
 
-            # 快捷熱門重大爭點晶片
-            st.markdown("##### 📌 熱門重大法律爭點一鍵快捷體驗：")
-            d_c1, d_c2, d_c3 = st.columns(3)
-            with d_c1:
-                if st.button("🏛️ 借名登記出名人未經同意處分不動產之效力\n(有權處分說 vs 無權處分說)", use_container_width=True, key="chip_issue_1"):
-                    st.session_state["distinguish_issue_topic"] = "不動產借名登記出名人未經借名人同意擅自處分不動產之效力"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
-                if st.button("⚖️ 販賣毒品罪既遂與未遂之認定標準\n(交付毒品說 vs 買賣合意說)", use_container_width=True, key="chip_issue_2"):
-                    st.session_state["distinguish_issue_topic"] = "販賣毒品罪之既遂與未遂認定標準（交付毒品移轉所有權說 vs 買賣契約合意說）"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
-            with d_c2:
-                if st.button("📑 保險法第64條2年除斥期間經過後得否依民法第92條撤銷\n(特別法排他說 vs 競合說)", use_container_width=True, key="chip_issue_3"):
-                    st.session_state["distinguish_issue_topic"] = "要保人詐欺未據實說明時，保險人於保險法2年除斥期間經過後，得否依民法第92條撤銷契約"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
-                if st.button("💰 純粹經濟上損失是否為民法第184條第1項前段保護客體\n(權利侵害說 vs 法益擴張說)", use_container_width=True, key="chip_issue_4"):
-                    st.session_state["distinguish_issue_topic"] = "純粹經濟上損失是否為民法第184條第1項前段之保護客體"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
-            with d_c3:
-                if st.button("📜 警察對肇事者強制抽血/採尿檢測合憲性與正當程序\n(違憲/法官保留說 vs 合憲說)", use_container_width=True, key="chip_issue_5"):
-                    st.session_state["distinguish_issue_topic"] = "司法警察強制抽血或強制採尿取證之合憲性與正當法律程序（法官保留原則）"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
-                if st.button("🏢 公司法第185條讓與主要部分營業或財產之審查標準\n(質與量雙重標準說 vs 純量化說)", use_container_width=True, key="chip_issue_6"):
-                    st.session_state["distinguish_issue_topic"] = "公司法第185條讓與主要部分營業或財產之實質影響審查基準（質與量雙重標準說）"
-                    st.session_state.pop("issue_doctrine_analysis_res", None)
-                    st.rerun()
+            # 步驟一（選填）：從本機權威庫挑選基準判決／判例／決議／座談會
+            st.markdown("##### 🏛️ 步驟一（選填）：從本機權威庫挑選基準判決／判例／決議／座談會")
+            precedent_catalog_items = get_precedents_catalog() or []
+            bench_options = ["-- 💡 不指定基準判決（由 AI 自動歸納各說） --"] + [
+                f"{item.get('case_id')} ｜ [{item.get('level','')[:10]}] {item.get('title','')[:30]}"
+                for item in precedent_catalog_items[:120]
+            ]
+            sel_bench_choice = st.selectbox(
+                "挑選作為對照之權威基準裁判（選填，將據此比對「相同見解」與「相反見解」）：",
+                bench_options,
+                key="sel_benchmark_case_dropdown"
+            )
+
+            col_mb1, col_mb2 = st.columns([3, 1])
+            with col_mb1:
+                manual_bench_input = st.text_input(
+                    "或手動輸入基準裁判字號（選填，例如：最高法院 108 年度台上大字第 1719 號裁定）：",
+                    placeholder="例如：最高法院 108 年度台上大字第 1719 號民事裁定",
+                    key="txt_manual_benchmark_id"
+                )
+
+            bench_case_data = None
+            target_bench_id = ""
+            if manual_bench_input.strip():
+                target_bench_id = manual_bench_input.strip()
+            elif sel_bench_choice != bench_options[0]:
+                target_bench_id = sel_bench_choice.split(" ｜ ")[0].strip()
+
+            if target_bench_id:
+                bench_case_data = get_precedent_by_id(target_bench_id)
+                if not bench_case_data:
+                    for it in precedent_catalog_items:
+                        if target_bench_id in it.get("case_id", ""):
+                            bench_case_data = it
+                            break
+
+            if bench_case_data:
+                with st.container(border=True):
+                    st.markdown(f"**📌 目前選定基準裁判**：`{bench_case_data.get('case_id')}`（{bench_case_data.get('level','')}）")
+                    if bench_case_data.get("holding"):
+                        st.caption(f"**裁判要旨**：{bench_case_data.get('holding')[:220]}...")
+                    if bench_case_data.get("issue"):
+                        st.info(f"**收錄核心考點**：{bench_case_data.get('issue')}")
+                        if st.button("📥 將此基準判決之收錄爭點自動帶入下方爭點欄", key="btn_apply_bench_issue"):
+                            st.session_state["distinguish_issue_topic"] = bench_case_data.get("issue")
+                            st.rerun()
 
             st.write("")
+            st.markdown("##### 🎯 步驟二：輸入欲研析之法律爭點")
 
             cur_issue_topic = st.session_state.get("distinguish_issue_topic", "")
             col_iq1, col_iq2 = st.columns([3, 1])
@@ -2849,13 +2852,14 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 if not inp_issue_topic.strip():
                     st.warning("請先輸入欲研析之法律爭點！")
                 else:
-                    with st.spinner(f"AI 司法典試長正在檢索本機 3,680++ 裁判庫與大法庭裁定，歸納各說論理與【所有判決採何說】..."):
+                    with st.spinner("AI 司法典試長正在檢索本機 2,100+ 裁判庫與大法庭裁定，歸納各說論理與【所有判決採何說】..."):
                         try:
                             engine = LegalIssueQueryEngine()
                             doc_res = engine.analyze_doctrines_by_issue(
                                 issue_topic=inp_issue_topic.strip(),
                                 subject=inp_issue_sub,
-                                custom_context=inp_custom_issue_ctx
+                                custom_context=inp_custom_issue_ctx,
+                                benchmark_case=bench_case_data
                             )
                             st.session_state["issue_doctrine_analysis_res"] = doc_res
                             st.session_state["distinguish_issue_topic"] = inp_issue_topic.strip()
@@ -2866,46 +2870,42 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 d_res = st.session_state["issue_doctrine_analysis_res"]
                 d_md = d_res.get("markdown_result", "")
                 d_top = d_res.get("issue_topic", "")
+                d_bench = d_res.get("benchmark_case")
 
                 st.divider()
                 st.subheader(f"📊 【{d_top}】爭點各說頻譜與裁判採何說歸納報告")
+                if d_bench:
+                    st.info(f"💡 本報告已嚴密錨定基準判決【{d_bench.get('case_id')}】，下方特別分設「✅ 相同見解」與「❌ 相反見解」專屬清單！")
 
                 # 外部查詢直連
                 st.caption("🌐 全國權威司法資料庫爭點直查：")
-                ext_u = d_res.get("search_urls", {})
-                if ext_u:
-                    d_cols = st.columns(min(len(ext_u), 3))
-                    for idx, (label, link) in enumerate(list(ext_u.items())[:3]):
-                        with d_cols[idx]:
-                            st.link_button(label, link, use_container_width=True)
+                s_urls = d_res.get("search_urls", {})
+                if s_urls:
+                    url_cols = st.columns(min(len(s_urls), 4))
+                    for idx_u, (u_label, u_url) in enumerate(list(s_urls.items())[:4]):
+                        with url_cols[idx_u % 4]:
+                            st.link_button(u_label, u_url, use_container_width=True)
 
                 st.markdown(d_md)
 
                 st.divider()
-                st.markdown("##### 🔗 爭點各說成果轉化與實戰演練：")
-                dr_c1, dr_c2, dr_c3 = st.columns(3)
-                clean_d_top = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', d_top)[:15]
-                with dr_c1:
+                st.markdown("##### 🔗 爭點研析結果應用：")
+                col_exp_d1, col_exp_d2 = st.columns(2)
+                with col_exp_d1:
+                    clean_top = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', d_top)[:20]
                     st.download_button(
-                        label="💾 下載爭點各說判決歸納報告 (.md)",
+                        label="💾 下載實務爭點歸納報告 (.md)",
                         data=d_md,
-                        file_name=f"爭點各說判決歸納_{clean_d_top}.md",
+                        file_name=f"爭點各說裁判歸納_{clean_top}.md",
                         mime="text/markdown",
-                        use_container_width=True
+                        use_container_width=True,
+                        key="btn_dl_issue_doctrines_md"
                     )
-                with dr_c2:
-                    if st.button("📝 帶入試卷評分作為標準答案與評分標竿", use_container_width=True, key="btn_pass_doc_to_eval"):
-                        st.session_state["question_text_content"] = f"【二試爭點各說申論題目】：\n請就【{d_top}】深入剖析實務各說見解（甲說、乙說、折衷說），列舉採各說之指標判決論據，並評述最高司法機關之終局定錨立場與事實涵攝。"
-                        st.session_state["rubric_text_content"] = d_md
-                        st.session_state["imported_from_bank_label"] = f"爭點各說判決標準【{d_top[:15]}】"
-                        st.session_state["app_mode"] = mode_options[0]
-                        st.rerun()
-                with dr_c3:
-                    if st.button("📖 帶入高分擬答生成 (依 IRAC 鋪陳各說與定錨)", use_container_width=True, key="btn_pass_doc_to_ans"):
-                        m4_q_text = f"請針對【{d_top}】之爭議事實與法律爭執，依 IRAC 架構撰寫標準上位卷擬答，務必完整並列各說並涵攝最高法院定錨見解。"
-                        st.session_state["m4_target_question"] = m4_q_text
-                        st.session_state["m4_text_area_input"] = m4_q_text
-                        st.session_state["app_mode"] = mode_options[3]
+                with col_exp_d2:
+                    if st.button("✍️ 將此爭點帶入「二試高分擬答生成」", use_container_width=True, key="btn_apply_doctrines_to_ans"):
+                        st.session_state["ans_question_input"] = f"【核心爭點研究】：{d_top}\n\n請依上述爭點各說與實務定錨見解，撰寫上位卷 IRAC 示範擬答。"
+                        st.session_state["ans_subject_choice"] = inp_issue_sub.split(" ")[0]
+                        st.session_state["app_mode"] = MODE_ANS
                         st.rerun()
 
         # ----------------- 分頁 2: 指定兩大裁判橫向精確比對 -----------------
@@ -3002,6 +3002,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 st.markdown("##### 🔗 比對報告應用與後續演練：")
                 clean_ca_id = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', ca_id)
                 clean_cb_id = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', cb_id)
+                cc_col1, cc_col2 = st.columns(2)
                 with cc_col1:
                     st.download_button(
                         label="💾 下載兩大案例橫向比對報告 (.md)",
@@ -3015,12 +3016,12 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.session_state["question_text_content"] = f"【二試進階實例案例區別題目】：\n請就【{ca_id}】與【{cb_id}】所涉及之案件事實與法律見解分歧，深入剖析其法律爭點、各說立論與事實區別標準。"
                         st.session_state["rubric_text_content"] = c_md
                         st.session_state["imported_from_bank_label"] = f"案例橫向比對標準【{ca_id[:15]} vs {cb_id[:15]}】"
-                        st.session_state["app_mode"] = mode_options[0]
+                        st.session_state["app_mode"] = MODE_HOME
                         st.rerun()
 
 
 # ----------------- 模式: 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算) -----------------
-elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode or "專屬法學" in app_mode or "萬能檢索" in app_mode:
+elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode or "專屬法學" in app_mode or "萬能檢索" in app_mode:
     st.markdown("""
         <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
             <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
@@ -3463,7 +3464,7 @@ elif app_mode == mode_options[5] or "法律問題" in app_mode or "法律諮詢"
                     st.error(f"追問回答失敗: {fe}")
 
 # ----------------- 模式: 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦) -----------------
-elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)" or "AI 摘要" in app_mode or "AI裁判" in app_mode or "AI 裁判" in app_mode:
+elif app_mode == MODE_SUMMARIZER or "一鍵 AI 裁判" in app_mode or "AI 摘要" in app_mode or "AI裁判" in app_mode or "AI 裁判" in app_mode:
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")
     st.caption("完美對標權威法學庫旗艦功能！支援「先輸入字號秒查」；若大庫未直接收錄，即時引導貼上裁判/函釋全文，由 AI 秒級深度萃取六大標準化法學精髓與司律上位 IRAC 論理！")
     st.divider()
@@ -3493,46 +3494,6 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 - **行政函釋字號**：支援機關字軌公文號與純流水號（如 `經商字第 10702425580 號`、`10702425580`、`金管保產字第 10904918231 號`）。
 """)
 
-    # 快捷體驗晶片 (雙排 12 顆高頻縮寫晶片)
-    st.markdown("**⚡ 快速點擊體驗常見指標判解縮寫：**")
-    chip_row1 = [
-        ("最高行110上15", "最高行110上15 (最高行政法院上字裁判)"),
-        ("108台上大1719裁", "108台上大1719裁 (借名登記裁定)"),
-        ("北高行109訴567", "北高行109訴567 (臺北高等行政法院訴字裁判)"),
-        ("108台上908民", "108台上908民 (純經濟損失判決)"),
-        ("院字2949", "院字2949 (土地登記效力解釋)"),
-        ("院解字3001", "院解字3001 (善意受讓動產解釋)")
-    ]
-    chip_row2 = [
-        ("重上更一15", "重上更一15 (情事變更更審判決)"),
-        ("109民著上12", "109民著上12 (智財著作權上訴)"),
-        ("110行專上5", "110行專上5 (專利進步性判決)"),
-        ("109家上12", "109家上12 (剩餘財產顯失公平)"),
-        ("111憲判16", "111憲判16 (強制採尿憲判字)"),
-        ("經商字第 10702425580 號", "經商字第 10702425580 號 (公司法函釋)")
-    ]
-
-    r1_cols = st.columns(6)
-    for idx, (code_val, tooltip_text) in enumerate(chip_row1):
-        with r1_cols[idx]:
-            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r1_{idx}"):
-                st.session_state["sum_citation_search"] = code_val
-                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                st.session_state["sum_input_title"] = ""
-                st.session_state["sum_input_text"] = ""
-                st.session_state.pop("last_ai_sum_res", None)
-                st.rerun()
-
-    r2_cols = st.columns(6)
-    for idx, (code_val, tooltip_text) in enumerate(chip_row2):
-        with r2_cols[idx]:
-            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r2_{idx}"):
-                st.session_state["sum_citation_search"] = code_val
-                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                st.session_state["sum_input_title"] = ""
-                st.session_state["sum_input_text"] = ""
-                st.session_state.pop("last_ai_sum_res", None)
-                st.rerun()
 
     # 本機權威庫下拉選單快速挑選
     all_precedents_tags = ["-- 📚 或從本機 3,680+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
@@ -3800,7 +3761,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                 st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{active_title}】之案例事實與爭點深入申論其法律效果與實務見解。"
                 st.session_state["rubric_text_content"] = sum_res.get("markdown_result", "")
                 st.session_state["imported_from_bank_label"] = f"AI裁判摘要標準【{active_title[:15]}】"
-                st.session_state["app_mode"] = mode_options[0]
+                st.session_state["app_mode"] = MODE_HOME
                 st.rerun()
         with s_act3:
             if st.button("📖 帶入高分擬答生成", use_container_width=True, key="btn_sum_to_ans"):
@@ -3814,7 +3775,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
     st.divider()
     with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (Open Data ZIP/JSON) 至本機庫", expanded=False):
         op_tab_zip, op_tab_api = st.tabs([
-            "📂 方式一：手動上傳司法院 Open Data 打包檔 (ZIP / JSON)",
+            "📂 方式一：手動上傳司法院 Open Data 打包檔 (RAR / ZIP / 7Z / JSON)",
             "🌐 方式二：使用司法院開放平臺帳號密碼 API 直接連線同步"
         ])
 
@@ -3822,7 +3783,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
             st.markdown("""
 司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）所提供之歷史各級法院按月份打包之裁判書資料集（常以 **RAR** 或 **ZIP** 壓縮格式封裝，內部為各裁判書之 JSON 檔案）：
 
-#### 📥 如何在司法院官網取得裁判打包檔？
+#### 📥 如何在司法院官網取得裁判 RAR 檔？
 1. 前往 **[司法院資料開放平臺 (opendata.judicial.gov.tw)](https://opendata.judicial.gov.tw/)** 並註冊/登入會員。
 2. 進入 **「資料集下載」** ➔ **「裁判書資料專區」**。
 3. 選擇所需之年度與月份（點擊下載對應之 `.rar` 或 `.zip` 壓縮檔）。
@@ -3831,7 +3792,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
 > 💡 **若手邊暫無 RAR/ZIP 檔案？**  
 > 完全不影響使用！請直接在上方輸入字號縮寫（如 `最高行108上625`、`最高行110上15`、`108台上大1719裁`），系統會立即產生**標準案號與官方判決全文直通連結**，點擊複製全文貼入上方文字框，AI 會在 3 秒內自動完成六大精髓與 IRAC 深度萃取！
 """)
-            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.rar, .zip, .7z 或 .json)：", type=["rar", "zip", "7z", "json"], key="uploader_opendata_zip")
+            uploaded_op_files = st.file_uploader("📂 選擇司法院開放資料檔案 (.rar, .zip, .7z 或 .json，支援多檔選取)：", type=["rar", "zip", "7z", "json"], accept_multiple_files=True, key="uploader_opendata_zip")
 
         with op_tab_api:
             st.markdown("""
@@ -3908,46 +3869,106 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                                 st.warning("裁判資料已下載，但欄位格式解析異常。")
                         else:
                             st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
-        if uploaded_op_file is not None:
+
+                st.markdown("---")
+                st.markdown("##### 📋 步驟二：自動拉取司法院最新異動裁判清單 (`JList`) 並批次下載入庫")
+                st.caption("⚠️ **重要官方限制**：司法院官方 API 下載服務依規定**僅於每日凌晨 00:00~06:00 開放下載**，其餘時段若伺服器返回限制屬官方正常機制。")
+                
+                col_jl_s, col_jl_btn = st.columns([2, 1])
+                with col_jl_s:
+                    batch_jlist_count = st.slider("選擇批次抓取異動裁判篇數：", min_value=1, max_value=30, value=10, key="slider_jlist_fetch_n")
+                with col_jl_btn:
+                    st.write("")
+                    btn_exec_jlist = st.button("🚀 自動批次抓取異動入庫", type="primary", use_container_width=True, key="btn_run_jlist_batch")
+
+                if btn_exec_jlist:
+                    with st.spinner("正在拉取司法院 7 日前異動裁判清單 (JList)..."):
+                        import importlib, import_judicial_opendata
+                        importlib.reload(import_judicial_opendata)
+                        client = import_judicial_opendata.SafeJudicialOpenDataClient()
+                        jlist_res = client.fetch_jlist(cur_token)
+                        if not jlist_res.get("success"):
+                            st.error(f"❌ 取得異動清單失敗：{jlist_res.get('error')}（提醒：官方僅於每日凌晨 00:00~06:00 開放調閱）")
+                        else:
+                            jlist_data = jlist_res.get("data", [])
+                            jids = []
+                            if isinstance(jlist_data, list):
+                                for item in jlist_data:
+                                    if isinstance(item, str):
+                                        jids.append(item)
+                                    elif isinstance(item, dict) and "jid" in item:
+                                        jids.append(item["jid"])
+                            elif isinstance(jlist_data, dict):
+                                jids = jlist_data.get("list", []) or jlist_data.get("jids", [])
+                            
+                            if not jids:
+                                st.info("目前無異動清單資料。")
+                            else:
+                                st.write(f"共取得 {len(jids)} 筆異動 JID，開始批次下載前 {min(batch_jlist_count, len(jids))} 篇...")
+                                downloaded_n = 0
+                                pb = st.progress(0)
+                                for idx, jid in enumerate(jids[:batch_jlist_count]):
+                                    doc_r = client.fetch_jdoc(jid, cur_token)
+                                    if doc_r.get("success"):
+                                        parsed = import_judicial_opendata.parse_official_opendata_record(doc_r.get("data", {}))
+                                        if parsed and parsed.get("case_id"):
+                                            cat_p = Path(RAW_DATA_DIR) / "precedents_catalog.json"
+                                            if cat_p.exists():
+                                                try:
+                                                    cur_list = json.loads(cat_p.read_text(encoding="utf-8"))
+                                                    cur_list.append(parsed)
+                                                    cat_p.write_text(json.dumps(cur_list, ensure_ascii=False, indent=2), encoding="utf-8")
+                                                except Exception:
+                                                    pass
+                                            downloaded_n += 1
+                                    pb.progress((idx + 1) / min(batch_jlist_count, len(jids)))
+                                st.success(f"🎉 成功批次同步入庫 {downloaded_n} 篇最新司法院裁判！")
+        if uploaded_op_files:
             if st.button("🚀 立即解析並擴充至本機裁判庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
-                with st.spinner(f"正在深度解壓並解析【{uploaded_op_file.name}】中的裁判書..."):
+                files_to_process = uploaded_op_files if isinstance(uploaded_op_files, list) else [uploaded_op_files]
+                with st.spinner(f"正在深度解壓並解析 {len(files_to_process)} 個上傳檔案中的裁判書..."):
                     try:
                         from import_judicial_opendata import parse_official_opendata_record, extract_archive_to_temp, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
                         import tempfile, json
                         from pathlib import Path
                         
                         incoming_records = []
-                        fn_lower = uploaded_op_file.name.lower()
-
-                        if fn_lower.endswith((".zip", ".rar", ".7z")):
-                            with tempfile.TemporaryDirectory() as td:
-                                archive_tmp = Path(td) / uploaded_op_file.name
-                                with open(archive_tmp, "wb") as f_up:
-                                    f_up.write(uploaded_op_file.read())
-                                
-                                ext_dir = Path(td) / "extracted"
-                                ext_dir.mkdir(parents=True, exist_ok=True)
-                                
-                                ok = extract_archive_to_temp(archive_tmp, ext_dir)
-                                if ok:
-                                    for jf_path in ext_dir.glob("**/*.json"):
-                                        try:
-                                            with open(jf_path, "r", encoding="utf-8") as jf:
-                                                c = json.load(jf)
-                                                items = c if isinstance(c, list) else [c]
-                                                for it in items:
-                                                    p = parse_official_opendata_record(it)
-                                                    if p and p.get("case_id"):
-                                                        incoming_records.append(p)
-                                        except Exception:
-                                            continue
-                        elif fn_lower.endswith(".json"):
-                            c = json.load(uploaded_op_file)
-                            items = c if isinstance(c, list) else [c]
-                            for it in items:
-                                p = parse_official_opendata_record(it)
-                                if p and p.get("case_id"):
-                                    incoming_records.append(p)
+                        for up_f in files_to_process:
+                            fn_lower = up_f.name.lower()
+                            if fn_lower.endswith((".zip", ".rar", ".7z")):
+                                with tempfile.TemporaryDirectory() as td:
+                                    archive_tmp = Path(td) / up_f.name
+                                    with open(archive_tmp, "wb") as f_up:
+                                        f_up.write(up_f.read())
+                                    
+                                    ext_dir = Path(td) / "extracted"
+                                    ext_dir.mkdir(parents=True, exist_ok=True)
+                                    
+                                    ok = extract_archive_to_temp(archive_tmp, ext_dir)
+                                    if ok:
+                                        for jf_path in ext_dir.glob("**/*.json"):
+                                            try:
+                                                with open(jf_path, "r", encoding="utf-8") as jf:
+                                                    c = json.load(jf)
+                                                    items = c if isinstance(c, list) else [c]
+                                                    for it in items:
+                                                        p = parse_official_opendata_record(it)
+                                                        if p and p.get("case_id"):
+                                                            incoming_records.append(p)
+                                            except Exception:
+                                                continue
+                                    else:
+                                        st.warning(f"檔案【{up_f.name}】自動解壓未成功。若為特殊壓縮格式，建議於本機解壓出 .json 檔案後多選拖曳上傳！")
+                            elif fn_lower.endswith(".json"):
+                                try:
+                                    c = json.load(up_f)
+                                    items = c if isinstance(c, list) else [c]
+                                    for it in items:
+                                        p = parse_official_opendata_record(it)
+                                        if p and p.get("case_id"):
+                                            incoming_records.append(p)
+                                except Exception:
+                                    pass
                         
                         if not incoming_records:
                             st.warning("檔案中未找到符合司法院標準欄位之裁判書 JSON（請確認壓縮檔內含有裁判書 .json 檔案）。")
@@ -3977,7 +3998,7 @@ elif app_mode == "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判
                         st.error(f"開放資料匯入失敗: {ie}")
 
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
-elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)":
+elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
     st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")
     st.write("全面收錄全台 **2,053 部國家法律、法規命令與施行細則，共 62,342 條法定條文，及 600+ 則中央部會權威行政函釋**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則全文點閱**、**主管機關權威函釋**及**考生個人手寫讀書筆記**！")
 
@@ -4557,7 +4578,7 @@ elif app_mode == "⚖️ 智慧六法與條文判解綜合標註 (法條・沿�
                         st.rerun()
 
 # ----------------- 模式 7: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
-elif app_mode == "📥 手寫筆記蒸餾與 SFT 模型微調大庫":
+elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
     st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
     st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
 
