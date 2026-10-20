@@ -21,69 +21,23 @@ from PIL import Image
 from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
 from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
-from exam_generator import LawExamGenerator
-try:
-    from exam_bank_crawler import LawExamBankCrawler
-except Exception:
-    class LawExamBankCrawler:
-        def __init__(self):
-            import json
-            from pathlib import Path
-            try:
-                base_dir = DATA_DIR
-            except NameError:
-                base_dir = "data"
-            p = Path(base_dir) / "raw_exams" / "exams_catalog.json"
-            self.catalog = json.loads(p.read_text(encoding="utf-8")) if p.exists() else []
-        def run_all(self, max_pages=2):
-            pass
-
-try:
-    from legal_query_engine import (
-        LegalIssueQueryEngine,
-        search_local_precedents,
-        get_all_precedent_options,
-        get_precedent_by_id,
-        get_precedents_catalog,
-        generate_judicial_search_urls,
-        search_precedents_advanced,
-        COMMON_CASE_WORDS,
-        COURTS_TAXONOMY,
-        JUDICIAL_TIME_RANGES,
-        get_precedent_history_chain,
-        PRESET_JUDGEMENT_HISTORIES,
-        extract_case_roc_year
-    )
-except ImportError:
-    try:
-        import legal_query_engine as _lqe
-        LegalIssueQueryEngine = getattr(_lqe, "LegalIssueQueryEngine", None)
-        search_local_precedents = getattr(_lqe, "search_local_precedents", None)
-        get_all_precedent_options = getattr(_lqe, "get_all_precedent_options", lambda: [])
-        get_precedent_by_id = getattr(_lqe, "get_precedent_by_id", lambda cid: None)
-        get_precedents_catalog = getattr(_lqe, "get_precedents_catalog", lambda: [])
-        generate_judicial_search_urls = getattr(_lqe, "generate_judicial_search_urls", lambda q, s="": {})
-        search_precedents_advanced = getattr(_lqe, "search_precedents_advanced", lambda **kw: [])
-        COMMON_CASE_WORDS = getattr(_lqe, "COMMON_CASE_WORDS", ["全部字別 (不限)", "台上大", "台上", "憲判"])
-        COURTS_TAXONOMY = getattr(_lqe, "COURTS_TAXONOMY", {"全部法院 (全體司法體系)": []})
-        JUDICIAL_TIME_RANGES = getattr(_lqe, "JUDICIAL_TIME_RANGES", ["全部時間 (不限年份)"])
-        get_precedent_history_chain = getattr(_lqe, "get_precedent_history_chain", lambda cid: None)
-        PRESET_JUDGEMENT_HISTORIES = getattr(_lqe, "PRESET_JUDGEMENT_HISTORIES", {})
-        extract_case_roc_year = getattr(_lqe, "extract_case_roc_year", lambda item: 0)
-    except Exception:
-        LegalIssueQueryEngine = None
-        search_local_precedents = None
-        get_all_precedent_options = lambda: []
-        get_precedent_by_id = lambda cid: None
-        get_precedents_catalog = lambda: []
-        generate_judicial_search_urls = lambda q, s="": {}
-        search_precedents_advanced = lambda **kw: []
-        COMMON_CASE_WORDS = ["全部字別 (不限)", "台上大", "台上", "憲判"]
-        COURTS_TAXONOMY = {"全部法院 (全體司法體系)": []}
-        JUDICIAL_TIME_RANGES = ["全部時間 (不限年份)"]
-        get_precedent_history_chain = lambda cid: None
-        PRESET_JUDGEMENT_HISTORIES = {}
-        extract_case_roc_year = lambda item: 0
+from exam_generator import LawExamGenerator, load_all_existing_stage1_mcqs
+from exam_bank_crawler import LawExamBankCrawler
+from legal_query_engine import (
+    LegalIssueQueryEngine,
+    search_local_precedents,
+    get_all_precedent_options,
+    get_precedent_by_id,
+    get_precedents_catalog,
+    generate_judicial_search_urls,
+    search_precedents_advanced,
+    COMMON_CASE_WORDS,
+    COURTS_TAXONOMY,
+    JUDICIAL_TIME_RANGES,
+    get_precedent_history_chain,
+    PRESET_JUDGEMENT_HISTORIES,
+    extract_case_roc_year
+)
 from six_codes_engine import (
     SIX_CODES_TAXONOMY,
     get_laws_in_branch,
@@ -93,7 +47,8 @@ from six_codes_engine import (
     get_law_legislative_history,
     get_article_legislative_details,
     synthesize_article_legislative_details,
-    clear_six_codes_cache
+    clear_six_codes_cache,
+    load_six_codes_data
 )
 from six_codes_updater import update_law_amendments, load_amendments_history
 from community_archive_engine import (
@@ -111,91 +66,53 @@ from admin_rulings_engine import (
     get_all_administrative_rulings,
     crawl_and_synthesize_admin_rulings,
     get_chorder_regulations_map,
-    LANDMARK_ADMIN_RULINGS,
-    load_crawled_admin_rulings
+    LANDMARK_ADMIN_RULINGS
 )
-try:
-    from legal_summarizer_engine import (
-        BooleanQueryParser,
-        evaluate_boolean_query,
-        AILegalSummarizer,
-        BUILTIN_LANDMARK_DOCS,
-        find_legal_doc_by_citation,
-        lookup_case_by_abbreviation,
-        parse_case_abbreviation_query,
-        construct_standard_citation_from_parsed
-    )
-except ImportError:
-    try:
-        import legal_summarizer_engine as _lbe
-        BooleanQueryParser = getattr(_lbe, "BooleanQueryParser", None)
-        evaluate_boolean_query = getattr(_lbe, "evaluate_boolean_query", lambda q, t: True)
-        AILegalSummarizer = getattr(_lbe, "AILegalSummarizer", None)
-        BUILTIN_LANDMARK_DOCS = getattr(_lbe, "BUILTIN_LANDMARK_DOCS", [])
-        find_legal_doc_by_citation = getattr(_lbe, "find_legal_doc_by_citation", lambda c: None)
-        lookup_case_by_abbreviation = getattr(_lbe, "lookup_case_by_abbreviation", lambda q: {"matched": False})
-        parse_case_abbreviation_query = getattr(_lbe, "parse_case_abbreviation_query", lambda q: {})
-        construct_standard_citation_from_parsed = getattr(_lbe, "construct_standard_citation_from_parsed", lambda i: "")
-    except Exception:
-        class BooleanQueryParser:
-            @classmethod
-            def is_boolean_query(cls, q): return False
-        def evaluate_boolean_query(q, t): return True
-        AILegalSummarizer = None
-        BUILTIN_LANDMARK_DOCS = []
-        find_legal_doc_by_citation = lambda c: None
-        lookup_case_by_abbreviation = lambda q: {"matched": False}
-        parse_case_abbreviation_query = lambda q: {}
-        construct_standard_citation_from_parsed = lambda i: ""
+from legal_summarizer_engine import (
+    BooleanQueryParser,
+    evaluate_boolean_query,
+    AILegalSummarizer,
+    BUILTIN_LANDMARK_DOCS,
+    find_legal_doc_by_citation,
+    lookup_case_by_abbreviation,
+    parse_case_abbreviation_query,
+    construct_standard_citation_from_parsed
+)
+from legal_qa_engine import (
+    LegalQAEngine,
+    LEGAL_CONSULTATION_DOMAINS,
+    USER_STANDPOINTS,
+    OUTPUT_MODES,
+    QUERY_TYPES,
+    calculate_vehicle_depreciation,
+    calculate_severance_pay,
+    calculate_marital_property_division,
+    calculate_inheritance_shares,
+    calculate_statutory_interest
+)
+from core_issues_taxonomy import (
+    get_taxonomy_chapters_for_subject,
+    get_curated_issues_by_chapter,
+    get_total_curated_issues_count
+)
+from build_million_judgments_db import MillionJudgmentsSQLiteEngine
+from import_judicial_opendata import (
+    parse_official_opendata_record,
+    extract_archive_to_temp,
+    safe_read_opendata_json_file,
+    unwrap_opendata_payload,
+    OUTPUT_CATALOG_PATH,
+    REPO_CATALOG_PATH,
+    JudicialOpenDataClient
+)
 
-try:
-    from legal_qa_engine import (
-        LegalQAEngine,
-        LEGAL_CONSULTATION_DOMAINS,
-        USER_STANDPOINTS,
-        OUTPUT_MODES,
-        QUERY_TYPES,
-        calculate_vehicle_depreciation,
-        calculate_severance_pay,
-        calculate_marital_property_division,
-        calculate_inheritance_shares,
-        calculate_statutory_interest
-    )
-except Exception:
-    class LegalQAEngine:
-        def answer_legal_question(self, **kwargs):
-            return {"success": True, "content": "法學問答引擎初始化中..."}
-        def generate_legal_notice(self, **kwargs):
-            return "存證信函生成中..."
-        def generate_mediation_summary(self, **kwargs):
-            return "調解聲請書生成中..."
-        def detect_question_domain(self, text):
-            return "🌟 自動偵測 (全領域綜合剖析)"
-        def detect_query_intent(self, text):
-            return "🌟 智慧綜合判斷 (全自動意圖辨識)"
-    LEGAL_CONSULTATION_DOMAINS = ["🌟 自動偵測 (全領域綜合剖析)"]
-    USER_STANDPOINTS = ["⚖️ 客觀中立立場 (全面衡平評估法理與雙方勝算)"]
-    OUTPUT_MODES = ["📑 完整專業法律諮詢意見書 (定性・條文・權利・證據・流程・時效)"]
-    QUERY_TYPES = ["🌟 智慧綜合判斷 (全自動意圖辨識)"]
-    def calculate_vehicle_depreciation(**kwargs): return {}
-    def calculate_severance_pay(**kwargs): return {}
-    def calculate_marital_property_division(**kwargs): return {}
-    def calculate_inheritance_shares(**kwargs): return {}
-    def calculate_statutory_interest(**kwargs): return {}
-
-try:
-    from core_issues_taxonomy import (
-        get_taxonomy_chapters_for_subject,
-        get_curated_issues_by_chapter,
-        get_total_curated_issues_count
-    )
-except Exception:
-    def get_taxonomy_chapters_for_subject(s=""):
-        return ["🌟 全部體系章節大庫 (跨領域綜合檢索)"]
-    def get_curated_issues_by_chapter(c="", s=""):
-        return {}
-    def get_total_curated_issues_count():
-        return 0
+# 全局 SQLite 百萬大庫單例
+_global_million_db_engine = None
+def get_million_db_engine():
+    global _global_million_db_engine
+    if _global_million_db_engine is None:
+        _global_million_db_engine = MillionJudgmentsSQLiteEngine()
+    return _global_million_db_engine
 
 
 class JudicialBatchMonthCrawler:
@@ -256,18 +173,23 @@ class JudicialBatchMonthCrawler:
                 if not c_no: continue
                 r_res = requests.get(f"https://opendata.judicial.gov.tw/data/api/rest/categories/{c_no}/resources", headers=headers, timeout=20, verify=False)
                 if r_res.status_code == 200 and isinstance(r_res.json(), list):
-                    for item in r_res.json():
-                        tit = str(item.get("title", ""))
-                        if any(w in tit for w in ["裁判", "判決", "案件", "終結案件"]):
-                            for fs in item.get("filesets", []):
-                                fs_id = fs.get("fileSetId")
-                                fmt = fs.get("resourceFormat", "RAR").upper()
-                                desc = fs.get("resourceDescription", "")
+                    for res_item in r_res.json():
+                        title = res_item.get("resourceName") or res_item.get("title") or ""
+                        res_id = res_item.get("resourceId") or res_item.get("id")
+                        if not res_id: continue
+                        r_fs = requests.get(f"https://opendata.judicial.gov.tw/data/api/rest/resources/{res_id}/filesets", headers=headers, timeout=20, verify=False)
+                        if r_fs.status_code == 200 and isinstance(r_fs.json(), list):
+                            for fs in r_fs.json():
+                                fs_title = fs.get("filesetName") or fs.get("title") or title
+                                fs_id = fs.get("filesetId") or fs.get("id")
+                                fs_desc = fs.get("description") or ""
+                                fs_format = fs.get("fileFormat") or "ZIP/RAR"
                                 datasets.append({
-                                    "title": tit,
+                                    "resourceId": res_id,
                                     "fileSetId": fs_id,
-                                    "format": fmt,
-                                    "desc": desc,
+                                    "title": fs_title,
+                                    "desc": fs_desc,
+                                    "format": fs_format,
                                     "download_url": f"https://opendata.judicial.gov.tw/api/FilesetLists/{fs_id}/file"
                                 })
             return {"success": True, "datasets": datasets}
@@ -275,11 +197,8 @@ class JudicialBatchMonthCrawler:
             return {"success": False, "error": str(e), "datasets": []}
 
     def download_and_ingest_dataset(self, file_set_id: int, title: str = "", token: str = None, progress_cb = None):
-        """自動下載指定月份壓縮包並解壓匯入大庫"""
-        import requests, tempfile, zipfile, json, urllib3
-        from pathlib import Path
-        from import_judicial_opendata import parse_official_opendata_record, extract_archive_to_temp, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
-        
+        """自動下載指定月份壓縮包並解壓匯入大庫（具備 Magic Bytes 自動偵測、Token 錯誤識別與大小寫副檔名相容）"""
+        import requests, tempfile, urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         tk = token or self.token
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -287,64 +206,121 @@ class JudicialBatchMonthCrawler:
             headers["Authorization"] = f"Bearer {tk}"
             
         url = f"https://opendata.judicial.gov.tw/api/FilesetLists/{file_set_id}/file"
+        td_obj = None
         try:
-            resp = requests.get(url, headers=headers, stream=True, timeout=120, verify=False)
+            resp = requests.get(url, headers=headers, stream=True, timeout=180, verify=False)
             if resp.status_code != 200:
-                return {"success": False, "error": f"下載失敗 (HTTP {resp.status_code})"}
+                return {"success": False, "error": f"司法院檔案下載端點回應錯誤 (HTTP {resp.status_code})，可能 Token 已過期或資料集無權限"}
+            
+            chunk_iter = resp.iter_content(chunk_size=1024*1024)
+            try:
+                first_chunk = next(chunk_iter)
+            except StopIteration:
+                return {"success": False, "error": "司法院伺服器回傳空內容 (0 bytes)"}
+            
+            # 1. 檢測是否為 JSON 錯誤訊息 (如 Token 失效/伺服器錯誤)
+            first_trimmed = first_chunk.strip()
+            if first_trimmed.startswith(b"{") or first_trimmed.startswith(b"["):
+                try:
+                    err_obj = json.loads(first_chunk.decode("utf-8", errors="ignore"))
+                    err_msg = err_obj.get("message") or err_obj.get("error") or err_obj.get("Message") or str(err_obj)
+                    return {"success": False, "error": f"司法院 API 回應錯誤（可能 Token 已過期，請重新測試換取 Token）：{err_msg}"}
+                except Exception:
+                    pass
+            
+            # 2. 檢測是否為 HTML 網頁
+            if first_trimmed.startswith(b"<!") or first_trimmed.startswith(b"<html") or first_trimmed.startswith(b"<HTML"):
+                return {"success": False, "error": "司法院伺服器回傳 HTML 網頁而非檔案，可能為 API 存取權限受限或需重新登入會員"}
+
+            # 3. 依據 Magic Bytes 與 Content-Disposition 自動識別真實壓縮格式
+            real_ext = ".7z"
+            if first_chunk.startswith(b"PK\x03\x04"):
+                real_ext = ".zip"
+            elif first_chunk.startswith(b"Rar!\x1a\x07"):
+                real_ext = ".rar"
+            elif first_chunk.startswith(b"7z\xbc\xaf\x27\x1c"):
+                real_ext = ".7z"
+            else:
+                cd = resp.headers.get("Content-Disposition", "")
+                if ".rar" in cd.lower(): real_ext = ".rar"
+                elif ".zip" in cd.lower(): real_ext = ".zip"
+                elif ".7z" in cd.lower(): real_ext = ".7z"
                 
-            with tempfile.TemporaryDirectory() as td:
-                archive_path = Path(td) / f"dataset_{file_set_id}.bin"
-                with open(archive_path, "wb") as f_out:
-                    downloaded = 0
-                    for chunk in resp.iter_content(chunk_size=1024*1024):
-                        if chunk:
-                            f_out.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_cb:
-                                progress_cb(downloaded)
-                                
-                ext_dir = Path(td) / "extracted"
-                ext_dir.mkdir(parents=True, exist_ok=True)
-                
-                # 自動解壓 (支援 rar / zip / 7z)
-                ok = extract_archive_to_temp(archive_path, ext_dir)
-                incoming = []
-                if ok:
-                    for jf in ext_dir.rglob("*.json"):
-                        try:
-                            from import_judicial_opendata import safe_read_opendata_json_file
-                            c = safe_read_opendata_json_file(jf)
-                            if c is None:
-                                continue
-                            items = c if isinstance(c, list) else [c]
-                            for it in items:
-                                p = parse_official_opendata_record(it)
-                                if p and p.get("case_id"):
-                                    incoming.append(p)
-                        except Exception:
-                            continue
+            td_obj = tempfile.TemporaryDirectory()
+            td = td_obj.name
+            archive_path = Path(td) / f"dataset_{file_set_id}{real_ext}"
+            with open(archive_path, "wb") as f_out:
+                f_out.write(first_chunk)
+                downloaded = len(first_chunk)
+                if progress_cb:
+                    progress_cb(downloaded)
+                for chunk in chunk_iter:
+                    if chunk:
+                        f_out.write(chunk)
+                        downloaded += len(chunk)
+                        if progress_cb:
+                            progress_cb(downloaded)
                             
-                if not incoming:
-                    return {"success": False, "error": "壓縮檔內未解析出有效之裁判 JSON 內容"}
-                    
-                # 寫入大庫
-                cur_cat = json.loads(OUTPUT_CATALOG_PATH.read_text(encoding="utf-8")) if OUTPUT_CATALOG_PATH.exists() else []
-                existing_ids = {x.get("case_id") for x in cur_cat if x.get("case_id")}
-                added = 0
-                for rec in incoming:
-                    if rec["case_id"] not in existing_ids:
-                        cur_cat.append(rec)
-                        existing_ids.add(rec["case_id"])
-                        added += 1
+            ext_dir = Path(td) / "extracted"
+            ext_dir.mkdir(parents=True, exist_ok=True)
+            
+            # 自動解壓 (支援 rar / zip / 7z)
+            ok = extract_archive_to_temp(archive_path, ext_dir)
+            incoming = []
+            if ok:
+                # 不分大小寫副檔名遞迴搜尋所有 .json 與 .JSON
+                json_candidates = [jf for jf in ext_dir.rglob("*") if jf.is_file() and jf.suffix.lower() == ".json"]
+                for jf in json_candidates:
+                    try:
+                        c = safe_read_opendata_json_file(jf)
+                        if c is None:
+                            continue
+                        items = unwrap_opendata_payload(c)
+                        for it in items:
+                            p = parse_official_opendata_record(it)
+                            if p and p.get("case_id"):
+                                incoming.append(p)
+                    except Exception:
+                        continue
                         
-                OUTPUT_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-                OUTPUT_CATALOG_PATH.write_text(json.dumps(cur_cat, ensure_ascii=False, indent=2), encoding="utf-8")
-                REPO_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-                REPO_CATALOG_PATH.write_text(json.dumps(cur_cat, ensure_ascii=False, indent=2), encoding="utf-8")
+            if not incoming:
+                if not ok:
+                    return {"success": False, "error": f"自動解壓縮失敗（下載大小 {downloaded / (1024*1024):.1f} MB，格式識別: {real_ext}）。請確認環境已安裝 p7zip-full 或 py7zr/rarfile。"}
+                else:
+                    all_f = list(ext_dir.rglob("*"))
+                    return {"success": False, "error": f"壓縮檔解壓成功，但未解析出裁判 JSON（共解出 {len(all_f)} 個檔案，副檔名: {list(set(f.suffix for f in all_f if f.is_file()))}）。"}
                 
-                return {"success": True, "added": added, "total": len(cur_cat)}
+            # 寫入大庫
+            cur_cat = json.loads(OUTPUT_CATALOG_PATH.read_text(encoding="utf-8")) if OUTPUT_CATALOG_PATH.exists() else []
+            existing_ids = {x.get("case_id") for x in cur_cat if x.get("case_id")}
+            added = 0
+            for rec in incoming:
+                if rec["case_id"] not in existing_ids:
+                    cur_cat.append(rec)
+                    existing_ids.add(rec["case_id"])
+                    added += 1
+                    
+            OUTPUT_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            OUTPUT_CATALOG_PATH.write_text(json.dumps(cur_cat, ensure_ascii=False, indent=2), encoding="utf-8")
+            REPO_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            REPO_CATALOG_PATH.write_text(json.dumps(cur_cat, ensure_ascii=False, indent=2), encoding="utf-8")
+            
+            # 同步寫入 SQLite FTS5 百萬大庫
+            try:
+                get_million_db_engine().batch_upsert_records(incoming)
+            except Exception:
+                pass
+
+            return {"success": True, "added": added, "total": len(cur_cat), "format": real_ext}
         except Exception as e:
             return {"success": False, "error": f"下載或匯入異常: {e}"}
+        finally:
+            if td_obj is not None:
+                try:
+                    td_obj.cleanup()
+                except Exception:
+                    pass
+
 
 # 設定頁面配置
 st.set_page_config(
@@ -4315,48 +4291,46 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
         if uploaded_op_file is not None:
             if st.button("🚀 立即解析並擴充至本機裁判庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
                 with st.spinner(f"正在深度解壓並解析【{uploaded_op_file.name}】中的裁判書..."):
+                    import tempfile
+                    td_up_obj = None
                     try:
-                        from import_judicial_opendata import parse_official_opendata_record, extract_archive_to_temp, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
-                        import tempfile, json
-                        from pathlib import Path
-                        
                         incoming_records = []
                         fn_lower = uploaded_op_file.name.lower()
 
                         if fn_lower.endswith((".zip", ".rar", ".7z")):
-                            with tempfile.TemporaryDirectory() as td:
-                                archive_tmp = Path(td) / uploaded_op_file.name
-                                with open(archive_tmp, "wb") as f_up:
-                                    f_up.write(uploaded_op_file.read())
-                                
-                                ext_dir = Path(td) / "extracted"
-                                ext_dir.mkdir(parents=True, exist_ok=True)
-                                
-                                ok = extract_archive_to_temp(archive_tmp, ext_dir)
-                                if ok:
-                                    for jf_path in ext_dir.rglob("*.json"):
-                                        try:
-                                            from import_judicial_opendata import safe_read_opendata_json_file
-                                            c = safe_read_opendata_json_file(jf_path)
-                                            if c is None:
-                                                continue
-                                            items = c if isinstance(c, list) else [c]
-                                            for it in items:
-                                                p = parse_official_opendata_record(it)
-                                                if p and p.get("case_id"):
-                                                    incoming_records.append(p)
-                                        except Exception:
+                            td_up_obj = tempfile.TemporaryDirectory()
+                            td = td_up_obj.name
+                            archive_tmp = Path(td) / uploaded_op_file.name
+                            with open(archive_tmp, "wb") as f_up:
+                                f_up.write(uploaded_op_file.read())
+                            
+                            ext_dir = Path(td) / "extracted"
+                            ext_dir.mkdir(parents=True, exist_ok=True)
+                            
+                            ok = extract_archive_to_temp(archive_tmp, ext_dir)
+                            if ok:
+                                json_files = [f for f in ext_dir.rglob("*") if f.is_file() and f.suffix.lower() == ".json"]
+                                for jf_path in json_files:
+                                    try:
+                                        c = safe_read_opendata_json_file(jf_path)
+                                        if c is None:
                                             continue
+                                        items = unwrap_opendata_payload(c)
+                                        for it in items:
+                                            p = parse_official_opendata_record(it)
+                                            if p and p.get("case_id"):
+                                                incoming_records.append(p)
+                                    except Exception:
+                                        continue
                         elif fn_lower.endswith(".json"):
                             try:
-                                from import_judicial_opendata import safe_read_opendata_json_file
                                 with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".json") as f_tmp_j:
                                     f_tmp_j.write(uploaded_op_file.read())
                                     tmp_j_path = Path(f_tmp_j.name)
                                 c = safe_read_opendata_json_file(tmp_j_path)
                                 tmp_j_path.unlink(missing_ok=True)
                                 if c:
-                                    items = c if isinstance(c, list) else [c]
+                                    items = unwrap_opendata_payload(c)
                                     for it in items:
                                         p = parse_official_opendata_record(it)
                                         if p and p.get("case_id"):
@@ -4380,16 +4354,28 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                                     existing_ids.add(cid)
                                     new_added += 1
                             
-                            # 存檔
+                            # 存檔至 JSON 大庫
                             with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f:
                                 json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
                             with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f:
                                 json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
                             
+                            # 同步擴充寫入 SQLite FTS5 百萬大庫
+                            try:
+                                get_million_db_engine().batch_upsert_records(incoming_records)
+                            except Exception:
+                                pass
+
                             st.success(f"🎉 成功擴充 {new_added:,} 筆裁判！本機裁判大庫總筆數已提升至：{len(cur_catalog):,} 筆！")
                             st.rerun()
                     except Exception as ie:
                         st.error(f"開放資料匯入失敗: {ie}")
+                    finally:
+                        if td_up_obj is not None:
+                            try:
+                                td_up_obj.cleanup()
+                            except Exception:
+                                pass
 
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
 elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
@@ -4731,7 +4717,11 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.caption("可在此直接搜尋並一鍵切換調閱任何相關法律（如：性侵害犯罪防治法、刑法、兒童及少年福利與權益保障法）或行政命令：")
                         col_rel1, col_rel2 = st.columns([3, 1])
                         with col_rel1:
-                            all_law_names = sorted(list(law_map.keys()))
+                            try:
+                                _, _, _lmap = load_six_codes_data()
+                                all_law_names = sorted(list(_lmap.keys()))
+                            except Exception:
+                                all_law_names = []
                             kw_rel_law = st.text_input("輸入欲聯結之法律名稱關鍵字：", placeholder="例如：性侵害犯罪防治法、個人資料保護法、刑法...", key=f"kw_rel_law_{idx}")
                         with col_rel2:
                             st.write("")

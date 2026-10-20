@@ -517,27 +517,66 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
     }
 
 
+def unwrap_opendata_payload(content: Any) -> List[Dict[str, Any]]:
+    """解包司法院 Open Data JSON 內容，支援頂層 list 或嵌套於 records, judgements, data, items 之結構"""
+    if isinstance(content, list):
+        return [it for it in content if isinstance(it, dict)]
+    if isinstance(content, dict):
+        for k in ("records", "judgements", "data", "items"):
+            if k in content and isinstance(content[k], list):
+                return [it for it in content[k] if isinstance(it, dict)]
+        return [content]
+    return []
+
+
 def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
     """
     多引擎強健解壓 ZIP, RAR (含 RAR5), 7Z 等格式壓縮檔至指定臨時目錄。
+    支援依據 Magic Bytes 自癒偵測真實副檔名（防止 .bin 或副檔名不符問題）。
     優先順序：
     1. 系統命令列工具 (7z x -y -o{out_dir} {archive}、unar -o {out_dir} -f {archive}、unrar、WinRAR)
-    2. Python 套件 (rarfile 配置 unar / 7z、py7zr、zipfile)
+    2. Python 套件 (py7zr、rarfile、zipfile)
     """
-    ext = archive_path.suffix.lower()
+    archive_path = Path(archive_path)
     extract_dir = Path(extract_dir)
     extract_dir.mkdir(parents=True, exist_ok=True)
+    ext = archive_path.suffix.lower()
+
+    # 依 Magic Bytes 自動校正格式副檔名
+    target_archive = archive_path
+    if archive_path.exists():
+        try:
+            with open(archive_path, 'rb') as f_h:
+                head = f_h.read(16)
+            if head.startswith(b'PK\x03\x04') and ext != '.zip':
+                ext = '.zip'
+            elif head.startswith(b'Rar!\x1a\x07') and ext != '.rar':
+                ext = '.rar'
+            elif head.startswith(b'7z\xbc\xaf\x27\x1c') and ext != '.7z':
+                ext = '.7z'
+            
+            # 若原始副檔名不符，建立帶正確副檔名的別名或複製檔案供解壓核心讀取
+            if ext in ('.zip', '.rar', '.7z') and archive_path.suffix.lower() != ext:
+                aliased = archive_path.with_name(archive_path.stem + ext)
+                if not aliased.exists():
+                    try:
+                        shutil.copyfile(archive_path, aliased)
+                        target_archive = aliased
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
     # 1. 優先呼叫系統命令列工具（支援 RAR5、大檔、巢狀目錄）
     cli_candidates = [
-        ["7z", "x", "-y", f"-o{str(extract_dir)}", str(archive_path)],
-        [r"C:\Program Files\7-Zip\7z.exe", "x", "-y", f"-o{str(extract_dir)}", str(archive_path)],
-        [r"C:\Program Files (x86)\7-Zip\7z.exe", "x", "-y", f"-o{str(extract_dir)}", str(archive_path)],
-        ["unar", "-o", str(extract_dir), "-f", str(archive_path)],
-        ["unrar", "x", "-y", str(archive_path), str(extract_dir)],
-        [r"C:\Program Files\WinRAR\UnRAR.exe", "x", "-y", str(archive_path), str(extract_dir)],
-        [r"C:\Program Files\WinRAR\WinRAR.exe", "x", "-y", str(archive_path), str(extract_dir)],
-        ["bsdtar", "-xf", str(archive_path), "-C", str(extract_dir)]
+        ["7z", "x", "-y", f"-o{str(extract_dir)}", str(target_archive)],
+        [r"C:\Program Files\7-Zip\7z.exe", "x", "-y", f"-o{str(extract_dir)}", str(target_archive)],
+        [r"C:\Program Files (x86)\7-Zip\7z.exe", "x", "-y", f"-o{str(extract_dir)}", str(target_archive)],
+        ["unar", "-o", str(extract_dir), "-f", str(target_archive)],
+        ["unrar", "x", "-y", str(target_archive), str(extract_dir)],
+        [r"C:\Program Files\WinRAR\UnRAR.exe", "x", "-y", str(target_archive), str(extract_dir)],
+        [r"C:\Program Files\WinRAR\WinRAR.exe", "x", "-y", str(target_archive), str(extract_dir)],
+        ["bsdtar", "-xf", str(target_archive), "-C", str(extract_dir)]
     ]
 
     for cmd in cli_candidates:
@@ -553,33 +592,32 @@ def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
     # 2. Python 原生 ZIP 解壓
     if ext == ".zip":
         try:
-            with zipfile.ZipFile(archive_path, "r") as z:
+            with zipfile.ZipFile(target_archive, "r") as z:
                 z.extractall(extract_dir)
             return True
         except Exception:
             pass
 
-    # 3. Python 套件 rarfile (針對 RAR5 自動調配 unar / 7z)
+    # 3. Python 套件 py7zr (針對 7Z)
+    if ext == ".7z":
+        try:
+            import py7zr
+            with py7zr.SevenZipFile(target_archive, mode="r") as z:
+                z.extractall(extract_dir)
+            return True
+        except Exception:
+            pass
+
+    # 4. Python 套件 rarfile (針對 RAR5 自動調配 unar / 7z)
     if ext == ".rar":
         try:
             import rarfile
-            # 優先將 rarfile 工具指定為本機可用之 7z 或 unar
             for possible_tool in ("unar", "7z", r"C:\Program Files\7-Zip\7z.exe", "unrar"):
                 if shutil.which(possible_tool) or Path(possible_tool).exists():
                     rarfile.UNRAR_TOOL = possible_tool
                     break
-            with rarfile.RarFile(archive_path) as rf:
+            with rarfile.RarFile(target_archive) as rf:
                 rf.extractall(extract_dir)
-            return True
-        except Exception:
-            pass
-
-    # 4. Python 套件 py7zr (針對 7Z)
-    if ext == ".7z":
-        try:
-            import py7zr
-            with py7zr.SevenZipFile(archive_path, mode="r") as z:
-                z.extractall(extract_dir)
             return True
         except Exception:
             pass
@@ -593,14 +631,14 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
     imported = []
     seen = set()
 
-    # 1. 遞迴處理目錄中的所有 JSON 檔案 (支援多層巢狀子目錄與 UTF-8 BOM)
+    # 1. 遞迴處理目錄中的所有 JSON 檔案 (不區分大小寫副檔名、支援多層巢狀子目錄與 UTF-8 BOM)
     if target_dir_or_zip.is_dir():
-        for j_path in Path(target_dir_or_zip).rglob("*.json"):
+        for j_path in [f for f in Path(target_dir_or_zip).rglob("*") if f.is_file() and f.suffix.lower() == ".json"]:
             try:
                 content = safe_read_opendata_json_file(j_path)
                 if content is None:
                     continue
-                items = content if isinstance(content, list) else [content]
+                items = unwrap_opendata_payload(content)
                 for item in items:
                     parsed = parse_official_opendata_record(item)
                     if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
@@ -615,13 +653,13 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
         with tempfile.TemporaryDirectory() as tmp_dir:
             success = extract_archive_to_temp(target_dir_or_zip, Path(tmp_dir))
             if success:
-                # 使用 rglob 遞迴尋找所有解壓出的巢狀子目錄 (如 .rar/20XXXX/最高法院刑事/XXXXXX.json)
-                for j_path in Path(tmp_dir).rglob("*.json"):
+                # 使用不分大小寫副檔名遞迴尋找所有解壓出的巢狀子目錄 (如 .rar/20XXXX/最高法院刑事/XXXXXX.json)
+                for j_path in [f for f in Path(tmp_dir).rglob("*") if f.is_file() and f.suffix.lower() == ".json"]:
                     try:
                         content = safe_read_opendata_json_file(j_path)
                         if content is None:
                             continue
-                        items = content if isinstance(content, list) else [content]
+                        items = unwrap_opendata_payload(content)
                         for item in items:
                             parsed = parse_official_opendata_record(item)
                             if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
@@ -629,6 +667,9 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
                                 seen.add(parsed["case_id"])
                     except Exception:
                         continue
+
+    print(f"  ✅ 成功解析官方 Open Data 裁判書 {len(imported):,} 筆！")
+    return imported
 
     print(f"  ✅ 成功解析官方 Open Data 裁判書 {len(imported):,} 筆！")
     return imported
