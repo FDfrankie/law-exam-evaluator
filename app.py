@@ -282,7 +282,27 @@ def load_all_existing_stage1_mcqs() -> list:
             except Exception:
                 pass
 
-    # 2. SFT 題庫
+    # 2. 跨科全真模擬題庫 (民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法 86 題)
+    multi_bank_paths = [
+        Path(RAW_DATA_DIR) / "stage1_multi_subject_mcq_bank.json",
+        Path(__file__).resolve().parent / "data" / "raw_exams" / "stage1_multi_subject_mcq_bank.json",
+        Path(__file__).resolve().parent.parent / "raw_exams" / "stage1_multi_subject_mcq_bank.json"
+    ]
+    for mbp in multi_bank_paths:
+        if mbp.exists():
+            try:
+                mdata = json.loads(mbp.read_text(encoding="utf-8"))
+                for q in mdata:
+                    q_copy = dict(q)
+                    h = f"{q_copy.get('question', '')[:30]}_{q_copy.get('options', {}).get('A', '')[:10]}"
+                    if h not in seen_hashes:
+                        all_questions.append(q_copy)
+                        seen_hashes.add(h)
+                break
+            except Exception:
+                pass
+
+    # 3. SFT 題庫
     sft_paths = [
         Path(DATA_DIR) / "training_data" / "law_exam_exams_and_mcq_sft.jsonl",
         Path(__file__).resolve().parent / "data" / "training_data" / "law_exam_exams_and_mcq_sft.jsonl"
@@ -1244,7 +1264,7 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
     if stage == "一試 (選擇題 / 單選題)":
         stage1_tab_ai, stage1_tab_300 = st.tabs([
             "🎲 AI 智慧命題模式（任意題數 & 支援手寫筆記 OCR 客製出題）",
-            "📖 司律一試 300 題全真模擬題庫實戰（自選題數 5~50 題即時測驗）"
+            "📖 司律一試 300+ 題全真跨科模擬題庫（民・刑・公・商跨科即時測驗）"
         ])
 
         with stage1_tab_ai:
@@ -1295,40 +1315,59 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                     st.error(f"出題失敗: {e}")
 
         with stage1_tab_300:
-            st.markdown("#### 📖 司律一試全真題庫隨機抽考實戰（跨科全真題庫）")
-            st.write("全面收錄行政法 300 題模擬題庫、SFT 高考選題大庫與跨科全真精選題目（涵蓋民法、刑法、憲法、民訴、刑訴、商事法），支援依科目隨機抽考！")
+            st.markdown("#### 📖 司律一試 300+ 題全真跨科模擬題庫（涵蓋民法・刑法・憲法・行政法・民訴・刑訴・商事法）")
+            st.write("全面收錄**行政法 300 題完整題庫**與**民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法 86 題跨科全真題目**，題題具備情境案例事實、四大嚴謹選項與 IRAC 權威實務見解解析（憲法判決、最高法院大法庭裁定、指標性重大原判例）。支援單科專精衝刺或全科跨領域大模考！")
 
-            c300_col1, c300_col2, c300_col3 = st.columns([1.2, 1, 1])
+            all_bank_mcqs = load_all_existing_stage1_mcqs()
+
+            c300_col1, c300_col2, c300_col3 = st.columns([1.2, 1.2, 1])
             with c300_col1:
                 sel_domain_filter = st.selectbox(
-                    "1. 選擇隨機出題科目範圍：",
+                    "1. 選擇測驗科目範圍：",
                     [
                         "🌟 全部既有題庫跨科隨機抽考",
-                        "民法與民事訴訟法",
-                        "刑法與刑事訴訟法",
-                        "憲法與行政法",
-                        "商事法與綜合領域"
+                        "🏛️ 民法 (總則・債編・物權・親屬繼承)",
+                        "⚖️ 刑法 (總則犯罪論・刑罰論・分則財產與生命法益)",
+                        "📜 憲法 (基本權利違憲審查・正當法律程序・權力分立)",
+                        "📑 行政法 (300 題模擬題庫・行政處分・行政契約・行政爭訟)",
+                        "💼 民事訴訟法 (當事人適格・訴訟標的・爭點效・既判力)",
+                        "🔍 刑事訴訟法 (強制處分令狀・科技偵查・證據排除・傳聞法則)",
+                        "🏢 商事法 (公司負責人義務・內線交易・保險告知義務)"
                     ],
                     key="sel_stage1_bank_domain"
                 )
+
+            # 依科目精準過濾試題池
+            if sel_domain_filter == "🌟 全部既有題庫跨科隨機抽考":
+                subject_pool = all_bank_mcqs
+            elif "民法" in sel_domain_filter and "民事訴訟法" not in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "民法"]
+            elif "刑法" in sel_domain_filter and "刑事訴訟法" not in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "刑法"]
+            elif "憲法" in sel_domain_filter and "行政法" not in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "憲法"]
+            elif "行政法" in sel_domain_filter and "憲法" not in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if "行政" in q.get("subject", "")]
+            elif "民事訴訟法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "民事訴訟法"]
+            elif "刑事訴訟法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "刑事訴訟法"]
+            elif "商事法" in sel_domain_filter:
+                subject_pool = [q for q in all_bank_mcqs if q.get("subject") == "商事法"]
+            else:
+                subject_pool = [q for q in all_bank_mcqs if sel_domain_filter in q.get("subject", "") or sel_domain_filter in q.get("major_domain", "")]
+
+            # 動態彙整該科目下所屬的考點分類
+            raw_pool_cats = sorted(list({q.get("category", "").strip() for q in subject_pool if q.get("category")}))
+            cat_options = [f"全部考點分類 (不限，此科目共 {len(subject_pool)} 題)"] + raw_pool_cats
+
             with c300_col2:
-                cat_300_categories = [
-                    "全部考點分類 (不限)",
-                    "⚖️ [依法行政原則與專業法學庫]",
-                    "🏛️ [公私法性質與雙階理論]",
-                    "📜 [不確定法律概念與行政裁量]",
-                    "📑 [行政處分之定性與實例]",
-                    "📌 [行政處分之附款與效力]",
-                    "📝 [行政契約與事實行為]",
-                    "📜 [行政命令與地方法規]",
-                    "🌐 [行政法關係與權利義務]",
-                    "🧩 [民刑憲商綜合實務題組題]"
-                ]
                 cat_300_choice = st.selectbox(
                     "2. 考點分類專題篩選：",
-                    cat_300_categories,
-                    key="sel_cat_300_choice"
+                    cat_options,
+                    key=f"sel_cat_300_choice_{sel_domain_filter[:4]}"
                 )
+
             with c300_col3:
                 count_300_choice = st.selectbox(
                     "3. 抽題題數：",
@@ -1342,26 +1381,19 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
 
             if st.button("🚀 從全真題庫抽取試題開始測驗", type="primary", use_container_width=True):
                 import random
-                all_bank_mcqs = load_all_existing_stage1_mcqs()
-                if not all_bank_mcqs:
-                    st.error("目前題庫為空或載入失敗。")
+                if not subject_pool:
+                    st.error("目前該科目題庫為空或載入失敗。")
                 else:
-                    # 科目領域過濾
-                    if sel_domain_filter == "🌟 全部既有題庫跨科隨機抽考":
-                        pool = list(all_bank_mcqs)
-                    else:
-                        pool = [q for q in all_bank_mcqs if q.get("major_domain") == sel_domain_filter or sel_domain_filter in q.get("subject", "")]
-                        if not pool:
-                            pool = list(all_bank_mcqs)
+                    pool = list(subject_pool)
 
                     # 考點分類過濾
-                    if cat_300_choice != "全部考點分類 (不限)":
-                        clean_target_cat = cat_300_choice.replace("⚖️", "").replace("🏛️", "").replace("📜", "").replace("📑", "").replace("📌", "").replace("📝", "").replace("🌐", "").replace("🧩", "").replace("[", "").replace("]", "").strip()
-                        cat_filtered = [q for q in pool if any(tok in q.get("category", "") for tok in clean_target_cat.split("與"))]
+                    if not cat_300_choice.startswith("全部考點分類"):
+                        cat_filtered = [q for q in pool if q.get("category", "").strip() == cat_300_choice]
                         if cat_filtered:
                             pool = cat_filtered
 
-                    selected_qs = random.sample(pool, min(take_count, len(pool)))
+                    actual_take = min(take_count, len(pool))
+                    selected_qs = random.sample(pool, actual_take)
                     reindexed_qs = []
                     new_answer_key = {}
                     for i, q in enumerate(selected_qs, 1):
@@ -1381,7 +1413,7 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                     }
                     st.session_state.pop("stage1_graded", None)
                     st.session_state.pop("stage1_user_answers", None)
-                    st.success(f"🎉 已成功自題庫中隨機抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
+                    st.success(f"🎉 已成功自【{sel_domain_filter}】題庫中隨機抽取 {len(reindexed_qs)} 題（符合條件試題池共 {len(pool)} 題），請於下方開始作答！")
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
@@ -1507,7 +1539,7 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                             st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
 
             # 第二部分：標準答案速查表與詳細解析（交卷批改後解鎖，附提前展開核對選項）
-                        peek_solution = st.checkbox("👁️ 提早檢視答案速查表與詳細解析 (不鎖定)", value=False, key="cb_peek_stage1_solution")
+            peek_solution = st.checkbox("👁️ 提早檢視答案速查表與詳細解析 (不鎖定)", value=False, key="cb_peek_stage1_solution")
             show_stage1_sol = is_graded or peek_solution
 
             if not show_stage1_sol:

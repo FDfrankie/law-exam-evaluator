@@ -34,6 +34,7 @@ data/student_submissions/
 data/checkpoints/
 data/model_weights/
 data/SamsungNotes/
+data/community_archives/
 
 
 # Jupyter Notebook 快取
