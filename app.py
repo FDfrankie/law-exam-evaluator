@@ -787,27 +787,43 @@ with st.sidebar:
     ]
     if "app_mode" not in st.session_state:
         st.session_state["app_mode"] = MODE_HOME
-    else:
-        old_val = st.session_state["app_mode"]
-        if "爭點查詢" in old_val or "統一法學檢索" in old_val:
-            st.session_state["app_mode"] = mode_options[4]
-        elif "法律問題" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "一般法律" in old_val or "智慧問答" in old_val or "全能法律" in old_val or "專屬法學" in old_val or "萬能檢索" in old_val:
-            st.session_state["app_mode"] = mode_options[5]
-        elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val or "起訴書" in old_val:
-            st.session_state["app_mode"] = mode_options[6]
-        elif "智慧六法" in old_val:
-            st.session_state["app_mode"] = mode_options[7]
-        elif "手寫筆記蒸餾" in old_val:
-            st.session_state["app_mode"] = mode_options[8]
-        elif old_val not in mode_options:
+    elif st.session_state["app_mode"] not in mode_options:
+        old_val = str(st.session_state["app_mode"])
+        if "首頁" in old_val or "導覽" in old_val:
+            st.session_state["app_mode"] = MODE_HOME
+        elif "評分" in old_val or "手寫" in old_val:
+            st.session_state["app_mode"] = MODE_EVAL
+        elif "出題" in old_val or "模擬" in old_val:
+            st.session_state["app_mode"] = MODE_GEN
+        elif "歷年真題" in old_val or "題庫" in old_val:
+            st.session_state["app_mode"] = MODE_BANK
+        elif "擬答" in old_val or "權威" in old_val:
+            st.session_state["app_mode"] = MODE_ANS
+        elif "統一法學檢索" in old_val or "判決研析" in old_val or "爭點查詢" in old_val:
+            st.session_state["app_mode"] = MODE_SEARCH
+        elif "全能問答" in old_val or "法學諮詢" in old_val or "法律諮詢" in old_val or "生活法律" in old_val or "萬能檢索" in old_val or "專屬法學" in old_val:
+            st.session_state["app_mode"] = MODE_QA
+        elif "AI 裁判" in old_val or "AI 摘要" in old_val or "AI裁判" in old_val or "精鍊" in old_val or "起訴書" in old_val or "開放資料" in old_val:
+            st.session_state["app_mode"] = MODE_SUMMARIZER
+        elif "智慧六法" in old_val or "六法" in old_val or "函釋" in old_val:
+            st.session_state["app_mode"] = MODE_SIX_CODES
+        elif "手寫筆記蒸餾" in old_val or "SFT" in old_val:
+            st.session_state["app_mode"] = MODE_SFT
+        else:
             st.session_state["app_mode"] = MODE_HOME
 
-    cur_idx = mode_options.index(st.session_state["app_mode"])
+    cur_mode = st.session_state["app_mode"]
+    cur_idx = mode_options.index(cur_mode) if cur_mode in mode_options else 0
+
+    # 確保 Radio 元件狀態與 session_state 嚴格同步，使用穩定唯一的 key 杜絕點選跳走
+    if st.session_state.get("main_app_nav_radio") != cur_mode:
+        st.session_state["main_app_nav_radio"] = cur_mode
+
     app_mode = st.radio(
         "選擇功能模式：",
         mode_options,
         index=cur_idx,
-        key=f"nav_radio_widget_{st.session_state['app_mode']}"
+        key="main_app_nav_radio"
     )
     st.session_state["app_mode"] = app_mode
     api_key = get_gemini_api_key()
@@ -1506,7 +1522,7 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                 st.download_button(
                     label="💾 一鍵下載完整全真模擬試卷 (Markdown 檔)",
                     data=md_content,
-                    file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
+                    file_name=f"司律一試_{exam_data.get('subject')}_{(exam_data.get('topic') or '綜合演練')[:10]}_{len(questions)}題.md",
                     mime="text/markdown",
                     use_container_width=True
                 )
@@ -1647,7 +1663,7 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                 if st.button("📝 一鍵將此題直接帶入【試卷評分】批改"):
                     st.session_state["question_text_content"] = full_q_text
                     st.session_state["imported_from_bank_label"] = f"【AI 客製模擬考題 - {subject}】"
-                    st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                    st.session_state["app_mode"] = MODE_EVAL
                     st.rerun()
 
 # ----------------- 模式 3: 歷年真題庫檢索 -----------------
@@ -1747,7 +1763,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
 
                             st.session_state["question_text_content"] = final_q.strip()
                             st.session_state["imported_from_bank_label"] = f"[{yr}年] {sch} - {dept} ｜ 【{subj}】"
-                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.session_state["app_mode"] = MODE_EVAL
                             st.rerun()
 
                     with bcol2:
@@ -1816,7 +1832,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
                             if st.button(f"📝 一鍵將此講義案例帶入【試卷評分】批改", type="primary", key=f"cw_btn_eval_{c_idx}"):
                                 st.session_state["question_text_content"] = fprev.strip()
                                 st.session_state["imported_from_bank_label"] = f"名師講義爭點案例：【{fsub}】{fname}"
-                                st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                                st.session_state["app_mode"] = MODE_EVAL
                                 st.rerun()
                         with cwb2:
                             if st.button(f"🎲 依此爭點生成一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
@@ -1871,7 +1887,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
                             q_txt = read_note_text(m3_q["path"], max_pages=10, auto_ocr=True)
                             st.session_state["question_text_content"] = q_txt if q_txt else f"【實戰試題】：{m3_q_fn}"
                             st.session_state["imported_from_bank_label"] = f"{m3_q_tag}《{m3_q_fn}》"
-                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.session_state["app_mode"] = MODE_EVAL
                             st.rerun()
                 with c_m3_b2:
                     if st.button(f"🏆 一鍵生成高分示範擬答", key=f"btn_m3_ans_{m3_q_idx}", use_container_width=True):
@@ -1888,7 +1904,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
                         st.session_state["lp_exec_search"] = True
                         st.session_state["ai_query_input_text"] = target_query
                         st.session_state["m5_sub_mode_idx"] = 1
-                        st.session_state["app_mode"] = mode_options[4]
+                        st.session_state["app_mode"] = MODE_SEARCH
                         st.rerun()
 
     with m3_tab4:
@@ -1949,7 +1965,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
                             st.session_state["question_text_content"] = q_text
                             st.session_state["rubric_text_content"] = q_rubric
                             st.session_state["imported_from_bank_label"] = f"【社群共享題庫】{q_title}"
-                            st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                            st.session_state["app_mode"] = MODE_EVAL
                             st.rerun()
                     with c_act2:
                         if st.button(f"🏆 生成榜首級示範擬答 (IRAC)", key=f"btn_model_ans_{q_id}"):
@@ -2104,7 +2120,7 @@ elif app_mode == MODE_ANS or app_mode == "📖 高分權威擬答生成":
                         st.session_state["question_text_content"] = target_q
                         st.session_state["rubric_text_content"] = ans
                         st.session_state["imported_from_bank_label"] = f"二試申論題【{m4_subject}】（含榜首示範擬答標準）"
-                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                        st.session_state["app_mode"] = MODE_EVAL
                         st.rerun()
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
@@ -2278,7 +2294,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                     if st.button(f"🚀 將【{target_combo_id[:16]}...】帶入 AI 判解精鍊", type="primary", use_container_width=True, key="btn_pass_m5_to_m7"):
                         st.session_state["sum_citation_search"] = target_combo_id
                         st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                        st.session_state["app_mode"] = mode_options[6]  # 切換至 AI 判解精鍊旗艦
+                        st.session_state["app_mode"] = MODE_SUMMARIZER  # 切換至 AI 判解精鍊旗艦
                         st.rerun()
             else:
                 for idx, r in enumerate(lb_results):
@@ -2314,7 +2330,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                             if st.button("⚡ AI 判解精鍊", key=f"btn_lb_sum_{idx}", use_container_width=True):
                                 st.session_state["sum_citation_search"] = c_id
                                 st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                                st.session_state["app_mode"] = mode_options[6]
+                                st.session_state["app_mode"] = MODE_SUMMARIZER
                                 st.rerun()
                         with b_c3:
                             if st.button("🔄 案例橫向比對", key=f"btn_lb_cmp_{idx}", use_container_width=True):
@@ -2430,7 +2446,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                             if st.button(f"⚡ AI 判解精鍊", key=f"btn_lp_sum_{p_idx}", use_container_width=True):
                                 st.session_state["sum_citation_search"] = c_id
                                 st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                                st.session_state["app_mode"] = mode_options[6]
+                                st.session_state["app_mode"] = MODE_SUMMARIZER
                                 st.rerun()
                         with btn_c3:
                             if st.button(f"🔄 案例橫向比對", key=f"btn_lp_cmp_{p_idx}", use_container_width=True):
@@ -2612,7 +2628,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                 if st.button("⚡ 帶入 AI 判解精鍊", use_container_width=True, key="btn_hist_to_sum"):
                     st.session_state["sum_citation_search"] = h_cid
                     st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                    st.session_state["app_mode"] = mode_options[6]
+                    st.session_state["app_mode"] = MODE_SUMMARIZER
                     st.rerun()
             with ac3:
                 if st.button("🔄 帶入案例橫向比對", use_container_width=True, key="btn_hist_to_cmp"):
@@ -2624,7 +2640,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                     st.session_state["question_text_content"] = f"【二試歷審脈絡實例題目】：\n請針對【{h_cid}】所涉之審級更迭、各級法院之見解分歧與終局裁定法理，進行深度評析與事實涵攝。"
                     st.session_state["rubric_text_content"] = h_md
                     st.session_state["imported_from_bank_label"] = f"歷審脈絡標準【{h_cid[:15]}】"
-                    st.session_state["app_mode"] = MODE_HOME
+                    st.session_state["app_mode"] = MODE_EVAL
                     st.rerun()
 
     # ==================== 子功能 4: 🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典 ====================
@@ -2773,7 +2789,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                             if st.button(f"⚡ AI 判解精鍊", key=f"btn_irac_sum_{m_idx}", use_container_width=True):
                                 st.session_state["sum_citation_search"] = c_id
                                 st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                                st.session_state["app_mode"] = mode_options[6]
+                                st.session_state["app_mode"] = MODE_SUMMARIZER
                                 st.rerun()
                         with btn_c2:
                             if st.button(f"🔄 案例橫向比對", key=f"btn_irac_cmp_{m_idx}", use_container_width=True):
@@ -2793,12 +2809,12 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                     st.session_state["question_text_content"] = f"【爭點研析題目】：\n{res.get('query', '')}"
                     st.session_state["rubric_text_content"] = res.get("markdown_result", "")
                     st.session_state["imported_from_bank_label"] = f"AI 爭點速查標準【{res.get('query', '')[:20]}...】"
-                    st.session_state["app_mode"] = MODE_HOME
+                    st.session_state["app_mode"] = MODE_EVAL
                     st.rerun()
             with act_col2:
                 if st.button("📖 【一鍵帶入高分擬答生成】針對此爭點撰寫申論答題", use_container_width=True, key="btn_imp_ans_m5"):
                     st.session_state["m4_target_question"] = res.get("query", "")
-                    st.session_state["app_mode"] = mode_options[3]
+                    st.session_state["app_mode"] = MODE_ANS
                     st.rerun()
 
     # ==================== 子功能 5: 🔄 案例橫向比對與實務分歧研析 ====================
@@ -3069,7 +3085,7 @@ elif app_mode == MODE_SEARCH or "統一法學檢索" in app_mode or "爭點查�
                         st.session_state["question_text_content"] = f"【二試進階實例案例區別題目】：\n請就【{ca_id}】與【{cb_id}】所涉及之案件事實與法律見解分歧，深入剖析其法律爭點、各說立論與事實區別標準。"
                         st.session_state["rubric_text_content"] = c_md
                         st.session_state["imported_from_bank_label"] = f"案例橫向比對標準【{ca_id[:15]} vs {cb_id[:15]}】"
-                        st.session_state["app_mode"] = MODE_HOME
+                        st.session_state["app_mode"] = MODE_EVAL
                         st.rerun()
 
 
@@ -3475,12 +3491,12 @@ elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_
             )
         with act_col2:
             if st.button("⚖️ 帶入智慧六法查閱法條", use_container_width=True, key="btn_qa_to_six_codes"):
-                st.session_state["app_mode"] = mode_options[7]
+                st.session_state["app_mode"] = MODE_SIX_CODES
                 st.rerun()
         with act_col3:
             if st.button("🔍 帶入統一法學樞紐檢索判決", use_container_width=True, key="btn_qa_to_search"):
                 st.session_state["lp_search_query"] = qa_q[:40]
-                st.session_state["app_mode"] = mode_options[4]
+                st.session_state["app_mode"] = MODE_SEARCH
                 st.rerun()
 
         # 連續追問區
@@ -3814,14 +3830,14 @@ elif app_mode == MODE_SUMMARIZER or "一鍵 AI 裁判" in app_mode or "AI 摘要
                 st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{active_title}】之案例事實與爭點深入申論其法律效果與實務見解。"
                 st.session_state["rubric_text_content"] = sum_res.get("markdown_result", "")
                 st.session_state["imported_from_bank_label"] = f"AI裁判摘要標準【{active_title[:15]}】"
-                st.session_state["app_mode"] = MODE_HOME
+                st.session_state["app_mode"] = MODE_EVAL
                 st.rerun()
         with s_act3:
             if st.button("📖 帶入高分擬答生成", use_container_width=True, key="btn_sum_to_ans"):
                 m4_q_text = f"請就【{active_title}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
                 st.session_state["m4_target_question"] = m4_q_text
                 st.session_state["m4_text_area_input"] = m4_q_text
-                st.session_state["app_mode"] = mode_options[3]
+                st.session_state["app_mode"] = MODE_ANS
                 st.rerun()
 
     # 批次匯入司法院開放資料擴充大庫區塊
@@ -4285,14 +4301,14 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                 if st.button(f"⚡ 產出本判決 AI 深度摘要", key=f"btn_tab_sum_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["sum_citation_search"] = p.get("case_id", "")
                                     st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                                    st.session_state["app_mode"] = mode_options[6]
+                                    st.session_state["app_mode"] = MODE_SUMMARIZER
                                     st.rerun()
                             with c_p2:
                                 if st.button(f"🔄 帶入進行案例橫向比對", key=f"btn_tab_cmp_{idx}_{p_idx}", use_container_width=True):
                                     st.session_state["target_compare_case_a"] = p.get("case_id", "")
                                     st.session_state["target_compare_topic"] = f"{lname} {ano} 相關裁判見解分歧"
                                     st.session_state["m5_sub_mode_idx"] = 4
-                                    st.session_state["app_mode"] = mode_options[4]
+                                    st.session_state["app_mode"] = MODE_SEARCH
                                     st.rerun()
                             st.markdown("---")
                     else:
@@ -4614,7 +4630,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano}\n\n【條文內容】：\n{content}"
                         st.session_state["rubric_text_content"] = f"【評分指標與法規依據】：\n1. 正確引述 {lname} {ano} 之構成要件與法律效果。\n2. 參酌相關實務見解與立法理由進行涵攝。"
                         st.session_state["imported_from_bank_label"] = f"六法條文【{lname} {ano}】"
-                        st.session_state["app_mode"] = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
+                        st.session_state["app_mode"] = MODE_EVAL
                         st.rerun()
                 with act2:
                     if st.button(f"🔍 帶入法學檢索樞紐", key=f"btn_pass_query_{idx}", use_container_width=True):
@@ -4622,12 +4638,12 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.session_state["lp_search_query"] = f"{lname} {ano}"
                         st.session_state["lb_input_statute"] = f"{lname}第{ano}條"
                         st.session_state["m5_sub_mode_idx"] = 1
-                        st.session_state["app_mode"] = mode_options[4]
+                        st.session_state["app_mode"] = MODE_SEARCH
                         st.rerun()
                 with act3:
                     if st.button(f"📖 針對此法條出題/擬答", key=f"btn_pass_ans_{idx}", use_container_width=True):
                         st.session_state["m4_target_question"] = f"請針對【{lname} {ano}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：{content}"
-                        st.session_state["app_mode"] = "📖 高分權威擬答生成"
+                        st.session_state["app_mode"] = MODE_ANS
                         st.rerun()
 
 # ----------------- 模式 7: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
