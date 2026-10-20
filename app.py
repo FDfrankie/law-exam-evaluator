@@ -249,6 +249,15 @@ MODE_SUMMARIZER = "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI �
 MODE_SIX_CODES = "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)"
 MODE_SFT = "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
 
+def reset_stage1_exam_state():
+    """徹底重設一試選擇題之作答紀錄、批改報告狀態與所有 Radio 按鍵暫存，避免上次答案污染新題目"""
+    st.session_state["stage1_graded"] = False
+    st.session_state.pop("stage1_user_answers", None)
+    st.session_state.pop("cb_peek_stage1_solution", None)
+    for k in list(st.session_state.keys()):
+        if k.startswith("user_choice_"):
+            st.session_state.pop(k, None)
+
 @st.cache_data(ttl=3600)
 def load_all_existing_stage1_mcqs() -> list:
     """
@@ -1308,8 +1317,10 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                         progress_callback=update_progress
                     )
                     progress_bar.progress(1.0)
-                    status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
+                    reset_stage1_exam_state()
                     st.session_state["stage1_exam_data"] = exam_res
+                    status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
+                    st.rerun()
 
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
@@ -1404,20 +1415,23 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                         new_answer_key[str(i)] = ans
                         reindexed_qs.append(q_copy)
 
+                    exam_id = f"bank_{int(time.time()*1000)}"
+                    reset_stage1_exam_state()
                     st.session_state["stage1_exam_data"] = {
+                        "exam_id": exam_id,
                         "subject": sel_domain_filter,
                         "topic": f"全真模擬抽考（{sel_domain_filter}・{len(reindexed_qs)}題）",
                         "total_count": len(reindexed_qs),
                         "questions": reindexed_qs,
                         "answer_key": new_answer_key
                     }
-                    st.session_state.pop("stage1_graded", None)
-                    st.session_state.pop("stage1_user_answers", None)
                     st.success(f"🎉 已成功自【{sel_domain_filter}】題庫中隨機抽取 {len(reindexed_qs)} 題（符合條件試題池共 {len(pool)} 題），請於下方開始作答！")
+                    st.rerun()
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
             exam_data = st.session_state["stage1_exam_data"]
+            cur_exam_id = exam_data.get("exam_id", "curr")
             questions = exam_data.get("questions", [])
             answer_key = exam_data.get("answer_key", {})
 
@@ -1468,18 +1482,23 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                     f"請選擇第 {q_no} 題答案：",
                     choice_options,
                     index=None,
-                    key=f"user_choice_{q_no}"
+                    key=f"user_choice_{cur_exam_id}_{q_no}"
                 )
                 if user_ans:
                     user_answers[str(q_no)] = user_ans[1] # 提取 'A'
 
                 st.write("")
 
-            col_submit, col_export = st.columns([1, 1])
+            col_submit, col_reset, col_export = st.columns([1, 1, 1])
             with col_submit:
-                if st.button("🏁 交卷立即線上批改評分", type="primary"):
+                if st.button("🏁 交卷立即線上批改評分", type="primary", use_container_width=True):
                     st.session_state["stage1_graded"] = True
                     st.session_state["stage1_user_answers"] = user_answers
+                    st.rerun()
+
+            with col_reset:
+                if st.button("🔄 重新作答（清空本卷作答並重新評分）", type="secondary", use_container_width=True):
+                    reset_stage1_exam_state()
                     st.rerun()
 
             with col_export:
@@ -1488,7 +1507,8 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                     label="💾 一鍵下載完整全真模擬試卷 (Markdown 檔)",
                     data=md_content,
                     file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
-                    mime="text/markdown"
+                    mime="text/markdown",
+                    use_container_width=True
                 )
 
             # 批改結果與考點分類實力診斷
@@ -1808,6 +1828,7 @@ elif app_mode == MODE_BANK or app_mode == "📚 歷年真題庫檢索與模擬�
                                         count=3,
                                         notes_content=fprev
                                     )
+                                    reset_stage1_exam_state()
                                     st.session_state["stage1_exam_data"] = mcq_res
                                     st.success("一試測驗題生成成功！可至「🎯 司律模擬出題」模式開始作答。")
                         with cwb3:

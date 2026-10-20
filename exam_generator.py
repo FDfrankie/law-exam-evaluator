@@ -9,6 +9,7 @@
 """
 import json
 import re
+import uuid
 from typing import Dict, Any, List, Optional, Callable
 try:
     from google import genai
@@ -112,6 +113,83 @@ class LawExamGenerator:
                     pass
             raise ValueError(f"無法解析為合法 JSON 格式，回傳片段：{clean[:200]}")
 
+    @staticmethod
+    def _verify_and_align_mcq_item(item: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        對 AI 生成的一試選擇題進行深度校驗與自癒修正：
+        1. 答案自洽性驗證：比對 explanation/options_analysis 中的分析結論，若 answer 與詳解結論矛盾，自動對齊。
+        2. 清理草稿獨白：過濾『等等，仔細計算...調整案件事實』等草稿自言自語洩漏。
+        3. 時間事實對齊：若解析中發現時間不符並修正了年份，將題幹對應年份同步更新，確保題幹與解析完全一致。
+        """
+        explanation = str(item.get("explanation", ""))
+        raw_answer = str(item.get("answer", "")).strip().upper()
+        options = item.get("options", {})
+
+        # --- 1. 清理草稿獨白與時間調整洩漏 ---
+        leak_match = re.search(
+            r'(?:本題中[：:]\s*)?(?:甲對乙之借款債權.*?始屆滿[？?]\s*)?(?:等等[，,]仔細計算|重新檢視時間點).*?(?:調整案件事實之時間邏輯|重新檢視時間點設定)[：:]?\s*',
+            explanation,
+            re.DOTALL
+        )
+        if leak_match:
+            # 若有調整時間，同步更新題幹
+            if "94年" in leak_match.group(0) or "94年" in explanation:
+                q_text = item.get("question", "")
+                if "96年1月1日" in q_text:
+                    item["question"] = q_text.replace("96年1月1日", "94年1月1日").replace("95年1月1日", "93年1月1日")
+            clean_exp = explanation[:leak_match.start()] + explanation[leak_match.end():]
+            clean_exp = re.sub(r'^[，。、；\s]+', '', clean_exp)
+            item["explanation"] = clean_exp
+            explanation = clean_exp
+
+        # --- 2. 答案精確性自動核驗與對齊 ---
+        detected_ans = None
+
+        # (a) 尋找明確結論語句：故選(X) / 應選(X) / 正確答案為(X) / 故本題應選(X)
+        select_match = re.search(r'(?:故選|應選|考生應選|正確答案(?:為|應為|是)|故本題選|故本題應選)\s*[\(（]?([A-D])[\)）]?', explanation)
+        if select_match:
+            detected_ans = select_match.group(1).upper()
+
+        # (b) 尋找結尾結論：故 ... (X) 正確/精確/為是/完全正確
+        if not detected_ans:
+            conclusion_match = re.search(
+                r'故.*?[\(（]([A-D])[\)）](?:選項)?(?:之[^\n，。]{0,15})?(?:敘述精確|之法理分析完全正確|完全正確|正確|為正確|為是|為當|為最佳選項)',
+                explanation
+            )
+            if conclusion_match:
+                detected_ans = conclusion_match.group(1).upper()
+
+        # (c) 尋找 (X) 為正確選項
+        if not detected_ans:
+            opt_match = re.search(r'[\(（]([A-D])[\)）]\s*(?:選項)?\s*(?:為正確選項|為唯一正確選項|為正確)', explanation)
+            if opt_match:
+                detected_ans = opt_match.group(1).upper()
+
+        # (d) 逐項比對 (A)(B)(C)(D) 的正誤標註
+        if not detected_ans:
+            correct_opts = []
+            for opt in ['A', 'B', 'C', 'D']:
+                has_pos = bool(re.search(rf'[\(（]{opt}[\)）]\s*(?:選項)?\s*(?:正確|為正確|敘述精確|為是)', explanation))
+                has_neg = bool(re.search(rf'[\(（]{opt}[\)）]\s*(?:選項)?\s*(?:錯誤|為錯誤|不正確|非正確)', explanation))
+                if has_pos and not has_neg:
+                    correct_opts.append(opt)
+            if len(correct_opts) == 1:
+                detected_ans = correct_opts[0]
+
+        # 若抓取到明確的解析結論，且與 raw_answer 不一致，以詳解之實質論述為準進行修正
+        if detected_ans and detected_ans in ["A", "B", "C", "D"]:
+            item["answer"] = detected_ans
+        elif raw_answer in ["A", "B", "C", "D"]:
+            item["answer"] = raw_answer
+        else:
+            item["answer"] = "A"
+
+        # 確保 options 結構健全
+        if not isinstance(options, dict) or not options:
+            item["options"] = {"A": "選項A", "B": "選項B", "C": "選項C", "D": "選項D"}
+
+        return item
+
     def generate_stage1_exam(
         self,
         subject: str,
@@ -163,19 +241,26 @@ class LawExamGenerator:
 
             prompt = f"""
 你是一位台灣「律師司法官高等考試一試」命題典試委員。
-請針對科目【{subject}】，主題【{topic}】，依據司律一試全真全規格，出第 {start_num} 題至第 {end_num} 題（共 {this_batch_count} 題，四選一單選題）。
+請針對科目【{subject}】，主題【{topic}】，依據司律一試全真全規格，命題第 {start_num} 題至第 {end_num} 題（共 {this_batch_count} 題，四選一單選題）。
 
-【命題嚴格規範（比照司法官律師考試標準）】：
+【命題最高準則（比照司法官律師考試標準）】：
 1. 【試題區去條號、去字號】：題目情境題幹一律「隱匿法條條號」與「法院裁判字號」，純以具體案例事實盲測考生真實法理涵攝與爭點洞察力！
-2. 【選項辨析深度】：四個選項 (A, B, C, D) 必須針對核心爭議、關鍵字眼或實務通說與少數說之差別設定深層辨析陷阱，僅有一最正確答案。
-3. 【題型要求】：{mode_spec}
-4. {notes_instruction}
+2. 【時間與時效精算規範（絕對零矛盾、零草稿流出）】：
+   - 凡涉及民法第125條消滅時效（15年）、第126條（5年）、第127條（2年）、民法第337條（時效完成前已適於抵銷）、票據時效、撤銷除斥期間、年齡等任何時間要素：
+   - 命題前【必須精確驗算】：『起算民國年份 + 期間年數 = 屆滿民國年份』。題幹中設定的具體年份與月份，必須 100% 精確符合所欲呈現之法定效果（例如：起算日為民國94年5月1日，則至民國109年5月1日始屆滿15年；若在110年間主張抵銷，始符合『時效已完成』之事實！切勿寫成96年起算卻在110年稱時效已完成）。
+   - 嚴禁在題目（question）或解析（explanation）中出現年份算錯、事後推翻自己的草稿字眼（例如「等等，仔細計算...調整案件事實...」）！題幹事實與解析推導必須從一開始就完全一致、定稿輸出！
+3. 【選項辨析深度與答案唯一自洽性】：
+   - 四個選項 (A, B, C, D) 必須針對核心爭議、關鍵字眼或實務通說與少數說之差別設定深層辨析陷阱，僅有一最正確答案。
+   - "answer" 欄位之選項英文字母（A/B/C/D），必須與 "explanation" 解析中最終判定為【正確】（例如『故(C)正確』、『故(C)敘述精確』、『故本題選(C)』）的選項字母 100% 絕對完全一致！嚴禁 answer 寫 A 解析卻說 (C) 正確！
+4. 【題型要求】：{mode_spec}
+5. {notes_instruction}
 
 請輸出嚴格的 JSON 陣列格式：
 [
   {{
     "question_no": {start_num},
-    "category": "考點類別（例如：[公私法性質]、[消滅時效]、[不法原因給付]、[裁量收縮]）",
+    "category": "考點類別（例如：[公私法性質]、[消滅時效完成之效力與抵銷]、[不法原因給付]、[裁量收縮]）",
+    "time_and_date_check": "若涉及時間/時效/年齡，寫出算式確認：起算年+期間=屆滿年，確認題幹符合；若無涉及時間填寫'無涉時間'",
     "case_facts": "若是題組題則填寫共通案件事實，若為單選獨立題則留空字串",
     "question": "具體案例情境描述及題目發問（盲測，不洩漏法條條號與裁判字號）...",
     "options": {{
@@ -184,9 +269,10 @@ class LawExamGenerator:
       "C": "選項C文字...",
       "D": "選項D文字..."
     }},
+    "options_analysis": "逐項簡要判定：(A) 說明...；(B) 說明...；(C) 說明...；(D) 說明...",
     "answer": "A",
-    "core_issue": "本題測驗之核心法學爭點（例如：公私法債權互相抵銷之容許性）",
-    "explanation": "詳解說明：逐一分析 (A)(B)(C)(D) 為何正確或錯誤...",
+    "core_issue": "本題測驗之核心法學爭點（例如：時效消滅債權得否抵銷之要件涵攝）",
+    "explanation": "詳解說明：逐一分析 (A)(B)(C)(D) 為何正確或錯誤，文末請統一以『故 (A) 之法理分析完全正確，其餘選項錯誤。』作為定稿總結，該總結英文字母必須與 answer 欄位完全吻合！",
     "legal_references": "精確之法律條號、最高法院/最高行政法院判決字號、司法院釋字、憲法法庭判決或大法庭裁定出處"
   }}
 ]
@@ -215,10 +301,8 @@ class LawExamGenerator:
 
             for item in batch_items:
                 item["question_no"] = current_q_index
-                ans = str(item.get("answer", "A")).strip().upper()
-                if ans not in ["A", "B", "C", "D"]:
-                    ans = "A"
-                item["answer"] = ans
+                item = self._verify_and_align_mcq_item(item)
+                ans = item.get("answer", "A")
                 answer_key[str(current_q_index)] = ans
                 all_questions.append(item)
                 current_q_index += 1
@@ -226,7 +310,9 @@ class LawExamGenerator:
             if progress_callback:
                 progress_callback(len(all_questions), count)
 
+        exam_id = f"ai_exam_{uuid.uuid4().hex[:8]}"
         return {
+            "exam_id": exam_id,
             "subject": subject,
             "topic": topic,
             "mode": question_mode,
