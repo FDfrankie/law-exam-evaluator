@@ -130,6 +130,8 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
         sample_text = parsed.get("full_text") or parsed.get("holding") or ""
         sub_info = evaluate_judgment_substance(sample_text, title=parsed.get("case_id", ""), doc_type=parsed.get("level", ""))
         parsed["has_legal_issue"] = sub_info.get("has_legal_issue", True)
+        parsed["issue_type"] = sub_info.get("issue_type", "法律爭點")
+        parsed["is_pure_factual_dispute"] = sub_info.get("is_pure_factual_dispute", False)
         parsed["is_procedural_dismissal"] = sub_info.get("is_procedural_dismissal", False)
         parsed["discard_reason"] = sub_info.get("discard_reason", "")
         parsed["extracted_history_instances"] = sub_info.get("extracted_history_instances", [])
@@ -282,3 +284,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

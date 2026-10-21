@@ -966,6 +966,8 @@ def search_precedents_advanced(
 
         item_out = dict(it)
         item_out["has_legal_issue"] = substance.get("has_legal_issue", True)
+        item_out["issue_type"] = substance.get("issue_type", "法律爭點")
+        item_out["is_pure_factual_dispute"] = substance.get("is_pure_factual_dispute", False)
         item_out["is_procedural_dismissal"] = substance.get("is_procedural_dismissal", False)
         item_out["discard_reason"] = substance.get("discard_reason", "")
         item_out["extracted_history_instances"] = substance.get("extracted_history_instances", [])
@@ -1259,6 +1261,8 @@ def search_local_precedents(
 
         item_out = dict(it)
         item_out["has_legal_issue"] = substance.get("has_legal_issue", True)
+        item_out["issue_type"] = substance.get("issue_type", "法律爭點")
+        item_out["is_pure_factual_dispute"] = substance.get("is_pure_factual_dispute", False)
         item_out["is_procedural_dismissal"] = substance.get("is_procedural_dismissal", False)
         item_out["discard_reason"] = substance.get("discard_reason", "")
         item_out["extracted_history_instances"] = substance.get("extracted_history_instances", [])

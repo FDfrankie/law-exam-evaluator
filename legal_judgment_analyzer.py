@@ -56,13 +56,48 @@ ROUTINE_FACTUAL_PATTERNS = [
     r"支付命令"
 ]
 
-# 實體法學爭點之陽性特徵庫 (具備實質爭點指標)
+# 純事實爭點特徵庫 (僅涉事實調查、採證認事、證人憑信性、事故真偽或純量刑裁量，缺乏實質法律爭議)
+PURE_FACTUAL_ISSUE_PATTERNS = [
+    r"單純就(?:原審)?取捨證據",
+    r"單純就(?:原審)?認定事實",
+    r"徒就(?:原審)?採證認事",
+    r"徒就(?:原審)?認定事實",
+    r"就原審採證認事之職權行使",
+    r"就原審取捨證據之職權行使",
+    r"原審取捨證據、認定事實之職權行使",
+    r"原審採證認事之職權行使",
+    r"事實審法院認定事實、取捨證據之職權",
+    r"徒就事實審法院認定之事實漫加爭執",
+    r"徒憑己見就事實漫為爭執",
+    r"核屬事實認定問題",
+    r"係屬事實認定問題",
+    r"非屬法律問題",
+    r"無涉及法律問題",
+    r"未涉及法律見解之歧異",
+    r"無涉法律爭點",
+    r"無法律上爭議",
+    r"單純事實有無之爭",
+    r"涉訟事實之認定",
+    r"量刑輕重屬法院裁量之職權",
+    r"量刑裁量職權之適法行使",
+    r"就原審量刑職權漫事指摘",
+    r"證人證言之憑信性",
+    r"證人之證詞是否可信",
+    r"供述前後不一之憑信性",
+    r"純屬個案認定事實",
+    r"漫事指摘原審取捨證據",
+    r"原審依自由心證取捨證據"
+]
+
+# 實質法律爭點之陽性特徵庫 (具備法規解釋、構成要件涵攝疑義、實務見解歧異或體系法理)
 SUBSTANTIVE_ISSUE_KEYWORDS = [
-    "爭點", "法律問題", "見解歧異", "提案大法庭", "大法庭", "憲判字", "司法院解釋", "判例",
+    "法律爭點", "法律問題", "見解歧異", "見解分歧", "學說爭鳴", "提案大法庭", "大法庭", "憲判字", "司法院解釋",
+    "最高法院民事庭會議", "最高法院刑事庭會議", "最高行政法院庭長法官聯席會議", "法律座談會", "最高法院判例", "判例變更",
+    "肯定說", "否定說", "折衷說", "甲說", "乙說", "丙說",
     "有權處分", "無權處分", "善意受讓", "不當得利", "侵權行為", "債務不履行", "契約解釋",
     "構成要件", "違法性", "罪責", "阻卻違法", "正當防衛", "緊急避難", "自首", "共同正犯",
-    "法律保留", "比例原則", "正當法律程序", "不確定法律概念", "行政裁量", "信賴保護",
-    "既判力", "爭點效", "遮斷效", "舉證責任", "傳聞法則", "證據能力", "合法聽審"
+    "想像競合", "法規競合", "實質競合", "法律保留", "比例原則", "正當法律程序", "不確定法律概念", "行政裁量", "信賴保護", "不當聯結禁止",
+    "既判力", "爭點效", "遮斷效", "舉證責任", "傳聞法則", "證據能力", "合法聽審", "權利失效", "適用法規顯有錯誤", "判決不備理由", "判決理由矛盾", "違背法令"
 ]
 
 # 台灣法院正規名稱庫
@@ -77,12 +112,15 @@ def evaluate_judgment_substance(
     """
     【爭點實質性評鑑核心】：
     判定輸入之裁判文書是否具備「實質法律爭點」。
-    若屬純程序性駁回或無實體爭鳴之通常裁定，予以排除標記並提取其歷審裁判案號。
+    若屬純程序性駁回、無實體爭鳴之通常裁定，或僅具「純事實爭點（採證認事/證人憑信性）」而欠缺法理爭議者，
+    一律予以排除標記 (has_legal_issue = False)，並提取其歷審裁判案號以供溯源！
     """
     clean_text = str(text or "").strip()
     if not clean_text:
         return {
             "has_legal_issue": False,
+            "issue_type": "無文字",
+            "is_pure_factual_dispute": False,
             "is_procedural_dismissal": True,
             "is_routine_factual_order": False,
             "discard_reason": "輸入文字為空，無法提取法律爭點。",
@@ -116,39 +154,64 @@ def evaluate_judgment_substance(
     matched_routine_patterns = [pat for pat in ROUTINE_FACTUAL_PATTERNS if re.search(pat, clean_text)]
     is_routine_order = bool(matched_routine_patterns) and not has_substantive_terms
 
-    # 判定是否為純程序駁回 (無法律爭點)
+    # 5. 檢測純事實爭點 (Pure Factual Dispute - 嚴格排除僅具事實爭點而欠缺法律爭點之裁判)
+    matched_factual_patterns = [pat for pat in PURE_FACTUAL_ISSUE_PATTERNS if re.search(pat, clean_text)]
+    is_pure_factual = False
+
+    # 若命中事實爭點排除特徵，且未討論大法庭、法學爭點或實質見解歧異
+    if matched_factual_patterns and not any(kw in clean_text for kw in ["大法庭", "見解歧異", "提案", "判例變更", "學說爭鳴", "肯否"]):
+        if not has_substantive_terms or len(citations) <= 1:
+            is_pure_factual = True
+
+    # 檢測全文是否純屬個案證據調查（證人憑信、監視器畫面、估價單、煞車痕等），完全無實體法律條文與構成要件論理
+    if not is_pure_factual and not matched_proc_patterns and len(clean_text) > 150:
+        is_evidentiary_dispute = bool(re.search(r"(證人.*之證言|監視器畫面|估價單|煞車痕|酒精濃度測定|過失比例|借款是否交付|簽名是否真實)", clean_text))
+        has_legal_doctrine = bool(re.search(r"(構成要件|法律效果|法律上原因|違法性|故意過失之界定|契約之定性|無權處分|侵權行為責任|法律保留|比例原則|法律解釋|適用法規)", clean_text))
+        if is_evidentiary_dispute and not has_legal_doctrine and not has_substantive_terms and len(citations) <= 1:
+            is_pure_factual = True
+
+    # 判定排除類型與原因
     is_procedural = False
     discard_reason = ""
+    issue_type = "實質法律爭點"
 
-    # 情境 A: 明確符合法定程序駁回條款且主文或文末駁回
+    # 情境 A: 純程序駁回
     if matched_proc_patterns and (is_dismissal_phrase or "應予駁回" in clean_text or "上訴駁回" in clean_text):
-        # 若通篇字數短 (< 800 字) 且缺乏實體爭點詞彙
         if len(clean_text) < 1500 or not has_substantive_terms or "大法庭" not in clean_text:
             is_procedural = True
+            issue_type = "純程序駁回"
             if "未繳納" in clean_text and "裁判費" in clean_text:
-                discard_reason = "【純程序駁回】未依法繳納訴訟或裁判費，經裁定命補正逾期未補正，屬程式欠缺之純程序裁定，無實體法學爭點。"
+                discard_reason = "【純程序駁回】未依法繳納訴訟或裁判費，經裁定命補正逾期未補正，屬程式欠缺之純程序裁定，無實體法律爭點。"
             elif "未委任律師" in clean_text:
-                discard_reason = "【純程序駁回】民事或刑事訴訟提起第三審未依法委任律師為代理人，程式不合法逕予駁回，欠缺實體法學爭點。"
+                discard_reason = "【純程序駁回】民事或刑事訴訟提起第三審未依法委任律師為代理人，程式不合法逕予駁回，欠缺實體法律爭點。"
             elif "未具體指摘" in clean_text:
                 discard_reason = "【程序駁回】上訴理由僅就原審取捨證據為指摘，未具體表明原判決違背法令要件，上訴不合法駁回。真實實體法律爭點位於【原審實體判決】中。"
             elif "逾期" in clean_text and ("上訴" in clean_text or "抗告" in clean_text):
-                discard_reason = "【純程序駁回】上訴或抗告已逾法定不變期間，程式不合法駁回，無實體爭點。"
+                discard_reason = "【純程序駁回】上訴或抗告已逾法定不變期間，程式不合法駁回，無法律爭點。"
             else:
                 discard_reason = "【純程序駁回】本件裁判屬法定程式不合之形式駁回裁定，欠缺實體法律爭點論辯。"
 
-    # 情境 B: 單純例行量刑或處分裁定
+    # 情境 B: 純事實爭點排除 (依指示排除僅有事實爭點之裁判)
+    elif is_pure_factual:
+        is_procedural = True
+        issue_type = "純事實爭點"
+        discard_reason = "【純事實爭點・排除納入】本裁判之實質爭執僅限於原審採證認事、證人證詞憑信性、事故現場經過、單據真偽或事實審自由心證職權行使，未涉及實體或程序法之法規解釋、構成要件涵攝或司法見解歧異（欠缺實質法律爭點），依規定予以排除。"
+
+    # 情境 C: 單純例行量刑或處分裁定
     elif is_routine_order:
         is_procedural = True
-        discard_reason = "【例行性事實裁定】屬於通常定應執行刑、易科罰金或無法律爭議之通常裁量，通篇欠缺實體法條要件涵攝與爭鳴價值。"
+        issue_type = "例行事實裁定"
+        discard_reason = "【例行性事實裁定】屬於通常定應執行刑、易科罰金或無法律爭議之通常裁量，通篇欠缺實體法條要件涵攝與法理爭鳴價值。"
 
-    # 情境 C: 字數極短 (< 350 字) 且通篇為駁回或無實體條文
+    # 情境 D: 字數極短 (< 350 字) 且通篇為駁回或無實體條文
     elif len(clean_text) < 350 and ("駁回" in clean_text or "不合法" in clean_text) and not citations:
         is_procedural = True
+        issue_type = "短文無爭點"
         discard_reason = "【篇幅過短/欠缺爭點】內文字數過短且無實體法規論理，不具備法學實體爭點與 IRAC 實質分析價值。"
 
     # 綜合評分 (0 ~ 100)
     substantive_score = 80
-    if is_procedural:
+    if is_procedural or is_pure_factual:
         substantive_score = 15 if history_instances else 5
     else:
         if has_substantive_terms:
@@ -159,7 +222,7 @@ def evaluate_judgment_substance(
             substantive_score += 10
         substantive_score = min(100, substantive_score)
 
-    has_legal_issue = not is_procedural
+    has_legal_issue = not is_procedural and not is_pure_factual
 
     # 尋找承載真實爭點之歷審判決 (Substantive Prior Instance)
     substantive_prior = None
@@ -171,11 +234,13 @@ def evaluate_judgment_substance(
         if not substantive_prior:
             substantive_prior = history_instances[0]
 
-    issue_density = "無 (純程序性裁判)" if not has_legal_issue else ("高 (具備多項核心實體法學爭點)" if substantive_score >= 85 else "中 (具備基礎爭點法理)")
+    issue_density = "無 (純程序性或純事實爭點裁判)" if not has_legal_issue else ("高 (具備多項核心實體法律爭點)" if substantive_score >= 85 else "中 (具備基礎法律爭點)")
 
     return {
         "has_legal_issue": has_legal_issue,
-        "is_procedural_dismissal": is_procedural,
+        "issue_type": issue_type,
+        "is_pure_factual_dispute": is_pure_factual,
+        "is_procedural_dismissal": (is_procedural and not is_pure_factual and not is_routine_order),
         "is_routine_factual_order": is_routine_order,
         "discard_reason": discard_reason,
         "substantive_score": substantive_score,

@@ -1429,21 +1429,34 @@ class AILegalSummarizer:
         discard_reason = substance_info.get("discard_reason", "")
         evolution_md = format_instance_evolution_markdown(history_instances, current_case_id=title)
 
-        # 2. 若欠缺實體法律爭點 (純程序駁回、未繳費、程式不合、例行量刑)：
-        #    排除實體 IRAC 深度分析，改為輸出程序診斷並高度聚焦於其【歷審裁判 (原審實體判決)】！
+        # 2. 若欠缺實體法律爭點 (純事實爭點、純程序駁回、未繳費、程式不合、例行量刑)：
+        #    排除實體 IRAC 深度分析，改為輸出專屬診斷並高度聚焦於其【歷審裁判 (原審實體判決)】！
         if not has_issue:
+            is_pure_factual = substance_info.get("is_pure_factual_dispute", False)
+            issue_type = substance_info.get("issue_type", "無實體法律爭點")
+
             prior_link_hint = ""
             if substantive_prior:
                 prior_link_hint = f"""
-> 💡 **【關鍵歷審導引】**：本件裁判本身為無實體爭鳴之程序裁定，但本案兩造實質攻防與爭點事實完整記載於【**{substantive_prior.get('case_id')}**】中。
+> 💡 **【關鍵歷審導引】**：本件裁判本身欠缺實質法律爭議，但本案兩造實質攻防與事實爭點完整記載於【**{substantive_prior.get('case_id')}**】（{substantive_prior.get('role', '原審')}）中。
 > 系統已自內文中自動定位該原審裁判，建議直接調閱或貼入該原審判決全文，AI 將為您進行實體法學要旨與 IRAC 深度精鍊！
 """
 
-            res_md = f"""### ⚠️ 【爭點實質性檢驗：無實質法律爭點・已排除實體分析】
-本案經系統「爭點實質性評鑑核心」嚴格檢驗，屬於**欠缺實體法學爭點之裁判**：
+            if is_pure_factual:
+                header_title = "### ⚠️ 【爭點實質性檢驗：純事實爭點・已排除實體法學分析】"
+                nature_desc = "純事實爭點審查（如當事人徒就事實審法院取捨證據、認定事實之自由心證職權漫事指摘，或單純涉及證人憑信性、事故現場經過、單據真偽），通篇未涉及法律規範解釋、法律漏洞、構成要件涵攝疑義或法規見解歧異。"
+                principle_desc = "依使用者指示與司律權威法學研析規範，系統**嚴格排除純事實爭點之裁判**，僅收錄具備實質「法律爭點」之裁判，避免在純事實爭執案由中產出虛構或無實益之 IRAC 法學摘要。"
+            else:
+                header_title = "### ⚠️ 【爭點實質性檢驗：無實質法律爭點・已排除實體分析】"
+                nature_desc = "形式合法性審查（如程式欠缺、未繳納訴訟費用、未委任律師、逾期上訴或例行量刑處分），通篇無實體法條構成要件之爭鳴與事實涵攝。"
+                principle_desc = "依司律國考與權威法學「實質法律爭點原則」，系統已**自動自實體要旨深度萃取中排除本裁定**，避免在無法律爭點之裁定上產出無效或虛構之 IRAC 內容。"
+
+            res_md = f"""{header_title}
+本案經系統「爭點實質性評鑑核心」嚴格檢驗，屬於**排除納入之裁判**：
+- **爭點分類性質**：【{issue_type}】
 - **實質排除原因**：{discard_reason}
-- **裁判審查性質**：形式合法性審查（如程式欠缺、未繳納訴訟費用、逾期上訴或例行量刑處分），通篇無實體法條構成要件之爭鳴與事實涵攝。
-- **處理原則**：依司律國考與權威法學「實質法律爭點原則」，系統已**自動自實體要旨深度萃取中排除本裁定**，避免在無爭點裁定上產出無效或虛構之 IRAC 內容。
+- **裁判審查性質**：{nature_desc}
+- **處理原則**：{principle_desc}
 
 ---
 
@@ -1453,10 +1466,10 @@ class AILegalSummarizer:
 
 ---
 
-### 📋 【本程序裁定之基本案情與主文摘要】
-- **承審法院與字號**：【{title or '程序裁定'}】
+### 📋 【本件裁判基本案情與主文摘要】
+- **承審法院與字號**：【{title or '司法裁判'}】
 - **主文結論**：{doc_text[:350].strip()}...
-- **程序法規**：{', '.join(substance_info.get('legal_citations_detected', [])) or '民事訴訟法 / 刑事訴訟法相關程序規定'}
+- **程序法規**：{', '.join(substance_info.get('legal_citations_detected', [])) or '民事訴訟法 / 刑事訴訟法 / 行政訴訟法相關規定'}
 """
             return {
                 "title": title,
@@ -1464,6 +1477,8 @@ class AILegalSummarizer:
                 "subject": subject,
                 "markdown_result": res_md,
                 "has_legal_issue": False,
+                "issue_type": issue_type,
+                "is_pure_factual_dispute": is_pure_factual,
                 "is_procedural_dismissal": substance_info.get("is_procedural_dismissal", True),
                 "discard_reason": discard_reason,
                 "history_instances": history_instances,
@@ -1489,7 +1504,7 @@ class AILegalSummarizer:
 
 ------------------------
 
-請嚴格遵循標準專業規範，依序產出以下六大核心標題（請務必高度注重「歷審裁判」之審級更迭與心證見解翻轉）：
+請嚴格遵循標準專業規範，依序產出以下六大核心標題（請務必高度注重「歷審裁判」之審級更迭與心證見解翻轉，並嚴格排除純事實爭執）：
 
 ### 📌 一、基本案情與案件程序審級歷程 (特別剖析歷審更迭)
 - **當事人背景與紛爭起因**：當事人身分、客觀爭端發生經過、行政處分作成或契約簽訂背景。
@@ -1498,8 +1513,9 @@ class AILegalSummarizer:
   - 第二審事實/上訴審（高院）：案號、上訴理由、高院是否逆轉或變更一審心證。
   - 第三審法律審（最高法院）或大法庭/憲法法庭：上訴第三審之違背法令指摘與終局法律爭端。
 
-### ⚖️ 二、核心法律爭執焦點 (Legal Issues)
-- 提煉 1~3 個最關鍵之實體法或程序法法律爭執點（以標題化明確呈現，例如：【爭點一】借名登記出名人擅自移轉是否構成無權處分？【爭點二】惡意第三人是否受善意受讓之保護？）。
+### ⚖️ 二、核心法律爭執焦點 (Legal Issues - 嚴格排除純事實爭執)
+- 【重要指令】：本節僅限提煉「實體法或訴訟法之法律爭點」（如法規構成要件解釋、規範漏洞、法律見解歧異、法律效果涵攝）。若裁判涉及取捨證據、證人憑信性、事故真偽等純事實爭議，嚴禁列入本節，僅專注於具實務或學說法理爭鳴之法律問題！
+- 提煉 1~3 個最關鍵之法律爭執點（以標題化明確呈現，例如：【爭點一】借名登記出名人擅自移轉是否構成無權處分？【爭點二】惡意第三人是否受善意受讓之保護？）。
 - 爭執背後之法律規範漏洞或學說實務衝突所在。
 
 ### 🏛️ 三、裁判要旨與主文核心論理 (Holding & Ratio Decidendi - 對比歷審見解)

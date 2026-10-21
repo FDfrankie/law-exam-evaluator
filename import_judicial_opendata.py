@@ -542,6 +542,8 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
         "full_text": jfull[:15000],
         "source": "judicial_open_data",
         "has_legal_issue": substance.get("has_legal_issue", True),
+        "issue_type": substance.get("issue_type", "法律爭點"),
+        "is_pure_factual_dispute": substance.get("is_pure_factual_dispute", False),
         "is_procedural_dismissal": substance.get("is_procedural_dismissal", False),
         "discard_reason": substance.get("discard_reason", ""),
         "extracted_history_instances": substance.get("extracted_history_instances", []),

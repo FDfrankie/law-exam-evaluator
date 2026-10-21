@@ -2571,11 +2571,11 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             key="lb_select_time_filter"
         )
 
-        # 6. 法律爭點實質性篩選 (自動排除無爭點程序裁定)
+        # 6. 法律爭點實質性篩選 (自動排除無爭點程序裁定與純事實爭點)
         lb_filter_no_issue = st.checkbox(
-            "🚫 自動排除無實體爭點之純程序駁回/例行裁定 (推薦)",
+            "🚫 僅保留實體法律爭點裁判（自動排除純事實爭點與純程序裁定）(推薦)",
             value=st.session_state.get("lb_filter_no_issue", True),
-            help="勾選後自動過濾未繳裁判費、逾期駁回、純移送管轄或單純例行量刑等無實質法理爭點之裁判，確保研析與檢索聚焦於司律核心實體爭點與上位 IRAC 論理。",
+            help="勾選後自動排除僅涉取捨證據、認定事實職權行使、證人憑信性之『純事實爭點』，以及未繳裁判費、逾期駁回等『純程序裁定』，嚴格限定僅保留具備實質『法律爭點』之裁判，確保研析聚焦於法理爭鳴與司律上位論理。",
             key="lb_filter_no_issue_cb"
         )
         st.session_state["lb_filter_no_issue"] = lb_filter_no_issue
@@ -2679,8 +2679,16 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     hint = r.get("exam_application_hint", "")
 
                     with st.expander(f"⚖️ 【{lvl or court}】`{c_id}` ｜ {tit[:35]}", expanded=(idx < 3)):
-                        substance_badge = "🎯 具實質法學爭點" if r.get("has_legal_issue", True) else "⚠️ 純程序裁定"
-                        st.markdown(f"**🏛️ 管轄法院：** `{court}` ｜ **審級位階：** `{lvl}` ｜ **爭點性質：** :{('green' if r.get('has_legal_issue', True) else 'orange')}[{substance_badge}] ｜ **案件案由：** `{tit}`")
+                        if r.get("is_pure_factual_dispute"):
+                            substance_badge = "⚠️ 純事實爭點 (已排除)"
+                            badge_color = "orange"
+                        elif not r.get("has_legal_issue", True):
+                            substance_badge = "⚠️ 純程序裁定 (已排除)"
+                            badge_color = "orange"
+                        else:
+                            substance_badge = "⚖️ 具實質法律爭點"
+                            badge_color = "green"
+                        st.markdown(f"**🏛️ 管轄法院：** `{court}` ｜ **審級位階：** `{lvl}` ｜ **爭點性質：** :{badge_color}[{substance_badge}] ｜ **案件案由：** `{tit}`")
 
                         # 歷審裁判脈絡鏈摘要
                         hist_instances = r.get("extracted_history_instances", [])
@@ -2743,9 +2751,9 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
         )
 
         lp_filter_no_issue = st.checkbox(
-            "🚫 自動排除無實體爭點之純程序裁定 (推薦)",
+            "🚫 僅保留實體法律爭點裁判（自動排除純事實爭點與純程序裁定）(推薦)",
             value=st.session_state.get("lp_filter_no_issue", True),
-            help="勾選後自動過濾未繳裁判費、逾期駁回、純移送管轄或單純例行量刑等無實質法理爭點之裁判，確保研析與檢索聚焦於司律核心實體爭點與上位 IRAC 論理。",
+            help="勾選後自動排除僅涉取捨證據、認定事實職權行使、證人憑信性之『純事實爭點』，以及未繳裁判費、逾期駁回等『純程序裁定』，嚴格限定僅保留具備實質『法律爭點』之裁判，確保研析聚焦於法理爭鳴與司律上位論理。",
             key="cb_lp_filter_no_issue"
         )
         st.session_state["lp_filter_no_issue"] = lp_filter_no_issue
@@ -2819,8 +2827,16 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     holding = mc.get("holding", "")
 
                     with st.expander(f"⚖️ 【{lvl}】`{c_id}` ｜ {tit}", expanded=(p_idx == 0)):
-                        substance_badge = "🎯 具實質法學爭點" if mc.get("has_legal_issue", True) else "⚠️ 純程序裁定"
-                        st.markdown(f"**審級位階：** `{lvl}` ｜ **爭點性質：** :{('green' if mc.get('has_legal_issue', True) else 'orange')}[{substance_badge}]")
+                        if mc.get("is_pure_factual_dispute"):
+                            substance_badge = "⚠️ 純事實爭點 (已排除)"
+                            badge_color = "orange"
+                        elif not mc.get("has_legal_issue", True):
+                            substance_badge = "⚠️ 純程序裁定 (已排除)"
+                            badge_color = "orange"
+                        else:
+                            substance_badge = "⚖️ 具實質法律爭點"
+                            badge_color = "green"
+                        st.markdown(f"**審級位階：** `{lvl}` ｜ **爭點性質：** :{badge_color}[{substance_badge}]")
 
                         # 歷審裁判脈絡鏈摘要
                         hist_instances = mc.get("extracted_history_instances", [])
@@ -4199,11 +4215,14 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
 
         # 實質爭點排除警示與原審判決導引卡 (貫徹指示：排除欠缺法律爭點之裁判，並注重歷審裁判)
         if sum_res.get("has_legal_issue") is False:
-            st.error(f"🚫 **【爭點實質性檢驗：無實質法律爭點・已排除實體 IRAC 分析】**\n\n{sum_res.get('discard_reason', '')}")
+            if sum_res.get("is_pure_factual_dispute"):
+                st.error(f"⚠️ **【爭點實質性檢驗：純事實爭點・已排除實體法學分析】**\n\n{sum_res.get('discard_reason', '')}")
+            else:
+                st.error(f"🚫 **【爭點實質性檢驗：無實質法律爭點・已排除實體 IRAC 分析】**\n\n{sum_res.get('discard_reason', '')}")
             substantive_prior = sum_res.get("substantive_prior_instance")
             if substantive_prior:
                 prior_cid = substantive_prior.get("case_id", "")
-                st.info(f"🌿 **關鍵原審實體裁判定位**：本裁定為純程序裁定，其實質爭執事實與法理攻防完整記錄於原審【**{prior_cid}**】（{substantive_prior.get('role')}）！")
+                st.info(f"🌿 **關鍵原審實體裁判定位**：本件裁判欠缺實質法律爭點，其實質攻防事實與實體爭執完整記錄於原審【**{prior_cid}**】（{substantive_prior.get('role')}）！")
                 if st.button(f"👉 一鍵切換並調閱此原審實體裁判【{prior_cid}】", type="primary", use_container_width=True, key="btn_jump_to_substantive_prior"):
                     st.session_state["sum_citation_search"] = prior_cid
                     st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
