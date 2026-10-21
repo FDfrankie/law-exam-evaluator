@@ -35,6 +35,10 @@ data/checkpoints/
 data/model_weights/
 data/SamsungNotes/
 data/community_archives/
+data/judicial_1m_db/
+data/judicial_opendata/
+*.db
+*.sqlite3
 
 
 # Jupyter Notebook 快取

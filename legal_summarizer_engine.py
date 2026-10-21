@@ -1338,6 +1338,30 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
 
+    # 4. 百萬裁判 SQLite 資料庫 (MillionJudgmentsSQLiteEngine)
+    try:
+        from build_million_judgments_db import get_million_db_engine
+        db_doc = get_million_db_engine().find_by_citation(raw)
+        if db_doc and db_doc.get("found"):
+            return {
+                'found': True,
+                'matched': True,
+                'source': 'million_db',
+                'source_type': 'million_db',
+                'title': db_doc.get('title', raw),
+                'doc_type': db_doc.get('doc_type', '🏛️ 司法裁判書'),
+                'citation': raw,
+                'court_or_agency': db_doc.get('court_or_agency', '法院'),
+                'laws_cited': db_doc.get('laws_cited', []),
+                'holding_snippet': db_doc.get('holding_snippet', '')[:280].strip(),
+                'text': db_doc.get('text', ''),
+                'summary': db_doc.get('title', raw),
+                'search_urls': generate_judicial_search_urls(db_doc.get('title', raw)),
+                'raw_doc': db_doc
+            }
+    except Exception:
+        pass
+
     return {
         'found': False,
         'matched': False,

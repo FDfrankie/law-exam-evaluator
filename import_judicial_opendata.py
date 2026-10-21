@@ -701,30 +701,40 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
             except Exception:
                 continue
 
-    # 2. 處理壓縮檔 (ZIP, RAR, 7Z)
+    # 2. 處理壓縮檔 (ZIP 優先使用零磁碟串流，RAR/7Z 採用節流處理)
     elif target_dir_or_zip.is_file() and target_dir_or_zip.suffix.lower() in [".zip", ".rar", ".7z"]:
-        print(f"📦 正在深度解壓讀取 Open Data 壓縮檔: {target_dir_or_zip.name}...")
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            success = extract_archive_to_temp(target_dir_or_zip, Path(tmp_dir))
-            if success:
-                unpack_all_nested_archives(Path(tmp_dir))
-                # 使用不分大小寫副檔名遞迴尋找所有解壓出的巢狀子目錄 (如 .rar/20XXXX/最高法院刑事/XXXXXX.json)
-                for j_path in [f for f in Path(tmp_dir).rglob("*") if f.is_file() and f.suffix.lower() == ".json"]:
-                    try:
-                        content = safe_read_opendata_json_file(j_path)
-                        if content is None:
-                            continue
-                        items = unwrap_opendata_payload(content)
-                        for item in items:
-                            parsed = parse_official_opendata_record(item)
-                            if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
-                                imported.append(parsed)
-                                seen.add(parsed["case_id"])
-                    except Exception:
-                        continue
+        ext_low = target_dir_or_zip.suffix.lower()
+        if ext_low == ".zip":
+            print(f"📦 正在以零解壓串流讀取 ZIP 壓縮檔: {target_dir_or_zip.name}...")
+            try:
+                from ingest_opendata_lowmem import stream_json_from_zip
+                for raw_doc in stream_json_from_zip(target_dir_or_zip):
+                    parsed = parse_official_opendata_record(raw_doc)
+                    if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
+                        imported.append(parsed)
+                        seen.add(parsed["case_id"])
+            except Exception as ze:
+                print(f"  ⚠️ ZIP 串流解析降級: {ze}")
 
-    print(f"  ✅ 成功解析官方 Open Data 裁判書 {len(imported):,} 筆！")
-    return imported
+        if not imported:
+            print(f"📦 正在深度解壓讀取 Open Data 壓縮檔: {target_dir_or_zip.name}...")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                success = extract_archive_to_temp(target_dir_or_zip, Path(tmp_dir))
+                if success:
+                    unpack_all_nested_archives(Path(tmp_dir))
+                    for j_path in [f for f in Path(tmp_dir).rglob("*") if f.is_file() and f.suffix.lower() == ".json"]:
+                        try:
+                            content = safe_read_opendata_json_file(j_path)
+                            if content is None:
+                                continue
+                            items = unwrap_opendata_payload(content)
+                            for item in items:
+                                parsed = parse_official_opendata_record(item)
+                                if parsed and parsed.get("case_id") and parsed["case_id"] not in seen:
+                                    imported.append(parsed)
+                                    seen.add(parsed["case_id"])
+                        except Exception:
+                            continue
 
     print(f"  ✅ 成功解析官方 Open Data 裁判書 {len(imported):,} 筆！")
     return imported

@@ -974,6 +974,48 @@ def search_precedents_advanced(
         if len(final_results) >= top_k:
             break
 
+    # 補充自 SQLite 百萬裁判大庫 (若目錄筆數不足)
+    if len(final_results) < top_k:
+        try:
+            from build_million_judgments_db import get_million_db_engine
+            db_engine = get_million_db_engine()
+            db_hits = db_engine.search_fts_and_meta(
+                jud_year=clean_year,
+                jud_word=clean_word,
+                jud_no=clean_no,
+                case_cause=clean_cause,
+                main_holding=clean_holding,
+                argument_issue=clean_issue,
+                cited_laws=clean_laws,
+                case_type=case_type,
+                court_system=court_system,
+                filter_no_legal_issue=filter_no_legal_issue,
+                top_k=(top_k - len(final_results))
+            )
+            seen_ids = {x.get("case_id") for x in final_results}
+            for dh in db_hits:
+                cid = dh.get("case_id")
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    dh_item = {
+                        "case_id": cid,
+                        "court": dh.get("court", ""),
+                        "level": dh.get("level", "司法裁判"),
+                        "subject": dh.get("subject", "法學專業實務"),
+                        "sub_category": dh.get("title", cid),
+                        "title": dh.get("title", cid),
+                        "laws_cited": [x.strip() for x in (dh.get("laws_cited") or "").split("、") if x.strip()],
+                        "issue": dh.get("issue", ""),
+                        "holding": dh.get("holding_preview", ""),
+                        "scholarly_views": "",
+                        "exam_application_hint": "",
+                        "has_legal_issue": bool(dh.get("has_legal_issue", 1)),
+                        "extracted_history_instances": []
+                    }
+                    final_results.append(dh_item)
+        except Exception:
+            pass
+
     return final_results
 
 
