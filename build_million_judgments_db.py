@@ -534,6 +534,7 @@ class MillionJudgmentsSQLiteEngine:
 
                         if not extracted:
                             cli_candidates = [
+                                ["unar", "-o", str(out_d), "-f", str(fp)],
                                 ["7z", "x", "-y", f"-o{out_d}", str(fp)],
                                 [r"C:\Program Files\7-Zip\7z.exe", "x", "-y", f"-o{out_d}", str(fp)],
                                 [r"C:\Program Files (x86)\7-Zip\7z.exe", "x", "-y", f"-o{out_d}", str(fp)],

@@ -136,7 +136,8 @@ SafeJudicialOpenDataClient = JudicialOpenDataClient
 def safe_read_opendata_json_file(file_path: Path) -> Optional[Any]:
     """
     強健讀取司法院 Open Data JSON 檔案：
-    優先採用 utf-8-sig 去除 UTF-8 BOM，容錯回退至 cp950 / latin-1
+    優先採用 utf-8-sig 去除 UTF-8 BOM，容錯回退至 cp950 / latin-1，
+    若標準 JSON 解析失敗，自動嘗試逐行 JSON Lines (JSONL) 解析。
     """
     for enc in ("utf-8-sig", "utf-8", "cp950", "latin-1"):
         try:
@@ -144,6 +145,24 @@ def safe_read_opendata_json_file(file_path: Path) -> Optional[Any]:
                 return json.load(f)
         except Exception:
             continue
+
+    # 容錯回退：逐行 JSON Lines (JSONL) 或多物件串接解析
+    for enc in ("utf-8-sig", "utf-8", "cp950"):
+        try:
+            records = []
+            with open(file_path, "r", encoding=enc, errors="ignore") as f:
+                for line in f:
+                    line_s = line.strip()
+                    if line_s and line_s.startswith("{") and line_s.endswith("}"):
+                        try:
+                            records.append(json.loads(line_s))
+                        except Exception:
+                            pass
+            if records:
+                return records
+        except Exception:
+            continue
+
     return None
 
 
@@ -315,6 +334,10 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
     """
     if not isinstance(data, dict):
         return None
+
+    # 若傳入之物件已為標準化裁判結構，直接回傳
+    if "case_id" in data and "full_text" in data and len(str(data.get("full_text", ""))) > 10:
+        return data
 
     # 不分大小寫輔助取值函式
     def _get_val(*keys) -> str:
@@ -518,15 +541,37 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
 
 
 def unwrap_opendata_payload(content: Any) -> List[Dict[str, Any]]:
-    """解包司法院 Open Data JSON 內容，支援頂層 list 或嵌套於 records, judgements, data, items 之結構"""
+    """解包司法院 Open Data JSON 內容，支援頂層 list 或嵌套於 records, judgements, data, items 之結構，支援不區分大小寫與多層巢狀"""
     if isinstance(content, list):
         return [it for it in content if isinstance(it, dict)]
     if isinstance(content, dict):
-        for k in ("records", "judgements", "data", "items"):
-            if k in content and isinstance(content[k], list):
-                return [it for it in content[k] if isinstance(it, dict)]
+        for k, v in content.items():
+            if str(k).lower() in ("records", "judgements", "judgments", "data", "items", "cases", "judicialrecords") and isinstance(v, list):
+                return [it for it in v if isinstance(it, dict)]
+        for subk in ("response", "result", "payload"):
+            if subk in content and isinstance(content[subk], dict):
+                sub = content[subk]
+                for k, v in sub.items():
+                    if str(k).lower() in ("records", "judgements", "judgments", "data", "items", "cases") and isinstance(v, list):
+                        return [it for it in v if isinstance(it, dict)]
         return [content]
     return []
+
+
+def unpack_all_nested_archives(target_dir: Path, max_depth: int = 3):
+    """遞迴搜尋並解壓目錄下所有巢狀壓縮檔 (例如司法院月度 RAR 內部包含之各法院 ZIP 包)"""
+    for _ in range(max_depth):
+        nested = [
+            f for f in target_dir.rglob("*")
+            if f.is_file() and f.suffix.lower() in (".zip", ".rar", ".7z")
+        ]
+        if not nested:
+            break
+        for arc in nested:
+            sub_d = arc.parent / f"_extracted_{arc.stem}"
+            sub_d.mkdir(parents=True, exist_ok=True)
+            if extract_archive_to_temp(arc, sub_d):
+                arc.unlink(missing_ok=True)
 
 
 def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
@@ -653,6 +698,7 @@ def import_opendata_folder_or_zip(target_dir_or_zip: Path) -> List[Dict[str, Any
         with tempfile.TemporaryDirectory() as tmp_dir:
             success = extract_archive_to_temp(target_dir_or_zip, Path(tmp_dir))
             if success:
+                unpack_all_nested_archives(Path(tmp_dir))
                 # 使用不分大小寫副檔名遞迴尋找所有解壓出的巢狀子目錄 (如 .rar/20XXXX/最高法院刑事/XXXXXX.json)
                 for j_path in [f for f in Path(tmp_dir).rglob("*") if f.is_file() and f.suffix.lower() == ".json"]:
                     try:

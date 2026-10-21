@@ -115,6 +115,7 @@ except Exception:
 from import_judicial_opendata import (
     parse_official_opendata_record,
     extract_archive_to_temp,
+    unpack_all_nested_archives,
     safe_read_opendata_json_file,
     unwrap_opendata_payload,
     OUTPUT_CATALOG_PATH,
@@ -3372,11 +3373,13 @@ elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_
             st.rerun()
 
     # 快捷檢索意圖分類標籤 (預設全自動偵測，亦可手動快切)
+    cur_qt = st.session_state.get("rad_qa_query_type", QUERY_TYPES[0])
+    cur_qt_idx = QUERY_TYPES.index(cur_qt) if cur_qt in QUERY_TYPES else 0
     qa_query_type = st.radio(
         "檢索意圖標籤：",
         QUERY_TYPES,
         horizontal=True,
-        index=0,
+        index=cur_qt_idx,
         key="rad_qa_query_type",
         label_visibility="collapsed"
     )
@@ -3812,47 +3815,6 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
 - **專業法院特殊字軌**：涵蓋 `加上` / `家上`（家事裁判）、`民著上`（智慧財產著作權）、`行專上`（專利行政訴訟）、`民專上`、`行商上`、`民商上` 等。
 - **行政函釋字號**：支援機關字軌公文號與純流水號（如 `經商字第 10702425580 號`、`10702425580`、`金管保產字第 10904918231 號`）。
 """)
-
-    # 快捷體驗晶片 (雙排 12 顆高頻縮寫晶片)
-    st.markdown("**⚡ 快速點擊體驗常見指標判解縮寫：**")
-    chip_row1 = [
-        ("最高行110上15", "最高行110上15 (最高行政法院上字裁判)"),
-        ("108台上大1719裁", "108台上大1719裁 (借名登記裁定)"),
-        ("北高行109訴567", "北高行109訴567 (臺北高等行政法院訴字裁判)"),
-        ("108台上908民", "108台上908民 (純經濟損失判決)"),
-        ("院字2949", "院字2949 (土地登記效力解釋)"),
-        ("院解字3001", "院解字3001 (善意受讓動產解釋)")
-    ]
-    chip_row2 = [
-        ("重上更一15", "重上更一15 (情事變更更審判決)"),
-        ("109民著上12", "109民著上12 (智財著作權上訴)"),
-        ("110行專上5", "110行專上5 (專利進步性判決)"),
-        ("109家上12", "109家上12 (剩餘財產顯失公平)"),
-        ("111憲判16", "111憲判16 (強制採尿憲判字)"),
-        ("經商字第 10702425580 號", "經商字第 10702425580 號 (公司法函釋)")
-    ]
-
-    r1_cols = st.columns(6)
-    for idx, (code_val, tooltip_text) in enumerate(chip_row1):
-        with r1_cols[idx]:
-            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r1_{idx}"):
-                st.session_state["sum_citation_search"] = code_val
-                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                st.session_state["sum_input_title"] = ""
-                st.session_state["sum_input_text"] = ""
-                st.session_state.pop("last_ai_sum_res", None)
-                st.rerun()
-
-    r2_cols = st.columns(6)
-    for idx, (code_val, tooltip_text) in enumerate(chip_row2):
-        with r2_cols[idx]:
-            if st.button(code_val, help=tooltip_text, use_container_width=True, key=f"btn_chip_r2_{idx}"):
-                st.session_state["sum_citation_search"] = code_val
-                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                st.session_state["sum_input_title"] = ""
-                st.session_state["sum_input_text"] = ""
-                st.session_state.pop("last_ai_sum_res", None)
-                st.rerun()
 
     # 本機權威庫下拉選單快速挑選
     all_precedents_tags = ["-- 📚 或從本機 3,680+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
@@ -4336,22 +4298,37 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                     td_up_obj = None
                     try:
                         incoming_records = []
-                        fn_lower = uploaded_op_file.name.lower()
+                        uploaded_op_file.seek(0)
+                        head_bytes = uploaded_op_file.read(16)
+                        uploaded_op_file.seek(0)
 
-                        if fn_lower.endswith((".zip", ".rar", ".7z")):
+                        fn_lower = uploaded_op_file.name.lower()
+                        is_archive = fn_lower.endswith((".zip", ".rar", ".7z", ".tar", ".tar.gz", ".tgz")) or head_bytes.startswith((b'PK\x03\x04', b'PK\x05\x06', b'PK\x07\x08', b'Rar!\x1a\x07', b'7z\xbc\xaf\x27\x1c'))
+                        is_json = fn_lower.endswith((".json", ".jsonl")) or head_bytes.strip().startswith((b'{', b'['))
+
+                        if is_archive:
                             td_up_obj = tempfile.TemporaryDirectory()
                             td = td_up_obj.name
                             archive_tmp = Path(td) / uploaded_op_file.name
                             with open(archive_tmp, "wb") as f_up:
-                                f_up.write(uploaded_op_file.read())
+                                f_up.write(uploaded_op_file.getbuffer())
                             
                             ext_dir = Path(td) / "extracted"
                             ext_dir.mkdir(parents=True, exist_ok=True)
                             
                             ok = extract_archive_to_temp(archive_tmp, ext_dir)
                             if ok:
-                                json_files = [f for f in ext_dir.rglob("*") if f.is_file() and f.suffix.lower() == ".json"]
-                                for jf_path in json_files:
+                                # 自動遞迴解開任何內層巢狀壓縮檔 (例如司法院月度 RAR 內部包含之各法院 ZIP 包)
+                                try:
+                                    unpack_all_nested_archives(ext_dir)
+                                except Exception:
+                                    pass
+
+                                json_files = [f for f in ext_dir.rglob("*") if f.is_file() and f.suffix.lower() in (".json", ".jsonl")]
+                                prog_bar = st.progress(0, text=f"已解壓縮出 {len(json_files):,} 個裁判 JSON 檔案，正在批次剖析...")
+                                for idx_jf, jf_path in enumerate(json_files):
+                                    if idx_jf % 200 == 0:
+                                        prog_bar.progress(min(1.0, (idx_jf + 1) / max(1, len(json_files))), text=f"正在深度剖析第 {idx_jf+1:,} / {len(json_files):,} 個裁判 JSON...")
                                     try:
                                         c = safe_read_opendata_json_file(jf_path)
                                         if c is None:
@@ -4363,10 +4340,11 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                                                 incoming_records.append(p)
                                     except Exception:
                                         continue
-                        elif fn_lower.endswith(".json"):
+                                prog_bar.empty()
+                        elif is_json:
                             try:
                                 with tempfile.NamedTemporaryFile("wb", delete=False, suffix=".json") as f_tmp_j:
-                                    f_tmp_j.write(uploaded_op_file.read())
+                                    f_tmp_j.write(uploaded_op_file.getbuffer())
                                     tmp_j_path = Path(f_tmp_j.name)
                                 c = safe_read_opendata_json_file(tmp_j_path)
                                 tmp_j_path.unlink(missing_ok=True)
@@ -4382,9 +4360,21 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                         if not incoming_records:
                             st.warning("檔案中未找到符合司法院標準欄位之裁判書 JSON（請確認壓縮檔內含有裁判書 .json 檔案）。")
                         else:
-                            # 讀取現有大庫並合併
-                            with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
-                                cur_catalog = json.load(f)
+                            # 讀取現有大庫並合併 (支援容錯載入)
+                            cur_catalog = []
+                            if OUTPUT_CATALOG_PATH.exists():
+                                try:
+                                    with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
+                                        cur_catalog = json.load(f)
+                                except Exception:
+                                    pass
+                            if not cur_catalog and REPO_CATALOG_PATH.exists():
+                                try:
+                                    with open(REPO_CATALOG_PATH, "r", encoding="utf-8") as f:
+                                        cur_catalog = json.load(f)
+                                except Exception:
+                                    pass
+
                             existing_ids = {x.get("case_id") for x in cur_catalog if x.get("case_id")}
                             
                             new_added = 0
@@ -4396,8 +4386,10 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                                     new_added += 1
                             
                             # 存檔至 JSON 大庫
+                            OUTPUT_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
                             with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f:
                                 json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
+                            REPO_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
                             with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f:
                                 json.dump(cur_catalog, f, ensure_ascii=False, indent=2)
                             
@@ -4407,7 +4399,7 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                             except Exception:
                                 pass
 
-                            st.success(f"🎉 成功擴充 {new_added:,} 筆裁判！本機裁判大庫總筆數已提升至：{len(cur_catalog):,} 筆！")
+                            st.success(f"🎉 成功解析 {len(incoming_records):,} 筆紀錄，擴充入庫 {new_added:,} 筆新裁判！本機裁判大庫總筆數已提升至：{len(cur_catalog):,} 筆！")
                             st.rerun()
                     except Exception as ie:
                         st.error(f"開放資料匯入失敗: {ie}")
