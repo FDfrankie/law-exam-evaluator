@@ -86,13 +86,15 @@ NATIONAL_LAWS_DIR = DATA_DIR / "national_laws"
 TRAINING_DATA_DIR = DATA_DIR / "training_data"
 SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
 MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
+JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db"
+OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox"
 
 def init_directories():
     """Ensure data directories exist"""
     for folder in [
         RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR,
         CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR,
-        SAMSUNG_NOTES_DIR, MODEL_WEIGHTS_DIR
+        SAMSUNG_NOTES_DIR, MODEL_WEIGHTS_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR
     ]:
         try:
             folder.mkdir(parents=True, exist_ok=True)

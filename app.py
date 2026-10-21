@@ -95,7 +95,23 @@ from core_issues_taxonomy import (
     get_curated_issues_by_chapter,
     get_total_curated_issues_count
 )
-from build_million_judgments_db import MillionJudgmentsSQLiteEngine
+try:
+    from build_million_judgments_db import MillionJudgmentsSQLiteEngine
+except Exception:
+    class MillionJudgmentsSQLiteEngine:
+        def __init__(self, *args, **kwargs):
+            pass
+        def get_total_count(self) -> int:
+            return 0
+        def batch_upsert_records(self, records, *args, **kwargs) -> int:
+            return 0
+        def search_fts_and_meta(self, **kwargs):
+            return []
+        def find_by_citation(self, citation):
+            return None
+        def get_full_text(self, case_id: str, shard_key: str = "") -> str:
+            return ""
+
 from import_judicial_opendata import (
     parse_official_opendata_record,
     extract_archive_to_temp,
@@ -111,7 +127,16 @@ _global_million_db_engine = None
 def get_million_db_engine():
     global _global_million_db_engine
     if _global_million_db_engine is None:
-        _global_million_db_engine = MillionJudgmentsSQLiteEngine()
+        try:
+            _global_million_db_engine = MillionJudgmentsSQLiteEngine()
+        except Exception:
+            class DummyEngine:
+                def get_total_count(self) -> int: return 0
+                def batch_upsert_records(self, records, *args, **kwargs) -> int: return 0
+                def search_fts_and_meta(self, **kwargs): return []
+                def find_by_citation(self, citation): return None
+                def get_full_text(self, case_id: str, shard_key: str = "") -> str: return ""
+            _global_million_db_engine = DummyEngine()
     return _global_million_db_engine
 
 
