@@ -721,14 +721,7 @@ with st.sidebar:
     st.markdown(f"**雲端同步位置**:  \n`{GOOGLE_DRIVE_DATA_DIR}`")
     st.divider()
 
-    # 1. 雙向同步：若外部按鈕改變了 app_mode，自動同步 radio 內部狀態
-    if "nav_sidebar_radio_mode" in st.session_state:
-        if st.session_state.get("app_mode") in mode_options and st.session_state["app_mode"] != st.session_state["nav_sidebar_radio_mode"]:
-            st.session_state["nav_sidebar_radio_mode"] = st.session_state["app_mode"]
-        else:
-            st.session_state["app_mode"] = st.session_state["nav_sidebar_radio_mode"]
-
-    # 2. 僅在 app_mode 未初始化，或遭非標準別名字串設定時，才進行名稱正規化；在正常分頁點擊時絕不覆寫！
+    # 1. 僅在 app_mode 未初始化，或遭非標準別名字串設定時，才進行名稱正規化；在正常分頁點擊時絕不覆寫！
     if "app_mode" not in st.session_state:
         st.session_state["app_mode"] = MODE_HOME
     elif st.session_state["app_mode"] not in mode_options:
@@ -755,16 +748,39 @@ with st.sidebar:
             st.session_state["app_mode"] = MODE_SFT
         else:
             st.session_state["app_mode"] = MODE_HOME
-        st.session_state["nav_sidebar_radio_mode"] = st.session_state["app_mode"]
 
-    cur_idx = mode_options.index(st.session_state["app_mode"]) if st.session_state["app_mode"] in mode_options else 0
+    # 2. 雙向導航精準同步機制：
+    #    - 若頁面內按鈕要求切換（st.session_state["app_mode"] 被按鈕程式化變更且與前次渲染不同），同步至 Radio
+    #    - 若使用者於側邊欄點選 Radio，同步至 st.session_state["app_mode"]
+    #    - 杜絕因強制覆寫 Radio 導致的「點選後紅點跳一下但頁面不切換」現象
+    last_rendered_mode = st.session_state.get("_last_rendered_mode", None)
+
+    # 檢查是否由頁面內按鈕設定了 nav_sidebar_radio_mode
+    if "nav_sidebar_radio_mode" in st.session_state and st.session_state["nav_sidebar_radio_mode"] != last_rendered_mode and st.session_state["nav_sidebar_radio_mode"] in mode_options:
+        st.session_state["app_mode"] = st.session_state["nav_sidebar_radio_mode"]
+
+    if last_rendered_mode is None:
+        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
+    elif st.session_state["app_mode"] != last_rendered_mode:
+        # 頁面內按鈕或外部程式要求切換目標模式
+        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
+    elif "main_app_nav_radio" in st.session_state and st.session_state["main_app_nav_radio"] in mode_options:
+        # 使用者點擊了側邊欄 Radio 元件
+        st.session_state["app_mode"] = st.session_state["main_app_nav_radio"]
+
+    cur_mode = st.session_state["app_mode"]
+    cur_idx = mode_options.index(cur_mode) if cur_mode in mode_options else 0
+    st.session_state["main_app_nav_radio"] = cur_mode
+    st.session_state["nav_sidebar_radio_mode"] = cur_mode
+
     app_mode = st.radio(
         "選擇功能模式：",
         mode_options,
         index=cur_idx,
-        key="nav_sidebar_radio_mode"
+        key="main_app_nav_radio"
     )
     st.session_state["app_mode"] = app_mode
+    st.session_state["_last_rendered_mode"] = app_mode
     api_key = get_gemini_api_key()
     if not api_key:
         st.warning("⚠️ 尚未偵測到 API Key！請在 Streamlit Cloud 的 Secrets 設定 `GEMINI_API_KEY`，或在下方直接輸入：")
