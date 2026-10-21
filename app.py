@@ -112,6 +112,20 @@ except Exception:
         def get_full_text(self, case_id: str, shard_key: str = "") -> str:
             return ""
 
+from mcq_bank_manager import (
+    get_mcq_bank_manager,
+    CORE_EXAM_SUBJECTS,
+    normalize_subject_key,
+    SUBJECT_ADMIN_LAW,
+    SUBJECT_CIVIL_LAW,
+    SUBJECT_CRIMINAL_LAW,
+    SUBJECT_CONST_LAW,
+    SUBJECT_CIVIL_PROC,
+    SUBJECT_CRIMINAL_PROC,
+    SUBJECT_COMMERCIAL_LAW,
+    SUBJECT_ALL_MIXED
+)
+
 from import_judicial_opendata import (
     parse_official_opendata_record,
     extract_archive_to_temp,
@@ -1545,10 +1559,19 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
     if final_notes:
         st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
+    def _clear_stage1_exam_answers():
+        st.session_state.pop("stage1_graded", None)
+        st.session_state.pop("stage1_user_answers", None)
+        for k in list(st.session_state.keys()):
+            if k.startswith("user_choice_") or k.startswith("rep_res_") or k.startswith("rep_input_"):
+                del st.session_state[k]
+
     if stage == "一試 (選擇題 / 單選題)":
-        stage1_tab_ai, stage1_tab_300 = st.tabs([
-            "🎲 AI 智慧命題模式（任意題數 & 支援手寫筆記 OCR 客製出題）",
-            "📖 司律一試 300 題全真模擬題庫實戰（自選題數 5~50 題即時測驗）"
+        stage1_tab_ai, stage1_tab_bank, stage1_tab_upload, stage1_tab_reports = st.tabs([
+            "🎲 AI 智慧命題模式（任意題數 & 自動入庫共享）",
+            "📖 司律一試全科全真模擬題庫實戰（含行政法 300 題・跨考科・動態考點）",
+            "📥 匯入考題 PDF / 試卷解析入庫",
+            "📋 試題疑義報錯審查日誌與修正清單"
         ])
 
         with stage1_tab_ai:
@@ -1592,135 +1615,198 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                         progress_callback=update_progress
                     )
                     progress_bar.progress(1.0)
+                    
+                    # 自動將 AI 題目、解答、詳解加入雲端題庫供全體考生隨選抽考
+                    bank_mgr = get_mcq_bank_manager()
+                    added_cnt = bank_mgr.save_ai_generated_questions(
+                        subject=subject,
+                        questions=exam_res.get("questions", []),
+                        topic=target_topic
+                    )
+                    _clear_stage1_exam_answers()
+
                     status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
+                    if added_cnt > 0:
+                        st.info(f"✨ 已將本次 AI 生成的 {added_cnt} 道高品質試題、標準答案與解析同步典藏至題庫，供全體考生於題庫實戰中抽考！")
                     st.session_state["stage1_exam_data"] = exam_res
 
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
 
-        with stage1_tab_300:
-            st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
-            st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+        with stage1_tab_bank:
+            bank_mgr = get_mcq_bank_manager()
+
+            sel_bank_sub = st.selectbox(
+                "📚 選擇模擬測驗考科（涵蓋司律一試全部專業科目）：",
+                CORE_EXAM_SUBJECTS,
+                index=0,
+                key="sel_bank_exam_subject"
+            )
+            norm_sub = normalize_subject_key(sel_bank_sub)
+
+            if norm_sub == SUBJECT_ADMIN_LAW:
+                st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
+                st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+            else:
+                st.markdown(f"#### 📖 司律一試【{norm_sub}】全真模擬題庫實戰（精選範本試卷）")
+                st.write(f"已完整解析收錄《司律一試{norm_sub}全真模擬試題大庫》，支援自選篇章大類、考點分類專題與抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
 
             c300_col1, c300_col2, c300_col3 = st.columns([1, 1, 1])
             with c300_col1:
+                chapter_list = bank_mgr.get_chapters_for_subject(norm_sub)
                 part_choice = st.selectbox(
                     "選擇篇章大類：",
-                    [
-                        "全卷 300 題隨機抽考",
-                        "第一篇：核心法理、公私法性質、依法行政與裁量 (第 1~90 題)",
-                        "第二篇：具體行政行為定性分類、附款、效力與廢止 (第 91~240 題)",
-                        "第三篇：綜合案例實事實務題組題 (第 241~300 題)"
-                    ]
+                    chapter_list,
+                    key=f"sel_chapter_{norm_sub}"
                 )
             with c300_col2:
-                cat_300_categories = [
-                    "全部考點分類 (不限)",
-                    "⚖️ [依法行政原則與專業法學庫]",
-                    "🏛️ [公私法性質與雙階理論]",
-                    "📜 [不確定法律概念與行政裁量]",
-                    "📑 [行政處分之定性與實例]",
-                    "📌 [行政處分之附款與效力]",
-                    "📝 [行政契約與事實行為]",
-                    "📜 [行政命令與地方法規]",
-                    "🌐 [行政法關係與權利義務]",
-                    "🧩 [第 241~300 題：綜合實務題組題]"
-                ]
+                category_list = bank_mgr.get_categories_for_subject_and_chapter(norm_sub, part_choice)
                 cat_300_choice = st.selectbox(
                     "🎯 考點分類專題篩選：",
-                    cat_300_categories,
-                    key="sel_cat_300_choice"
+                    category_list,
+                    key=f"sel_cat_{norm_sub}"
                 )
             with c300_col3:
                 count_300_choice = st.selectbox(
                     "抽題題數：",
                     ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
-                    key="count_300_select"
+                    key=f"count_300_select_{norm_sub}"
                 )
                 if count_300_choice == "自訂題數":
-                    take_count = st.number_input("請輸入抽取題數 (1~100 題)：", min_value=1, max_value=100, value=10, key="custom_300_count")
+                    take_count = st.number_input("請輸入抽取題數 (1~100 題)：", min_value=1, max_value=100, value=10, key=f"custom_300_count_{norm_sub}")
                 else:
                     take_count = int(count_300_choice.split(" ")[0])
 
-            if st.button("🚀 從 300 題庫抽取試題開始測驗", type="primary", use_container_width=True):
-                bank_file = Path(RAW_DATA_DIR) / "admin_law_300_mcqs.json"
-                if not bank_file.exists():
-                    candidate_p = Path(__file__).resolve().parent.parent / "raw_exams" / "admin_law_300_mcqs.json"
-                    if candidate_p.exists():
-                        bank_file = candidate_p
-                if not bank_file.exists():
-                    st.error("找不到 300 題庫檔案，請確認 raw_exams/admin_law_300_mcqs.json 是否存在。")
+            btn_label = "🚀 從 300 題庫抽取試題開始測驗" if norm_sub == SUBJECT_ADMIN_LAW else f"🚀 從【{norm_sub}】題庫抽取試題開始測驗"
+            if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_draw_{norm_sub}"):
+                _clear_stage1_exam_answers()
+                sampled_exam = bank_mgr.sample_exam_questions(
+                    subject=norm_sub,
+                    chapter=part_choice,
+                    category=cat_300_choice,
+                    count=take_count
+                )
+                if not sampled_exam.get("questions"):
+                    st.warning(f"目前【{norm_sub}】在所選條件下無足夠可用試題（可能已被下架待審或該分類尚無試題），請切換考點或透過『匯入考題 PDF』擴充題庫！")
                 else:
-                    import random
-                    import unicodedata
-                    with open(bank_file, "r", encoding="utf-8") as f:
-                        bank_data = json.load(f)
+                    st.session_state["stage1_exam_data"] = sampled_exam
+                    st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(sampled_exam.get('questions', []))} 題，請於下方開始作答！")
+                    st.rerun()
 
-                    pool = bank_data.get("questions", [])
-                    # 1. 篇章過濾
-                    if part_choice.startswith("第一篇"):
-                        pool = [q for q in pool if 1 <= q.get("question_no", 0) <= 90]
-                    elif part_choice.startswith("第二篇"):
-                        pool = [q for q in pool if 91 <= q.get("question_no", 0) <= 240]
-                    elif part_choice.startswith("第三篇"):
-                        pool = [q for q in pool if 241 <= q.get("question_no", 0) <= 300]
+        with stage1_tab_upload:
+            st.markdown("#### 📥 選擇題考題 PDF / Word 試卷解析入庫")
+            st.write("支援上傳考選部一試真題 PDF、補習班模擬考卷或個人彙整試卷，系統將自動解析題幹、選項 (A)(B)(C)(D)、答案與解析，並秒級典藏至雲端共享題庫供全體考生抽考！")
 
-                    # 2. 考點分類過濾
-                    if cat_300_choice != "全部考點分類 (不限)":
-                        def match_cat_filter(q_item, chosen_cat):
-                            q_cat = unicodedata.normalize("NFKC", q_item.get("category", "")).strip("[]")
-                            q_no = q_item.get("question_no", 0)
-                            if "依法行政" in chosen_cat or "專業法學庫" in chosen_cat:
-                                return "依法行政" in q_cat or "專業法學庫" in q_cat
-                            elif "公私法" in chosen_cat or "雙階" in chosen_cat:
-                                return "公私法" in q_cat or "雙階" in q_cat or "採購" in q_cat
-                            elif "行政裁量" in chosen_cat or "不確定法律概念" in chosen_cat:
-                                return "裁量" in q_cat or "不確定法律概念" in q_cat
-                            elif "行政處分之定性" in chosen_cat:
-                                return "行政處分" in q_cat and "附款" not in q_cat and "效力" not in q_cat
-                            elif "附款" in chosen_cat or "效力" in chosen_cat:
-                                return "附款" in q_cat or "效力" in q_cat
-                            elif "行政契約" in chosen_cat or "事實行為" in chosen_cat:
-                                return "行政契約" in q_cat or "事實行為" in q_cat or "自願執行" in q_cat
-                            elif "行政命令" in chosen_cat or "地方法規" in chosen_cat:
-                                return "命令" in q_cat or "法規" in q_cat
-                            elif "行政法關係" in chosen_cat:
-                                return "行政法關係" in q_cat or "特別權力" in q_cat
-                            elif "題組" in chosen_cat:
-                                return 241 <= q_no <= 300 or "題組" in q_cat
-                            return True
+            up_col1, up_col2 = st.columns([1, 1])
+            with up_col1:
+                pdf_sub = st.selectbox(
+                    "指定匯入試卷之考科：",
+                    [SUBJECT_ADMIN_LAW, SUBJECT_CIVIL_LAW, SUBJECT_CRIMINAL_LAW, SUBJECT_CONST_LAW, SUBJECT_CIVIL_PROC, SUBJECT_CRIMINAL_PROC, SUBJECT_COMMERCIAL_LAW],
+                    key="pdf_upload_subject_picker"
+                )
+            with up_col2:
+                uploaded_pdf = st.file_uploader(
+                    "上傳考題試卷檔案 (支援 .pdf, .docx, .txt)：",
+                    type=["pdf", "docx", "txt"],
+                    key="pdf_file_mcq_uploader"
+                )
 
-                        filtered_pool = [q for q in pool if match_cat_filter(q, cat_300_choice)]
-                        if filtered_pool:
-                            pool = filtered_pool
-                        else:
-                            st.warning(f"在篇章【{part_choice[:10]}】中未篩得【{cat_300_choice}】題目，已擴展至全卷相同考點抽取。")
-                            pool = [q for q in bank_data.get("questions", []) if match_cat_filter(q, cat_300_choice)]
+            manual_mcq_input = st.text_area(
+                "或直接貼上試卷純文字內容（支援題號 1. 2. 與 (A)(B)(C)(D) 選項）：",
+                height=120,
+                placeholder="1. 關於行政處分之撤銷與廢止，下列何者正確？\n(A) 違法行政處分僅得上級機關撤銷\n(B) 原處分機關得依職權撤銷違法行政處分\n(C) 受益處分無論何時均不得廢止\n(D) 負擔處分不得廢止\n答案：(B)\n解析：依行政程序法第117條規定...",
+                key="manual_mcq_paste_area"
+            )
 
-                    if not pool:
-                        pool = bank_data.get("questions", [])
+            if st.button("🚀 開始結構化解析並入庫", type="primary", use_container_width=True, key="btn_run_pdf_import"):
+                raw_content = ""
+                fname = "手動貼上文字"
+                if uploaded_pdf is not None:
+                    fname = uploaded_pdf.name
+                    with st.spinner("正在解析試卷檔案內容..."):
+                        try:
+                            fbytes = uploaded_pdf.read()
+                            parsed_text, _ = parse_document(fbytes, fname)
+                            raw_content = parsed_text
+                        except Exception as e:
+                            st.error(f"檔案讀取失敗: {e}")
+                elif manual_mcq_input.strip():
+                    raw_content = manual_mcq_input.strip()
 
-                    selected_qs = random.sample(pool, min(take_count, len(pool)))
-                    # 重新編排題號
-                    reindexed_qs = []
-                    new_answer_key = {}
-                    for i, q in enumerate(selected_qs, 1):
-                        q_copy = dict(q)
-                        q_copy["original_no"] = q_copy.get("question_no")
-                        q_copy["question_no"] = i
-                        ans = q_copy.get("answer", "A")
-                        new_answer_key[str(i)] = ans
-                        reindexed_qs.append(q_copy)
+                if not raw_content:
+                    st.warning("請先上傳試卷檔案或貼上試卷內容！")
+                else:
+                    with st.spinner(f"正在從試卷中結構化萃取【{pdf_sub}】選擇題與選項解答..."):
+                        bank_mgr = get_mcq_bank_manager()
+                        added, extracted = bank_mgr.import_mcqs_from_pdf_text(raw_content, filename=fname, default_subject=pdf_sub)
 
-                    cat_tag = f"・{cat_300_choice}" if cat_300_choice != "全部考點分類 (不限)" else ""
-                    st.session_state["stage1_exam_data"] = {
-                        "subject": "行政法",
-                        "topic": f"300題模擬題庫精選（{part_choice[:10]}{cat_tag}）",
-                        "total_count": len(reindexed_qs),
-                        "questions": reindexed_qs,
-                        "answer_key": new_answer_key
-                    }
-                    st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(reindexed_qs)} 題，請於下方開始作答！")
+                    if not extracted:
+                        st.error("未能從上傳內容中識別出一試選擇題格式，請確認內容包含題號、題幹與 (A)(B)(C)(D) 選項。")
+                    else:
+                        st.success(f"🎉 成功識別出 {len(extracted)} 道選擇題！其中 {added} 道新試題已去重典藏入庫至【{pdf_sub}】題庫！")
+
+                        if st.button(f"🎯 立即以此份試卷 ({len(extracted)} 題) 開始測驗", key="btn_start_imported_exam"):
+                            _clear_stage1_exam_answers()
+                            st.session_state["stage1_exam_data"] = {
+                                "subject": pdf_sub,
+                                "topic": f"匯入試卷實戰（{fname[:15]}）",
+                                "total_count": len(extracted),
+                                "questions": extracted,
+                                "answer_key": {str(i+1): q.get("answer", "A") for i, q in enumerate(extracted)}
+                            }
+                            st.rerun()
+
+                        with st.expander(f"🔍 檢視本次解析出的 {len(extracted)} 道試題預覽", expanded=False):
+                            for idx, eq in enumerate(extracted, 1):
+                                st.markdown(f"**第 {idx} 題**：{eq.get('question')}")
+                                for opt_k, opt_v in eq.get("options", {}).items():
+                                    st.write(f"- ({opt_k}) {opt_v}")
+                                st.caption(f"解答：({eq.get('answer')}) ｜ 解析：{eq.get('explanation')}")
+                                st.divider()
+
+        with stage1_tab_reports:
+            st.markdown("#### 📋 司律一試試題疑義報錯、下架與 AI 審查紀錄")
+            st.write("貫徹【先撤下保護】原則：試題一經報錯立即移出抽考題池；附具體理由者，經 AI 權威審查判定修正或釋疑後重新上架！")
+
+            bank_mgr = get_mcq_bank_manager()
+            reports = bank_mgr.reports_log
+
+            if not reports:
+                st.info("目前尚無試題疑義報錯紀錄，題庫運作良好！")
+            else:
+                unique_reports = {}
+                for k, v in reports.items():
+                    rep_id = v.get("id") or k
+                    unique_reports[rep_id] = v
+
+                total_rep = len(unique_reports)
+                under_rev = sum(1 for v in unique_reports.values() if v.get("status") == "under_review")
+                corrected = sum(1 for v in unique_reports.values() if v.get("status") == "verified_corrected")
+                kept = sum(1 for v in unique_reports.values() if v.get("status") == "verified_original")
+
+                mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+                mcol1.metric("總疑義提報數", f"{total_rep} 筆")
+                mcol2.metric("🚨 撤下待審保護中", f"{under_rev} 題", delta="已移出抽題池")
+                mcol3.metric("✅ 審查確認修正", f"{corrected} 題", delta="題幹解答已更新")
+                mcol4.metric("💡 理由釋疑完畢", f"{kept} 題", delta="增補詳解重新上架")
+
+                st.divider()
+                for rid, rdata in list(unique_reports.items())[::-1]:
+                    st_val = rdata.get("status", "under_review")
+                    if st_val == "under_review":
+                        status_badge = "🚨 【先撤下待審】（不在抽題池中）"
+                    elif st_val == "verified_corrected":
+                        status_badge = "✅ 【已審查修正重新上架】"
+                    else:
+                        status_badge = "💡 【原題合法・已增補釋疑重新上架】"
+
+                    with st.expander(f"{status_badge} [{rdata.get('subject', '法學')}] {rdata.get('original_question', '')[:35]}..."):
+                        st.markdown(f"**原試題題幹**：\n{rdata.get('original_question')}")
+                        st.markdown(f"**考生報錯理由**：\n:orange[{rdata.get('user_reason') or '（未附理由，題庫已先執行撤下保護）'}]")
+                        st.markdown(f"**報錯時間**：`{rdata.get('reported_at', '')}`")
+                        st.info(f"**AI 審查處理結論**：\n{rdata.get('review_note') or '尚未完成 AI 裁定'}")
+                        if rdata.get("corrected_answer"):
+                            st.success(f"**修正後正確答案**：`({rdata.get('corrected_answer')})`")
 
         # 若 session 中有一試試題，展示作答、速查表與詳解
         if "stage1_exam_data" in st.session_state:
@@ -1876,12 +1962,60 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                 q_no = q.get("question_no")
                 ans = q.get("answer")
                 with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
+                    q_status = q.get("status", "active")
+                    if q_status == "verified_corrected":
+                        st.success(f"🎉 **【AI 審查修正紀錄】**：本題曾有考生提出疑義，經 AI 審查判定指摘有據，已修正題目與解答為 ({ans})！")
+                    elif q_status == "verified_original":
+                        st.info("💡 **【AI 審查釋疑紀錄】**：本題曾有考生提報疑義，經 AI 依現行法規裁判審查判定原題合法有據，已於詳解增補釋疑！")
+                    elif q_status == "under_review":
+                        st.warning("⚠️ **【撤下保護中】**：本題目前正在進行疑義覆審，已暫時移出題庫抽題池。")
+
                     if q.get("core_issue"):
                         st.markdown(f"**【核心爭點】**：:blue[{q.get('core_issue')}]")
                     if q.get("legal_references"):
                         st.markdown(f"**【規範法條及實務裁判字號】**：:green[{q.get('legal_references')}]")
                     st.markdown("**【逐項解析與盲點辨析】**：")
                     st.write(q.get("explanation", ""))
+
+                    # 試題疑義報錯 / AI 審查表單
+                    st.markdown("---")
+                    with st.expander(f"⚠️ 對第 {q_no} 題提出疑義報錯 / 申請 AI 覆審修正", expanded=False):
+                        st.caption("提示：提交報錯後，系統將【立即將本題先從題庫撤下（下架保護）】；若您附上具體理由（如條號、裁判字號或選項瑕疵），AI 將立即進行法學專業審查並自律修正題目、解答與詳解！")
+                        user_rep_reason = st.text_area(
+                            f"請輸入您對第 {q_no} 題的質疑或更正理由（選填）：",
+                            placeholder="例如：選項 (B) 依最高法院最新見解亦屬正當，本題答案應更正為 (B)...",
+                            key=f"rep_input_{q_no}_{q.get('id', q.get('hash', q_no))}"
+                        )
+                        if st.button(f"🚨 送出第 {q_no} 題報錯（立即撤下並由 AI 審查）", key=f"btn_sub_rep_{q_no}_{q.get('id', q.get('hash', q_no))}"):
+                            with st.spinner("系統正在執行撤下保護，並調用司法官律師 AI 審查委員進行法理覆核..."):
+                                bank_mgr = get_mcq_bank_manager()
+                                rep_res = bank_mgr.report_and_adjudicate_question(q, user_rep_reason)
+                                st.session_state[f"rep_res_{q_no}"] = rep_res
+
+                        if f"rep_res_{q_no}" in st.session_state:
+                            rep_res = st.session_state[f"rep_res_{q_no}"]
+                            if rep_res.get("status") == "under_review":
+                                st.warning(rep_res.get("message"))
+                            elif rep_res.get("is_valid"):
+                                st.success(rep_res.get("message"))
+                                if rep_res.get("verdict"):
+                                    st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
+                                if rep_res.get("rationale"):
+                                    st.info(f"**【法理裁判依據】**：\n{rep_res.get('rationale')}")
+                                q["question"] = rep_res.get("corrected_question", q.get("question"))
+                                q["options"] = rep_res.get("corrected_options", q.get("options"))
+                                q["answer"] = rep_res.get("new_answer", q.get("answer"))
+                                q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
+                                q["status"] = "verified_corrected"
+                                exam_data["answer_key"][str(q_no)] = q["answer"]
+                            else:
+                                st.info(rep_res.get("message"))
+                                if rep_res.get("verdict"):
+                                    st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
+                                if rep_res.get("rationale"):
+                                    st.caption(f"**【法理釋疑】**：\n{rep_res.get('rationale')}")
+                                q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
+                                q["status"] = "verified_original"
 
     else:
         # 二試申論實例題
