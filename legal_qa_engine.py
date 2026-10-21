@@ -428,13 +428,18 @@ class LegalQAEngine:
         # 4. 預設生活與實務法扶諮詢
         return "💬 生活與實務法律諮詢 (六大維度・證據清單・救濟行動指南)"
 
-    def _call_model(self, prompt: str, temperature: float = 0.2) -> str:
+    def _call_model(self, prompt: str, temperature: float = 0.2, max_tokens: int = 8192) -> str:
         if not HAS_GENAI:
             return self._generate_offline_legal_fallback(prompt)
 
         models_to_try = get_gemini_models_to_try()
         last_error = None
 
+        full_output = ""
+        finish_reason = None
+        used_model = None
+
+        # 1. 核心首輪調用 (突破長度限制：token 上限提升至 8192)
         if USE_MODERN_GENAI:
             client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
             for model_name in models_to_try:
@@ -444,11 +449,15 @@ class LegalQAEngine:
                         contents=prompt,
                         config=genai_types.GenerateContentConfig(
                             temperature=temperature,
-                            max_output_tokens=4096
+                            max_output_tokens=max_tokens
                         ) if hasattr(genai_types, 'GenerateContentConfig') else None
                     )
                     if resp and resp.text:
-                        return resp.text
+                        full_output = resp.text
+                        used_model = model_name
+                        if resp.candidates and len(resp.candidates) > 0:
+                            finish_reason = getattr(resp.candidates[0], "finish_reason", None)
+                        break
                 except Exception as e:
                     last_error = e
                     continue
@@ -460,15 +469,454 @@ class LegalQAEngine:
                     m = legacy_genai.GenerativeModel(model_name)
                     resp = m.generate_content(
                         prompt,
-                        generation_config={"temperature": temperature, "max_output_tokens": 4096}
+                        generation_config={"temperature": temperature, "max_output_tokens": max_tokens}
                     )
                     if resp and resp.text:
-                        return resp.text
+                        full_output = resp.text
+                        used_model = model_name
+                        if resp.candidates and len(resp.candidates) > 0:
+                            finish_reason = getattr(resp.candidates[0], "finish_reason", None)
+                        break
                 except Exception as e:
                     last_error = e
                     continue
 
-        return self._generate_offline_legal_fallback(prompt)
+        if not full_output:
+            return self._generate_offline_legal_fallback(prompt)
+
+        # 2. 自動接續機制 (Auto-Continuation：徹底解決輸出長度被截斷中斷之問題)
+        def _is_truncated(text: str, reason: Any) -> bool:
+            r_str = str(reason).upper()
+            if "MAX_TOKENS" in r_str or "LENGTH" in r_str or r_str == "2":
+                return True
+            clean_t = text.strip()
+            if not clean_t:
+                return False
+            last_char = clean_t[-1]
+            # 若結尾不是正常的標點符號且字數偏多，判定為中途截斷
+            if len(clean_t) > 1200 and last_char not in ("。", "！", "!", "？", "?", "」", "』", "）", ")", "\n", "`", "*"):
+                return True
+            return False
+
+        continuation_count = 0
+        while continuation_count < 2 and _is_truncated(full_output, finish_reason) and used_model:
+            continuation_count += 1
+            last_snippet = full_output.strip()[-100:]
+            continuation_prompt = (
+                f"{prompt}\n\n"
+                f"【系統自動接續指令】：前次輸出因達到長度上限而於此處中途截斷：「...{last_snippet}」。\n"
+                f"請緊接著該句最後一個字無縫往下接續書寫，絕對不要重複前文已輸出的任何字句，直接完成後續未完之章節、實體法理分析與最終結論："
+            )
+            try:
+                next_text = ""
+                if USE_MODERN_GENAI:
+                    c_resp = client.models.generate_content(
+                        model=used_model,
+                        contents=continuation_prompt,
+                        config=genai_types.GenerateContentConfig(
+                            temperature=temperature,
+                            max_output_tokens=max_tokens
+                        ) if hasattr(genai_types, 'GenerateContentConfig') else None
+                    )
+                    if c_resp and c_resp.text:
+                        next_text = c_resp.text
+                        if c_resp.candidates and len(c_resp.candidates) > 0:
+                            finish_reason = getattr(c_resp.candidates[0], "finish_reason", None)
+                else:
+                    m = legacy_genai.GenerativeModel(used_model)
+                    c_resp = m.generate_content(
+                        continuation_prompt,
+                        generation_config={"temperature": temperature, "max_output_tokens": max_tokens}
+                    )
+                    if c_resp and c_resp.text:
+                        next_text = c_resp.text
+                        if c_resp.candidates and len(c_resp.candidates) > 0:
+                            finish_reason = getattr(c_resp.candidates[0], "finish_reason", None)
+
+                if next_text:
+                    trimmed_next = next_text.strip()
+                    if trimmed_next.startswith(last_snippet[-20:]):
+                        trimmed_next = trimmed_next[len(last_snippet[-20:]):].strip()
+                    full_output = full_output.rstrip() + "\n" + trimmed_next
+                else:
+                    break
+            except Exception:
+                break
+
+        return full_output
+
+    def retrieve_grounding_context(
+        self,
+        question: str,
+        domain: str = "",
+        top_k_statutes: int = 4,
+        top_k_cases: int = 4
+    ) -> Dict[str, Any]:
+        """
+        【事前提問大庫錨定 (Pre-Retrieval Grounding)】：
+        依據使用者提問內容，向本機真實資料庫（SQLite 4,900+ 權威裁判庫、BUILTIN_LANDMARK_DOCS、全國法規庫）
+        檢索高相關之真實裁判與法規條文，形成 Ground-Truth 參考依據以注入 Prompt，徹底消除數字與字號幻覺！
+        """
+        from build_million_judgments_db import get_million_db_engine
+        from six_codes_engine import search_articles
+        from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
+
+        q_clean = question.strip()
+        
+        # 0. 常用法學概念與高頻爭端聯想同義詞庫 (Concept Expansion)
+        LEGAL_CONCEPT_SYNONYMS = {
+            "油漆": ["附合", "動產附合", "添附", "812", "816"],
+            "借名": ["借名登記", "出名人", "借名人", "無權處分", "有權處分", "118", "758", "108台上大1719"],
+            "車損": ["零件折舊", "定率遞減", "196", "77年度第九次民事庭會議"],
+            "折舊": ["定率遞減", "零件", "殘值", "196"],
+            "押金": ["租賃", "租屋", "返還押金", "押租金", "定金", "421", "423"],
+            "資遣": ["勞退新制", "資遣費", "預告工資", "勞動基準法", "勞退條例12"],
+            "特留分": ["應繼分", "遺產", "1138", "1144", "1223"],
+            "剩餘財產": ["婚後財產", "夫妻剩餘財產", "1030-1"],
+            "遲延利息": ["法定利率", "年息5%", "203", "229", "233"]
+        }
+
+        # 1. 提取顯式提及之法規條號（例如 811, 812, 184, 1030-1, 1144 等）
+        explicit_art_numbers = re.findall(r'(?:第\s*)?([0-9]{1,4}(?:之[0-9]+)?)(?:\s*條)?', q_clean)
+        
+        # 2. 概念同義詞擴展
+        expanded_concepts = []
+        for ck, cv_list in LEGAL_CONCEPT_SYNONYMS.items():
+            if ck in q_clean:
+                for cv in cv_list:
+                    if re.match(r'^[0-9]+', cv):
+                        if cv not in explicit_art_numbers:
+                            explicit_art_numbers.append(cv)
+                    else:
+                        expanded_concepts.append(cv)
+
+        # 提取中文詞彙
+        cleaned_terms = re.split(r'[\s,，、？\?！!。；;：「」『』（）()\[\]【】\-_/]+', q_clean)
+        stop_words = {"請問", "如果", "是否", "可以", "如何", "這個", "那個", "適用", "哪一條", "何條", "這是", "什麼", "為何", "實務", "學說", "見解", "怎麼", "多少", "一下", "法律", "情況", "案件", "題目", "分析", "依據", "歸誰", "所有權"}
+        keywords = [w for w in cleaned_terms if len(w) >= 2 and w not in stop_words] + expanded_concepts
+
+        # 3. 檢索法規庫 (Statutes Grounding)
+        matched_statutes = []
+        seen_statute_keys = set()
+        
+        # 先以顯式與擴展條號查詢
+        for ano in explicit_art_numbers[:4]:
+            preferred_laws = ["民法", "刑法", "民事訴訟法", "刑事訴訟法", "勞動基準法", "消費者保護法", "行政程序法", "公司法"]
+            if any(k in q_clean for k in ["車", "油漆", "借名", "買賣", "租", "屋", "房屋", "押金"]):
+                preferred_laws = ["民法"] + preferred_laws
+            for plaw in preferred_laws[:3]:
+                try:
+                    arts = search_articles(ano, selected_law=plaw)
+                    for a in arts:
+                        s_key = f"{a.get('law_name')}_{a.get('article_no')}"
+                        if s_key not in seen_statute_keys:
+                            seen_statute_keys.add(s_key)
+                            matched_statutes.append({
+                                "law_name": a.get("law_name"),
+                                "article_no": a.get("article_no"),
+                                "content": a.get("content", "").strip()[:300]
+                            })
+                except Exception:
+                    pass
+                if len(matched_statutes) >= top_k_statutes:
+                    break
+
+        # 關鍵字檢索法規庫補足
+        if len(matched_statutes) < top_k_statutes:
+            for kw in keywords[:6]:
+                try:
+                    arts = search_articles(kw)
+                    for a in arts:
+                        s_key = f"{a.get('law_name')}_{a.get('article_no')}"
+                        if s_key not in seen_statute_keys:
+                            seen_statute_keys.add(s_key)
+                            matched_statutes.append({
+                                "law_name": a.get("law_name"),
+                                "article_no": a.get("article_no"),
+                                "content": a.get("content", "").strip()[:300]
+                            })
+                        if len(matched_statutes) >= top_k_statutes:
+                            break
+                except Exception:
+                    pass
+                if len(matched_statutes) >= top_k_statutes:
+                    break
+
+        # 3. 檢索裁判庫 (Judgments Grounding)
+        matched_cases = []
+        seen_case_ids = set()
+
+        # (A) 優先檢索內建最高指標判解 BUILTIN_LANDMARK_DOCS
+        for b in BUILTIN_LANDMARK_DOCS:
+            b_tit = b.get("title", "")
+            b_hold = b.get("holding", "")
+            b_iss = b.get("issue", "")
+            b_text = f"{b_tit} {b_hold} {b_iss}"
+            if any(kw in b_text for kw in keywords if len(kw) >= 2):
+                cid = b.get("case_id") or b_tit
+                if cid not in seen_case_ids:
+                    seen_case_ids.add(cid)
+                    matched_cases.append({
+                        "case_id": cid,
+                        "title": b_tit,
+                        "holding": b_hold[:300],
+                        "issue": b_iss[:200],
+                        "is_landmark": True
+                    })
+            if len(matched_cases) >= top_k_cases:
+                break
+
+        # (B) 檢索百萬裁判 SQLite 資料庫 (judicial_1m_index.db)
+        if len(matched_cases) < top_k_cases:
+            try:
+                db_engine = get_million_db_engine()
+                fts_query = " ".join(keywords[:3]) if keywords else q_clean[:20]
+                db_hits = db_engine.search_fts_and_meta(
+                    query=fts_query,
+                    filter_no_legal_issue=True,
+                    top_k=(top_k_cases - len(matched_cases))
+                )
+                for dh in db_hits:
+                    cid = dh.get("case_id")
+                    if cid and cid not in seen_case_ids:
+                        seen_case_ids.add(cid)
+                        matched_cases.append({
+                            "case_id": cid,
+                            "title": dh.get("title", cid),
+                            "holding": dh.get("holding_preview", "")[:300],
+                            "issue": dh.get("issue", "")[:200],
+                            "is_landmark": False
+                        })
+            except Exception:
+                pass
+
+        # 4. 組裝 Grounding Prompt 區塊
+        prompt_lines = []
+        if matched_statutes or matched_cases:
+            prompt_lines.append("================================================================================")
+            prompt_lines.append("【🛡️ 本機司法大庫真實檢索結果 (Ground Truth Context - 防範 LLM 數字與字號幻覺)】")
+            prompt_lines.append("系統已自現行《全國法規資料庫》與《4,900+ 司法院權威裁判庫》檢索出以下真實正本依據：")
+            
+            if matched_statutes:
+                prompt_lines.append("\n📚 【現行法定真實法規條文】：")
+                for s in matched_statutes:
+                    prompt_lines.append(f"- 《{s['law_name']}》{s['article_no']}：{s['content']}")
+                    
+            if matched_cases:
+                prompt_lines.append("\n🏛️ 【司法院資料庫真實收錄裁判字號與判旨】：")
+                for c in matched_cases:
+                    prompt_lines.append(f"- 【{c['case_id']}】({c['title']})\n  要旨依據：{c['holding']}")
+                    
+            prompt_lines.append("\n⚠️ 【防範幻覺核心指令 (Zero Hallucination Directive)】：")
+            prompt_lines.append("1. 【嚴禁捏造判決字號數字】：你所引用的判決案號，必須以本機資料庫真實收錄之案號為依歸。若要援引其他最高法院判決、判例、決議、大法庭或憲判字，必須是真實存在的確切字號。若無法百分之百確認字號數字，請直陳「司法實務通說見解認為...」，絕對嚴禁隨機捏造虛構字號與數字！")
+            prompt_lines.append("2. 【嚴禁捏造法規條號】：引用的條號必須對應中華民國現行法規的真實條號（如上方條文庫），嚴禁引用不存在的條號或無中生有之項次！")
+            prompt_lines.append("================================================================================")
+
+        grounding_block = "\n".join(prompt_lines)
+
+        return {
+            "statutes": matched_statutes,
+            "cases": matched_cases,
+            "grounding_block": grounding_block
+        }
+
+    def verify_citations_against_dataset(self, text: str) -> Dict[str, Any]:
+        """
+        【事後真實性核實審計核心 (Post-Generation Audit)】：
+        掃描回答中出現的所有「裁判案號」與「法規條號」，逐一與本機資料庫進行精確核實：
+        - 裁判：查詢 SQLite judgments_meta 與 BUILTIN_LANDMARK_DOCS
+        - 法條：查詢 six_codes_engine 官方現行條文庫
+        產出核實狀態清單與防幻覺審計卡片。
+        """
+        from build_million_judgments_db import get_million_db_engine
+        from six_codes_engine import search_articles
+        from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
+
+        # 1. 萃取所有法條引用 (清理書名號引號並精準匹配)
+        clean_text_for_laws = re.sub(r'[《》「」『』]', ' ', text)
+        raw_law_matches = re.findall(
+            r'([^\s，。\n()（）:：]{1,10}法)\s*第\s*([0-9\-]+)\s*條(?:之([0-9]+))?',
+            clean_text_for_laws
+        )
+        
+        verified_statutes = []
+        unverified_statutes = []
+        seen_statute_signatures = set()
+
+        for raw_lname, ano, sub_no in raw_law_matches:
+            clean_lname = re.sub(r'^(依據現行|依據|依照|依現行|依|按|據|準用|依照現行|現行|根據|另依|以及|及|與|另|或)', '', raw_lname).strip()
+            if not clean_lname or clean_lname == "法":
+                continue
+            full_ano = f"{ano}之{sub_no}" if sub_no else ano
+            sig = f"{clean_lname}_{full_ano}"
+            if sig in seen_statute_signatures:
+                continue
+            seen_statute_signatures.add(sig)
+
+            is_verified = False
+            statute_preview = ""
+            try:
+                matched_arts = search_articles(full_ano, selected_law=clean_lname)
+                if matched_arts:
+                    is_verified = True
+                    statute_preview = matched_arts[0].get("content", "").strip()[:120]
+            except Exception:
+                pass
+
+            statute_item = {
+                "law_name": clean_lname,
+                "article_no": f"第 {full_ano} 條",
+                "verified": is_verified,
+                "official_preview": statute_preview
+            }
+            if is_verified:
+                verified_statutes.append(statute_item)
+            else:
+                unverified_statutes.append(statute_item)
+
+        # 2. 萃取所有裁判案號引用
+        case_patterns = [
+            r'((?:最高法院|最高行政法院|憲法法庭|臺灣高等法院|高等法院|各地方法院|司法院)?[^\s，。\n「」『』]{0,10}?[0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*字?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*判決|\s*裁定|\s*大法庭裁定)?)',
+            r'([0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*大(?:庭|字)?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*裁定)?)',
+            r'([0-9]{1,3}\s*年\s*憲判字第?\s*[0-9]+\s*號(?:判決)?)',
+            r'((?:司法院)?釋字第?\s*[0-9]+\s*號(?:解釋)?)',
+            r'(最高法院\s*[0-9]{1,3}\s*年度?(?:第[^\s]+次)?(?:民事庭|刑事庭)?(?:庭長法官聯席)?(?:會議)?決議)'
+        ]
+
+        all_raw_cases = []
+        for pat in case_patterns:
+            for m in re.finditer(pat, text):
+                cand = m.group(1).strip()
+                if len(cand) >= 6 and re.search(r'[0-9]', cand):
+                    all_raw_cases.append(cand)
+
+        verified_cases = []
+        unverified_cases = []
+        seen_case_signatures = set()
+        seen_verified_official_ids = set()
+        seen_unverified_clean_cids = set()
+
+        db_engine = None
+        try:
+            db_engine = get_million_db_engine()
+        except Exception:
+            pass
+
+        for raw_case in all_raw_cases:
+            clean_c = raw_case.strip()
+            sig = re.sub(r'[\s]+', '', clean_c)
+            if sig in seen_case_signatures:
+                continue
+            seen_case_signatures.add(sig)
+
+            is_verified = False
+            match_details = ""
+            official_case_id = clean_c
+
+            # (A) 檢查 BUILTIN_LANDMARK_DOCS
+            for b in BUILTIN_LANDMARK_DOCS:
+                b_tit = b.get("title", "")
+                b_cid = b.get("case_id", "")
+                if clean_c in b_tit or clean_c in b_cid or (sig in re.sub(r'[\s]+', '', b_tit)):
+                    is_verified = True
+                    match_details = b.get("title")
+                    official_case_id = b.get("case_id") or b_tit
+                    break
+
+            # (B) 至 SQLite judgments_meta 核實
+            if not is_verified and db_engine:
+                y_m = re.search(r'([0-9]{1,3})\s*年', clean_c)
+                n_m = re.search(r'第?\s*([0-9]+)\s*號', clean_c)
+                if y_m and n_m:
+                    y_val = y_m.group(1)
+                    n_val = n_m.group(1)
+                    try:
+                        with db_engine._get_conn(db_engine.index_db_path) as conn:
+                            cur = conn.cursor()
+                            cur.execute(
+                                "SELECT case_id, title FROM judgments_meta WHERE jud_year = ? AND jud_no = ? LIMIT 1",
+                                (y_val, n_val)
+                            )
+                            r = cur.fetchone()
+                            if r:
+                                is_verified = True
+                                official_case_id = r[0]
+                                match_details = r[1]
+                            else:
+                                cur.execute(
+                                    "SELECT case_id, title FROM judgments_meta WHERE case_id LIKE ? OR title LIKE ? LIMIT 1",
+                                    (f"%{y_val}%{n_val}%", f"%{y_val}%{n_val}%")
+                                )
+                                r2 = cur.fetchone()
+                                if r2:
+                                    is_verified = True
+                                    official_case_id = r2[0]
+                                    match_details = r2[1]
+                    except Exception:
+                        pass
+
+            encoded_kw = clean_c.replace(" ", "+")
+            direct_url = f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_kw}"
+
+            case_item = {
+                "raw_citation": clean_c,
+                "official_case_id": official_case_id,
+                "verified": is_verified,
+                "match_details": match_details,
+                "external_url": direct_url
+            }
+
+            if is_verified:
+                y_v = re.search(r'([0-9]{1,3})\s*年', official_case_id)
+                n_v = re.search(r'第?\s*([0-9]+)\s*號', official_case_id)
+                case_norm_key = f"{y_v.group(1)}_{n_v.group(1)}" if (y_v and n_v) else official_case_id
+                if case_norm_key not in seen_verified_official_ids:
+                    seen_verified_official_ids.add(case_norm_key)
+                    verified_cases.append(case_item)
+            else:
+                y_u = re.search(r'([0-9]{1,3})\s*年', clean_c)
+                n_u = re.search(r'第?\s*([0-9]+)\s*號', clean_c)
+                u_norm_key = f"{y_u.group(1)}_{n_u.group(1)}" if (y_u and n_u) else clean_c
+                if u_norm_key not in seen_unverified_clean_cids and u_norm_key not in seen_verified_official_ids:
+                    seen_unverified_clean_cids.add(u_norm_key)
+                    unverified_cases.append(case_item)
+
+        # 3. 產出 Markdown 審計卡片
+        audit_lines = [
+            "---",
+            "### 🛡️ 【實時資料庫真實性核實報告 (Anti-Hallucination Grounding Audit)】",
+            "*本系統已自動將回答內容引用之「裁判案號」與「法規條號」，逐一與司法院裁判數據庫及全國法規庫進行交叉比對：*"
+        ]
+
+        if verified_cases or unverified_cases:
+            audit_lines.append("\n#### 🏛️ 裁判案號與司法先例真實性檢驗：")
+            for vc in verified_cases:
+                audit_lines.append(f"- ✅ **【本機裁判庫正本核實】**：`{vc['official_case_id']}`（收錄主題：{vc['match_details'] or '權威指標判旨'}）")
+            for uc in unverified_cases:
+                audit_lines.append(f"- ⚠️ **【未於本機 4,900+ 權威大庫收錄・請謹慎核對】**：`{uc['raw_citation']}` ➔ [🔍 點此前往司法院官方查詢系統核實]({uc['external_url']})")
+        else:
+            audit_lines.append("\n#### 🏛️ 裁判案號與司法先例：*本回答主要立論於法規條文與法定公式，未直接援引具體裁判字號。*")
+
+        if verified_statutes or unverified_statutes:
+            audit_lines.append("\n#### 📜 法規條號現行有效性檢驗：")
+            for vs in verified_statutes:
+                prev_snippet = f"（{vs['official_preview'][:45]}...）" if vs['official_preview'] else ""
+                audit_lines.append(f"- ✅ **【官方現行法條核實】**：`《{vs['law_name']}》{vs['article_no']}` {prev_snippet}")
+            for us in unverified_statutes:
+                audit_lines.append(f"- ⚠️ **【條號疑義・非典型法條】**：`《{us['law_name']}》{us['article_no']}`（未在核心法典命中，可能為舊法廢止條文或非標準格式）")
+
+        audit_markdown = "\n".join(audit_lines)
+
+        return {
+            "verified_cases": verified_cases,
+            "unverified_cases": unverified_cases,
+            "verified_statutes": verified_statutes,
+            "unverified_statutes": unverified_statutes,
+            "audit_markdown": audit_markdown,
+            "has_unverified_case": len(unverified_cases) > 0,
+            "total_cases_checked": len(verified_cases) + len(unverified_cases),
+            "total_statutes_checked": len(verified_statutes) + len(unverified_statutes)
+        }
 
     def answer_legal_question(
         self,
@@ -502,6 +950,11 @@ class LegalQAEngine:
                 history_context += f"- 提問者: {h.get('question', '')}\n- 顧問回答重點: {h.get('answer', '')[:200]}...\n"
             history_context += "\n"
 
+        # 0. 執行事前司法大庫真實性錨定 (Pre-Retrieval Grounding：檢索現行法條與真實裁判，根絕幻覺)
+        grounding_data = self.retrieve_grounding_context(q_clean, domain=detected_domain)
+        grounding_block = grounding_data.get("grounding_block", "")
+        grounding_context = f"\n\n{grounding_block}\n\n" if grounding_block else ""
+
         # 針對不同意圖構建專屬 Prompt
         if "條文歸屬" in actual_intent or "哪一條" in actual_intent:
             prompt = f"""你是一名精通中華民國法典體系之高階法學導航專家。使用者正在詢問某特定生活事實、法律關係或交易行為「適用現行法律之哪一條條文」。
@@ -514,6 +967,7 @@ class LegalQAEngine:
 - 諮詢立場：{standpoint}
 
 {history_context}
+{grounding_context}
 請以繁體中文與台灣法學專業術語，依循以下標準架構進行權威條文定位解答：
 
 ### 🎯 一、精準核心適用法條 (Primary Statutory Provision)
@@ -551,6 +1005,7 @@ class LegalQAEngine:
 - 諮詢立場：{standpoint}
 
 {history_context}
+{grounding_context}
 請以繁體中文與台灣法學專業術語，嚴格依照以下學術與實務論辯架構輸出：
 
 ### 📌 一、爭點源起與法律問題核心 (Issue Identification)
@@ -588,6 +1043,7 @@ class LegalQAEngine:
 - 諮詢立場：{standpoint}
 
 {history_context}
+{grounding_context}
 請以繁體中文與台灣法學專業術語，按以下步驟進行嚴謹數學與法理推導：
 
 ### 📋 一、金錢請求項目定性與法理依據 (Classification of Claims)
@@ -627,6 +1083,7 @@ class LegalQAEngine:
 - 輸出模式：{output_mode}
 
 {history_context}
+{grounding_context}
 請使用繁體中文（台灣法學專業術語），並嚴格按照以下六大標準結構進行深度剖析：
 
 ### 🎯 一、案件法律關係定性與爭端核心 (Legal Characterization)
@@ -657,7 +1114,11 @@ class LegalQAEngine:
 - 專業法學免責聲明：本分析係依當事人提供之事實簡述進行法理推論，如涉具體重大訴訟案情，仍應攜帶完整事證諮詢合格執業律師。
 """
 
-        analysis_result = self._call_model(prompt)
+        analysis_result = self._call_model(prompt, temperature=0.2, max_tokens=8192)
+
+        # 5. 執行事後真實性核實審計 (Post-Generation Audit：全面核實回答所引用的案號與法條)
+        audit_res = self.verify_citations_against_dataset(analysis_result)
+        final_content = analysis_result.rstrip() + "\n\n" + audit_res.get("audit_markdown", "")
 
         return {
             "success": True,
@@ -666,7 +1127,10 @@ class LegalQAEngine:
             "output_mode": output_mode,
             "query_type": actual_intent,
             "question": q_clean,
-            "content": analysis_result
+            "content": final_content,
+            "raw_content": analysis_result,
+            "grounding_data": grounding_data,
+            "verification_audit": audit_res
         }
 
     def generate_legal_notice(
@@ -686,7 +1150,7 @@ class LegalQAEngine:
 {question}
 
 【法學分析依據】：
-{legal_advice[:1000]}
+{legal_advice[:4000]}
 
 【發函基本資訊】：
 - 寄件人：{sender_name}
@@ -718,7 +1182,7 @@ class LegalQAEngine:
 {question}
 
 【法理分析】：
-{legal_advice[:1000]}
+{legal_advice[:4000]}
 
 【輸出架構】：
 1. 聲請調解事由（明確案由，如：車禍損害賠償事件、房屋租賃押金返還事件、買賣價金爭議）

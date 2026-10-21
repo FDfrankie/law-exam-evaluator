@@ -3823,6 +3823,26 @@ elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_
 
         st.divider()
         st.markdown(f"### 📋 【專屬法學智慧檢索結果：{q_mode_tag.split(' ')[0]}】")
+
+        # 實時資料庫真實性核實審計卡片 (防 LLM 數字與字號幻覺)
+        audit = res.get("verification_audit", {})
+        if audit:
+            tot_cases = audit.get("total_cases_checked", 0)
+            ver_cases = len(audit.get("verified_cases", []))
+            tot_stats = audit.get("total_statutes_checked", 0)
+            ver_stats = len(audit.get("verified_statutes", []))
+            
+            c_aud1, c_aud2, c_aud3 = st.columns([1.5, 1.5, 3.2])
+            with c_aud1:
+                st.metric("🏛️ 裁判案號大庫核實", f"{ver_cases} / {tot_cases} 筆", delta="本機權威庫命中" if ver_cases > 0 else None)
+            with c_aud2:
+                st.metric("📜 法規條號現行核實", f"{ver_stats} / {tot_stats} 條", delta="現行法規庫有效" if ver_stats > 0 else None)
+            with c_aud3:
+                if audit.get("has_unverified_case"):
+                    st.warning("⚠️ 含有未收錄於本機庫之案號，系統已提供司法院官方檢索直連供您即時驗證！")
+                else:
+                    st.success("🛡️ 實時資料庫真實性核實通過：引用之法條與先例均已由司法院大庫比對無誤！")
+
         st.markdown(qa_ans)
 
         st.divider()

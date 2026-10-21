@@ -53,20 +53,34 @@ def get_gemini_models_to_try(primary_model: str = None) -> list:
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")
-    if custom_dir:
+    if custom_dir and Path(custom_dir).exists():
         return Path(custom_dir)
+
+    # Priority 0: Streamlit Cloud persistent data mount
+    streamlit_mount = Path("/mount/src/law-exam-evaluator/data")
+    if streamlit_mount.exists():
+        return streamlit_mount
     
-    # Priority 1: Check if Google Drive directory exists on Windows
+    # Priority 1: Check if Google Drive directory exists on macOS
+    macos_candidates = [
+        Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData",
+        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData")
+    ]
+    for m_path in macos_candidates:
+        if m_path.exists():
+            return m_path
+
+    # Priority 2: Check if Google Drive directory exists on Windows
     for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
         if g_path.exists():
             return g_path
             
-    # Priority 2: Repository local data directory (for Streamlit Cloud / Linux / cloned repo)
+    # Priority 3: Repository local data directory (for Streamlit Cloud / Linux / cloned repo)
     local_data = Path(__file__).resolve().parent / "data"
     if local_data.exists():
         return local_data
         
-    # Priority 3: Fallback to G: drive parent if user is setting up Google Drive
+    # Priority 4: Fallback to G: drive parent if user is setting up Google Drive
     for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
         if g_path.parent.exists():
             return g_path
@@ -82,12 +96,12 @@ STANDARDS_DIR = DATA_DIR / "scoring_standards"
 STUDENT_PAPERS_DIR = DATA_DIR / "student_submissions"
 REPORTS_DIR = DATA_DIR / "evaluation_reports"
 CONSTITUTIONAL_DIR = DATA_DIR / "constitutional_cases"
-NATIONAL_LAWS_DIR = DATA_DIR / "national_laws"
+NATIONAL_LAWS_DIR = DATA_DIR / "national_laws" if (DATA_DIR / "national_laws").exists() else (DATA_DIR.parent / "national_laws" if (DATA_DIR.parent / "national_laws").exists() else DATA_DIR / "national_laws")
 TRAINING_DATA_DIR = DATA_DIR / "training_data"
 SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
 MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
-JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db"
-OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox"
+JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db" if (DATA_DIR / "judicial_1m_db").exists() else (DATA_DIR / "data" / "judicial_1m_db" if (DATA_DIR / "data" / "judicial_1m_db").exists() else DATA_DIR / "judicial_1m_db")
+OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox" if (DATA_DIR / "opendata_inbox").exists() else (DATA_DIR / "data" / "opendata_inbox" if (DATA_DIR / "data" / "opendata_inbox").exists() else DATA_DIR / "opendata_inbox")
 
 def init_directories():
     """Ensure data directories exist"""
