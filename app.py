@@ -2611,13 +2611,22 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             key="lb_select_time_filter"
         )
 
+        # 6. 法律爭點實質性篩選 (自動排除無爭點程序裁定)
+        lb_filter_no_issue = st.checkbox(
+            "🚫 自動排除無實體爭點之純程序駁回/例行裁定 (推薦)",
+            value=st.session_state.get("lb_filter_no_issue", True),
+            help="勾選後自動過濾未繳裁判費、逾期駁回、純移送管轄或單純例行量刑等無實質法理爭點之裁判，確保研析與檢索聚焦於司律核心實體爭點與上位 IRAC 論理。",
+            key="lb_filter_no_issue_cb"
+        )
+        st.session_state["lb_filter_no_issue"] = lb_filter_no_issue
+
         # 檢索與重設按鈕
         col_btn_search, col_btn_clear = st.columns([3, 1])
         with col_btn_search:
             btn_exec_lb = st.button("🚀 執行專業多維度精準檢索", type="primary", use_container_width=True, key="btn_exec_adv_prec_search")
         with col_btn_clear:
             if st.button("✖️ 清除檢索條件", use_container_width=True, key="btn_clear_lb_all"):
-                for k in ["lb_court_system", "lb_input_year", "lb_sel_jword", "lb_input_word", "lb_input_num", "lb_input_cause", "lb_input_opinion", "lb_input_arg", "lb_input_statute", "lb_select_time_filter", "lb_time_filter", "adv_prec_search_results", "lb_did_search"]:
+                for k in ["lb_court_system", "lb_input_year", "lb_sel_jword", "lb_input_word", "lb_input_num", "lb_input_cause", "lb_input_opinion", "lb_input_arg", "lb_input_statute", "lb_select_time_filter", "lb_time_filter", "adv_prec_search_results", "lb_did_search", "lb_filter_no_issue"]:
                     st.session_state.pop(k, None)
                 st.rerun()
 
@@ -2637,6 +2646,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         cited_laws=lb_statute,
                         case_type=sel_case_type,
                         time_filter=lb_time_filter,
+                        filter_no_legal_issue=lb_filter_no_issue,
                         top_k=50
                     )
                     st.session_state["adv_prec_search_results"] = results
@@ -2709,7 +2719,15 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     hint = r.get("exam_application_hint", "")
 
                     with st.expander(f"⚖️ 【{lvl or court}】`{c_id}` ｜ {tit[:35]}", expanded=(idx < 3)):
-                        st.markdown(f"**🏛️ 管轄法院：** `{court}` ｜ **審級位階：** `{lvl}` ｜ **案件案由：** `{tit}`")
+                        substance_badge = "🎯 具實質法學爭點" if r.get("has_legal_issue", True) else "⚠️ 純程序裁定"
+                        st.markdown(f"**🏛️ 管轄法院：** `{court}` ｜ **審級位階：** `{lvl}` ｜ **爭點性質：** :{('green' if r.get('has_legal_issue', True) else 'orange')}[{substance_badge}] ｜ **案件案由：** `{tit}`")
+
+                        # 歷審裁判脈絡鏈摘要
+                        hist_instances = r.get("extracted_history_instances", [])
+                        if hist_instances:
+                            hist_nodes = [f"`【{inst.get('role', '審級')}】{inst.get('case_id', '')[:28]}... ({inst.get('action', '')})`" for inst in hist_instances[:3]]
+                            st.caption(f"🌿 **歷審審級路徑**：{' ➔ '.join(hist_nodes)}")
+
                         if laws:
                             st.caption(f"📜 **涉及法規：** {laws}")
                         st.info(f"**【裁判主文與要旨心證】：**\n{hold}")
@@ -2764,6 +2782,14 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
             key="lp_select_time_filter"
         )
 
+        lp_filter_no_issue = st.checkbox(
+            "🚫 自動排除無實體爭點之純程序裁定 (推薦)",
+            value=st.session_state.get("lp_filter_no_issue", True),
+            help="勾選後自動過濾未繳裁判費、逾期駁回、純移送管轄或單純例行量刑等無實質法理爭點之裁判，確保研析與檢索聚焦於司律核心實體爭點與上位 IRAC 論理。",
+            key="cb_lp_filter_no_issue"
+        )
+        st.session_state["lp_filter_no_issue"] = lp_filter_no_issue
+
         col_lp_btn1, col_lp_btn2 = st.columns([3, 1])
         with col_lp_btn1:
             btn_lp_search = st.button("⚡ 啟動法學檢索極速跨庫查找", type="primary", use_container_width=True, key="btn_exec_lp_search")
@@ -2773,6 +2799,7 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 st.session_state.pop("lp_search_hits", None)
                 st.session_state.pop("lp_select_time_filter", None)
                 st.session_state.pop("lp_time_filter", None)
+                st.session_state.pop("lp_filter_no_issue", None)
                 st.rerun()
 
         do_lp_search = btn_lp_search or st.session_state.pop("lp_exec_search", False)
@@ -2784,7 +2811,11 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                 with st.spinner(f"正在全域高速檢索【{target_q}】..."):
                     try:
                         engine = LegalIssueQueryEngine()
-                        hits = engine.unified_legal_search(query=target_q, time_filter=lp_time_filter)
+                        hits = engine.unified_legal_search(
+                            query=target_q,
+                            time_filter=lp_time_filter,
+                            filter_no_legal_issue=lp_filter_no_issue
+                        )
                         st.session_state["lp_search_hits"] = hits
                         st.session_state["lp_search_query"] = target_q
                     except Exception as e:
@@ -2828,6 +2859,15 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                     holding = mc.get("holding", "")
 
                     with st.expander(f"⚖️ 【{lvl}】`{c_id}` ｜ {tit}", expanded=(p_idx == 0)):
+                        substance_badge = "🎯 具實質法學爭點" if mc.get("has_legal_issue", True) else "⚠️ 純程序裁定"
+                        st.markdown(f"**審級位階：** `{lvl}` ｜ **爭點性質：** :{('green' if mc.get('has_legal_issue', True) else 'orange')}[{substance_badge}]")
+
+                        # 歷審裁判脈絡鏈摘要
+                        hist_instances = mc.get("extracted_history_instances", [])
+                        if hist_instances:
+                            hist_nodes = [f"`【{inst.get('role', '審級')}】{inst.get('case_id', '')[:28]}... ({inst.get('action', '')})`" for inst in hist_instances[:3]]
+                            st.caption(f"🌿 **歷審審級路徑**：{' ➔ '.join(hist_nodes)}")
+
                         if laws:
                             st.caption(f"📌 涉及法規：{laws}")
                         st.info(f"**核心主文 / 判決要旨：**\n{holding}")
@@ -4196,6 +4236,41 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
         sum_res = st.session_state["last_ai_sum_res"]
         active_title = sum_res.get("title") or st.session_state.get("sum_input_title") or "法學文書"
         st.divider()
+
+        # 實質爭點排除警示與原審判決導引卡 (貫徹指示：排除欠缺法律爭點之裁判，並注重歷審裁判)
+        if sum_res.get("has_legal_issue") is False:
+            st.error(f"🚫 **【爭點實質性檢驗：無實質法律爭點・已排除實體 IRAC 分析】**\n\n{sum_res.get('discard_reason', '')}")
+            substantive_prior = sum_res.get("substantive_prior_instance")
+            if substantive_prior:
+                prior_cid = substantive_prior.get("case_id", "")
+                st.info(f"🌿 **關鍵原審實體裁判定位**：本裁定為純程序裁定，其實質爭執事實與法理攻防完整記錄於原審【**{prior_cid}**】（{substantive_prior.get('role')}）！")
+                if st.button(f"👉 一鍵切換並調閱此原審實體裁判【{prior_cid}】", type="primary", use_container_width=True, key="btn_jump_to_substantive_prior"):
+                    st.session_state["sum_citation_search"] = prior_cid
+                    st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                    st.session_state["sum_input_title"] = prior_cid
+                    st.session_state["sum_input_text"] = ""
+                    st.session_state.pop("last_ai_sum_res", None)
+                    st.rerun()
+
+        history_instances = sum_res.get("history_instances", [])
+        if history_instances:
+            with st.expander(f"🌿 本案偵測之歷審審級脈絡鏈 (共 {len(history_instances)} 筆關聯審級)", expanded=True):
+                st.caption("點擊下方任一審級案號，可直接切換至該審級裁判進行深度研析或追溯其審級心證變化：")
+                h_cols = st.columns(min(len(history_instances), 3))
+                for h_i, h_inst in enumerate(history_instances[:6]):
+                    with h_cols[h_i % min(len(history_instances), 3)]:
+                        h_cid = h_inst.get("case_id", "")
+                        h_role = h_inst.get("role", "歷審")
+                        h_act = h_inst.get("action", "")
+                        st.markdown(f"**{h_role}**  \n`{h_cid}`  \n:blue[{h_act}]")
+                        if st.button(f"🔍 研析此審級", key=f"btn_switch_sum_inst_{h_i}", use_container_width=True):
+                            st.session_state["sum_citation_search"] = h_cid
+                            st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                            st.session_state["sum_input_title"] = h_cid
+                            st.session_state["sum_input_text"] = ""
+                            st.session_state.pop("last_ai_sum_res", None)
+                            st.rerun()
+
         st.markdown(f"### 📑 【{active_title}】AI 專業級 核心要旨精鍊報告")
         st.markdown(sum_res.get("markdown_result", ""))
 

@@ -122,11 +122,22 @@ class MillionJudgmentsSQLiteEngine:
                     laws_cited TEXT,
                     issue TEXT,
                     holding_preview TEXT,
-                    shard_key TEXT
+                    shard_key TEXT,
+                    has_legal_issue INTEGER DEFAULT 1,
+                    history_instances TEXT
                 )
             """)
+            try:
+                conn.execute("ALTER TABLE judgments_meta ADD COLUMN has_legal_issue INTEGER DEFAULT 1;")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE judgments_meta ADD COLUMN history_instances TEXT;")
+            except Exception:
+                pass
             conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_ywn ON judgments_meta(jud_year, jud_word, jud_no);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_court_type ON judgments_meta(court, case_type);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_legal_issue ON judgments_meta(has_legal_issue);")
             conn.execute("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS judgments_fts USING fts5(
                     case_id UNINDEXED,
@@ -258,7 +269,20 @@ class MillionJudgmentsSQLiteEngine:
 
                 y, w, n, s_key = self._extract_ywn(cid, jid, date_s)
 
-                meta_rows.append((cid, jid, court, level, c_type, subject, y, w, n, date_s, title, laws_str, issue, holding_prev, s_key))
+                has_issue_val = rec.get("has_legal_issue")
+                hist_inst_val = rec.get("extracted_history_instances") or rec.get("history_instances")
+                if has_issue_val is None:
+                    from legal_judgment_analyzer import evaluate_judgment_substance
+                    sub_res = evaluate_judgment_substance(full_text or holding, title=cid, doc_type=c_type)
+                    has_issue_val = 1 if sub_res.get("has_legal_issue", True) else 0
+                    if not hist_inst_val:
+                        hist_inst_val = sub_res.get("extracted_history_instances", [])
+                else:
+                    has_issue_val = 1 if has_issue_val else 0
+
+                hist_json_str = json.dumps(hist_inst_val, ensure_ascii=False) if hist_inst_val else ""
+
+                meta_rows.append((cid, jid, court, level, c_type, subject, y, w, n, date_s, title, laws_str, issue, holding_prev, s_key, has_issue_val, hist_json_str))
                 fts_rows.append((cid, title, holding_prev, issue, laws_str))
                 if full_text:
                     compressed_blob = zlib.compress(full_text.encode("utf-8", errors="ignore"), level=6)
@@ -271,8 +295,8 @@ class MillionJudgmentsSQLiteEngine:
                 cur = conn.cursor()
                 cur.executemany("""
                     INSERT OR REPLACE INTO judgments_meta
-                    (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key, has_legal_issue, history_instances)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, meta_rows)
                 cur.executemany("DELETE FROM judgments_fts WHERE case_id = ?", [(r[0],) for r in fts_rows])
                 cur.executemany("""
@@ -308,11 +332,15 @@ class MillionJudgmentsSQLiteEngine:
         cited_laws = str(kwargs.get("cited_laws", "")).strip()
         case_type = str(kwargs.get("case_type", "全部")).strip()
         court_system = str(kwargs.get("court_system", "全部法院 (全體司法體系)")).strip()
+        filter_no_legal_issue = bool(kwargs.get("filter_no_legal_issue", True))
         top_k = int(kwargs.get("top_k", 50))
 
         where_clauses = ["1=1"]
         params = []
         fts_query = query
+
+        if filter_no_legal_issue:
+            where_clauses.append("(m.has_legal_issue IS NULL OR m.has_legal_issue = 1)")
 
         if not fts_query and (main_holding or argument_issue):
             fts_query = f"{main_holding} {argument_issue}".strip()

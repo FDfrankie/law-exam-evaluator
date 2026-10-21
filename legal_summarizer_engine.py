@@ -27,6 +27,11 @@ from legal_query_engine import (
     generate_judicial_search_urls,
     get_precedent_history_chain
 )
+from legal_judgment_analyzer import (
+    evaluate_judgment_substance,
+    extract_instance_history,
+    format_instance_evolution_markdown
+)
 
 # ==============================================================================
 # 模組 1：專業布林邏輯搜尋語法引擎 (Boolean Precision Engine)
@@ -1392,6 +1397,56 @@ class AILegalSummarizer:
         title: str = "",
         subject: str = "法學專業領域"
     ) -> Dict[str, Any]:
+        # 1. 執行裁判爭點實質性檢驗與歷審裁判萃取 (貫徹指示：排除欠缺法律爭點之裁判，並高度注重歷審裁判)
+        substance_info = evaluate_judgment_substance(doc_text, title=title, doc_type=doc_type)
+        has_issue = substance_info.get("has_legal_issue", True)
+        history_instances = substance_info.get("extracted_history_instances", [])
+        substantive_prior = substance_info.get("substantive_prior_instance")
+        discard_reason = substance_info.get("discard_reason", "")
+        evolution_md = format_instance_evolution_markdown(history_instances, current_case_id=title)
+
+        # 2. 若欠缺實體法律爭點 (純程序駁回、未繳費、程式不合、例行量刑)：
+        #    排除實體 IRAC 深度分析，改為輸出程序診斷並高度聚焦於其【歷審裁判 (原審實體判決)】！
+        if not has_issue:
+            prior_link_hint = ""
+            if substantive_prior:
+                prior_link_hint = f"""
+> 💡 **【關鍵歷審導引】**：本件裁判本身為無實體爭鳴之程序裁定，但本案兩造實質攻防與爭點事實完整記載於【**{substantive_prior.get('case_id')}**】中。
+> 系統已自內文中自動定位該原審裁判，建議直接調閱或貼入該原審判決全文，AI 將為您進行實體法學要旨與 IRAC 深度精鍊！
+"""
+
+            res_md = f"""### ⚠️ 【爭點實質性檢驗：無實質法律爭點・已排除實體分析】
+本案經系統「爭點實質性評鑑核心」嚴格檢驗，屬於**欠缺實體法學爭點之裁判**：
+- **實質排除原因**：{discard_reason}
+- **裁判審查性質**：形式合法性審查（如程式欠缺、未繳納訴訟費用、逾期上訴或例行量刑處分），通篇無實體法條構成要件之爭鳴與事實涵攝。
+- **處理原則**：依司律國考與權威法學「實質法律爭點原則」，系統已**自動自實體要旨深度萃取中排除本裁定**，避免在無爭點裁定上產出無效或虛構之 IRAC 內容。
+
+---
+
+{evolution_md}
+
+{prior_link_hint}
+
+---
+
+### 📋 【本程序裁定之基本案情與主文摘要】
+- **承審法院與字號**：【{title or '程序裁定'}】
+- **主文結論**：{doc_text[:350].strip()}...
+- **程序法規**：{', '.join(substance_info.get('legal_citations_detected', [])) or '民事訴訟法 / 刑事訴訟法相關程序規定'}
+"""
+            return {
+                "title": title,
+                "doc_type": doc_type,
+                "subject": subject,
+                "markdown_result": res_md,
+                "has_legal_issue": False,
+                "is_procedural_dismissal": substance_info.get("is_procedural_dismissal", True),
+                "discard_reason": discard_reason,
+                "history_instances": history_instances,
+                "substantive_prior_instance": substantive_prior
+            }
+
+        # 3. 若具備實體法律爭點：將歷審脈絡鏈注入 Prompt，並嚴格指令模型深化「歷審見解更迭與心證翻轉」！
         prompt = f"""
 你是一位台灣「司法院大法官書記處法官」兼「律師司法官高等考試權威名師」，精通裁判解構與長篇公報釋令精萃。
 現在使用者輸入了一篇動輒數萬字之【{doc_type}】全文或核心摘錄，請立即執行極致精練、結構嚴謹之【AI 專業級核心要旨深度摘要】：
@@ -1405,20 +1460,28 @@ class AILegalSummarizer:
 {doc_text.strip()[:10000]}
 
 ------------------------
+【已偵測之歷審裁判審級脈絡】：
+{evolution_md}
 
-請嚴格遵循標準專業規範，依序產出以下六大核心標題：
+------------------------
 
-### 📌 一、基本案情與案件程序審級歷程
+請嚴格遵循標準專業規範，依序產出以下六大核心標題（請務必高度注重「歷審裁判」之審級更迭與心證見解翻轉）：
+
+### 📌 一、基本案情與案件程序審級歷程 (特別剖析歷審更迭)
 - **當事人背景與紛爭起因**：當事人身分、客觀爭端發生經過、行政處分作成或契約簽訂背景。
-- **審級與訴訟/救濟歷程**：地院/訴願機關 ➔ 高院/高等行政法院 ➔ 最高法院/憲法法庭之審級轉折。
+- **審級與訴訟/救濟歷程（詳析歷審裁判）**：
+  - 第一審事實審（地院）：案號、原告訴求與一審判決結論。
+  - 第二審事實/上訴審（高院）：案號、上訴理由、高院是否逆轉或變更一審心證。
+  - 第三審法律審（最高法院）或大法庭/憲法法庭：上訴第三審之違背法令指摘與終局法律爭端。
 
 ### ⚖️ 二、核心法律爭執焦點 (Legal Issues)
 - 提煉 1~3 個最關鍵之實體法或程序法法律爭執點（以標題化明確呈現，例如：【爭點一】借名登記出名人擅自移轉是否構成無權處分？【爭點二】惡意第三人是否受善意受讓之保護？）。
 - 爭執背後之法律規範漏洞或學說實務衝突所在。
 
-### 🏛️ 三、裁判要旨與主文核心論理 (Holding & Ratio Decidendi)
-- **主文結論**：本院最終諭知之主文結果（如：原判決廢棄發回、上訴駁回、法規定期失效、處分撤銷等）。
+### 🏛️ 三、裁判要旨與主文核心論理 (Holding & Ratio Decidendi - 對比歷審見解)
+- **主文結論**：本院最終諭知之主文結果（如：原判決廢棄發回、上訴駁回、原判決廢棄改判、法規定期失效等）。
 - **法院/部會核心裁判理由**：本院統一見解之立論基礎，包括文義解釋、體系解釋、歷史立法意旨與客觀目的衡量。
+- **與歷審裁判（原審）之心證翻轉對比**：明確指出本裁判與原審裁判見解是否存在歧異？本審係維持抑或推翻原審？其關鍵法理轉折點為何。
 
 ### 💡 四、關鍵法理金句與援引法規/先例 (Key Legal Rationale)
 - **法規依據**：引用之核心條文與條項（例如：民法第184條、公司法第173條之1、刑訴第300條）。
@@ -1441,9 +1504,15 @@ class AILegalSummarizer:
 請直接以格式清晰、排版優美、專業嚴謹之繁體中文 Markdown 文本輸出！
 """
         res_md = self._call_model(prompt)
+        full_res_md = res_md.strip() + "\n\n---\n\n" + evolution_md
         return {
             "title": title,
             "doc_type": doc_type,
             "subject": subject,
-            "markdown_result": res_md
+            "markdown_result": full_res_md,
+            "has_legal_issue": True,
+            "is_procedural_dismissal": False,
+            "discard_reason": "",
+            "history_instances": history_instances,
+            "substantive_prior_instance": substantive_prior
         }

@@ -522,6 +522,10 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
     # 法學學科判定
     subject = "公法學與行政訴訟法" if "行政" in court else ("刑事法學" if ("刑" in track or "刑事" in jfull[:100]) else ("民商事法學" if ("民" in track or "民事" in jfull[:100]) else "法學專業實務"))
 
+    # 實質爭點檢定與歷審案號萃取
+    from legal_judgment_analyzer import evaluate_judgment_substance
+    substance = evaluate_judgment_substance(jfull, title=case_id, doc_type=doc_type)
+
     return {
         "case_id": case_id,
         "court": court,
@@ -536,7 +540,12 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
         "scholarly_views": f"裁判重點論理：{jfull[300:900].strip()[:350]}..." if len(jfull) > 300 else "",
         "exam_application_hint": f"二試或實務若遇【{title}】爭端，應引述本案判旨見解，精準涵攝構成要件與法律效果。",
         "full_text": jfull[:15000],
-        "source": "judicial_open_data"
+        "source": "judicial_open_data",
+        "has_legal_issue": substance.get("has_legal_issue", True),
+        "is_procedural_dismissal": substance.get("is_procedural_dismissal", False),
+        "discard_reason": substance.get("discard_reason", ""),
+        "extracted_history_instances": substance.get("extracted_history_instances", []),
+        "substantive_prior_instance": substance.get("substantive_prior_instance")
     }
 
 

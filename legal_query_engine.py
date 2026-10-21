@@ -732,6 +732,7 @@ def search_precedents_advanced(
     case_type: str = "全部",     # 裁判類別 (判決/裁定/全部)
     subject: str = "全部科目",
     time_filter: str = "全部時間 (不限年份)",
+    filter_no_legal_issue: bool = True,  # 排除無實質法律爭點之純程序裁定
     top_k: int = 50
 ) -> List[Dict[str, Any]]:
     """
@@ -739,7 +740,8 @@ def search_precedents_advanced(
     支援：法院層級體系、民國年度 (jud_year)、常用字別 (sel_judword)、裁判字號 (jud_no)、
     案號縮寫智慧解析（如 108台上908民、108台上大1719裁、院字2949、重上更一15）、
     裁判案由 (jt)、主文/心證 (jmain/txtopinion)、案件爭點 (txtargument)、相關法條 (lc1a/lc1b)、
-    審級脈絡時間軸滑桿過濾 (time_filter)
+    審級脈絡時間軸滑桿過濾 (time_filter)、
+    爭點實質性過濾 (filter_no_legal_issue: 自動排除無實體爭鳴之純程序駁回/例行裁定，並附掛歷審案號)
     """
     catalog = get_precedents_catalog()
     if not catalog:
@@ -940,12 +942,39 @@ def search_precedents_advanced(
 
         results.append((score, item))
 
-    # 若未指定任何具體條件但點選查詢，預設回傳熱門代表性裁判
-    if not (clean_year or clean_word or clean_no or clean_cause or clean_holding or clean_issue or clean_laws or target_courts or (court_system and "全部" not in court_system)):
-        return catalog[:top_k]
+    # 爭點實質性篩選與歷審脈絡鏈掛載 (貫徹指示：排除欠缺法律爭點之裁判，並高度注重歷審裁判)
+    from legal_judgment_analyzer import evaluate_judgment_substance
 
-    results.sort(key=lambda x: -x[0])
-    return [r[1] for r in results[:top_k]]
+    # 若未指定任何具體條件但點選查詢，預設自目錄依序挑選
+    if not (clean_year or clean_word or clean_no or clean_cause or clean_holding or clean_issue or clean_laws or target_courts or (court_system and "全部" not in court_system)):
+        candidates = catalog
+    else:
+        results.sort(key=lambda x: -x[0])
+        candidates = [r[1] for r in results]
+
+    final_results = []
+    for it in candidates:
+        cid = it.get("case_id", "")
+        hold = it.get("holding", "")
+        iss = it.get("issue", "")
+        full_sample = f"{hold} {iss}"
+        substance = evaluate_judgment_substance(full_sample, title=cid, doc_type=it.get("level", ""))
+        
+        # 若啟用排除無實質爭點裁判：過濾純程序駁回、未繳費、程式不合、例行量刑
+        if filter_no_legal_issue and not substance.get("has_legal_issue", True):
+            continue
+
+        item_out = dict(it)
+        item_out["has_legal_issue"] = substance.get("has_legal_issue", True)
+        item_out["is_procedural_dismissal"] = substance.get("is_procedural_dismissal", False)
+        item_out["discard_reason"] = substance.get("discard_reason", "")
+        item_out["extracted_history_instances"] = substance.get("extracted_history_instances", [])
+        item_out["substantive_prior_instance"] = substance.get("substantive_prior_instance")
+        final_results.append(item_out)
+        if len(final_results) >= top_k:
+            break
+
+    return final_results
 
 
 
@@ -961,7 +990,8 @@ def search_local_precedents(
     case_year: str = "",
     case_word: str = "",
     case_num: str = "",
-    time_filter: str = "全部時間 (不限年份)"
+    time_filter: str = "全部時間 (不限年份)",
+    filter_no_legal_issue: bool = True
 ) -> List[Dict[str, Any]]:
     """
     從 1,256 筆權威判解庫中高速篩選最相關之判決/大法庭裁定
@@ -1164,16 +1194,38 @@ def search_local_precedents(
 
     scored_items.sort(key=lambda x: -x[0])
 
+    # 爭點實質性篩選與歷審案號 enrichment
+    from legal_judgment_analyzer import evaluate_judgment_substance
+    candidate_list = [x[1] for x in scored_items]
+
     # 智慧保底機制：若未直接命中且指定了考科
-    if not scored_items and subject and "全部" not in subject:
-        sub_fallback = [
+    if not candidate_list and subject and "全部" not in subject:
+        candidate_list = [
             it for it in catalog
             if any(k in it.get("subject", "") for k in re.split(r'[\s（）()【】/・、,，]+', subject) if len(k) >= 2)
         ]
-        if sub_fallback:
-            return sub_fallback[:top_k]
 
-    return [x[1] for x in scored_items[:top_k]]
+    final_precedents = []
+    for it in candidate_list:
+        cid = it.get("case_id", "")
+        hold = it.get("holding", "")
+        iss = it.get("issue", "")
+        substance = evaluate_judgment_substance(f"{hold} {iss}", title=cid, doc_type=it.get("level", ""))
+
+        if filter_no_legal_issue and not substance.get("has_legal_issue", True):
+            continue
+
+        item_out = dict(it)
+        item_out["has_legal_issue"] = substance.get("has_legal_issue", True)
+        item_out["is_procedural_dismissal"] = substance.get("is_procedural_dismissal", False)
+        item_out["discard_reason"] = substance.get("discard_reason", "")
+        item_out["extracted_history_instances"] = substance.get("extracted_history_instances", [])
+        item_out["substantive_prior_instance"] = substance.get("substantive_prior_instance")
+        final_precedents.append(item_out)
+        if len(final_precedents) >= top_k:
+            break
+
+    return final_precedents
 
 def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
     """根據案號（精確、包含、關鍵字或智慧縮寫如 108台上908民、108台上大1719裁、院字2949、重上更一15）從裁判庫中獲取裁判卡片"""
@@ -1720,6 +1772,31 @@ class LegalIssueQueryEngine:
         preset_info = get_precedent_history_chain(case_id)
         local_rec = get_precedent_by_id(case_id)
 
+        # 動態歷審案號萃取與爭點實質性檢驗 (若非預設三大指標案例，自動自全文或主文中動態溯源)
+        from legal_judgment_analyzer import evaluate_judgment_substance, extract_instance_history, format_instance_evolution_markdown
+        source_text_for_history = case_text.strip() or (local_rec.get("full_text", "") if local_rec else "") or (local_rec.get("holding", "") if local_rec else "")
+        substance_info = evaluate_judgment_substance(source_text_for_history, title=case_id) if source_text_for_history else None
+
+        if not preset_info and source_text_for_history and substance_info:
+            dyn_instances = substance_info.get("extracted_history_instances", [])
+            if dyn_instances:
+                stages = []
+                for inst in dyn_instances:
+                    stages.append({
+                        "stage": inst.get("role", "歷審審級"),
+                        "court": inst.get("court", ""),
+                        "case_no": inst.get("case_id", ""),
+                        "holding_summary": inst.get("snippet", ""),
+                        "ruling": inst.get("action", "審理中")
+                    })
+                preset_info = {
+                    "case_id": case_id,
+                    "topic": local_rec.get("title", case_id) if local_rec else case_id,
+                    "timeline_stages": stages,
+                    "distinguishing_insight": "由裁判書全文自動提取之歷審審級更迭脈絡鏈",
+                    "exam_strategy": "重點對比本審判決與原審或更審之實體法理轉折點"
+                }
+
         preset_context = ""
         if preset_info:
             preset_context = f"""
@@ -1738,6 +1815,14 @@ class LegalIssueQueryEngine:
             insight = preset_info.get("distinguishing_insight") or preset_info.get("distinguishing_points", "")
             preset_context += f"- 審級更迭分歧核心：{insight}\n"
             preset_context += f"- 國考上位卷作答策略：{preset_info.get('exam_strategy')}\n"
+
+        # 爭點實質性提示注入
+        substance_note = ""
+        if substance_info and not substance_info.get("has_legal_issue", True):
+            substance_note = f"""
+【重要爭點診斷】：本案經系統爭點檢定為【純程序駁回/例行裁定】（{substance_info.get('discard_reason')}），通篇無實體法理爭鳴。
+請在歷審脈絡報告中，特別說明本案之所以為程序駁回之原因，並重點引導使用者查閱承載實體爭點之【原審判決：{substance_info.get('substantive_prior_instance', {}).get('case_id', '原審實體判決')}】！
+"""
 
         local_context = ""
         if local_rec:
@@ -1764,6 +1849,7 @@ class LegalIssueQueryEngine:
 {preset_context}
 {local_context}
 {user_text_context}
+{substance_note}
 
 請嚴謹、精確、體系分明地輸出以下七大結構化區塊：
 
@@ -1835,7 +1921,8 @@ class LegalIssueQueryEngine:
         case_year: str = "",
         case_word: str = "",
         case_num: str = "",
-        time_filter: str = "全部時間 (不限年份)"
+        time_filter: str = "全部時間 (不限年份)",
+        filter_no_legal_issue: bool = True
     ) -> Dict[str, Any]:
         """
         全方位法學統一檢索樞紐：
@@ -1844,6 +1931,7 @@ class LegalIssueQueryEngine:
         2. 司律核心法條庫 (六法全書關聯條號)
         3. 外部審級脈絡 / 專業法學庫 / 司法院 30 年判決跨庫直連
         4. 審級脈絡時間軸過濾滑桿 (time_filter)
+        5. 實體爭點實質性過濾 (filter_no_legal_issue: 排除純程序駁回裁定)
         """
         clean_q = query.strip()
         precedents = search_local_precedents(
@@ -1858,7 +1946,8 @@ class LegalIssueQueryEngine:
             case_year=case_year,
             case_word=case_word,
             case_num=case_num,
-            time_filter=time_filter
+            time_filter=time_filter,
+            filter_no_legal_issue=filter_no_legal_issue
         )
 
         statute_query = statute_target.strip() or clean_q
