@@ -664,8 +664,18 @@ def get_subject_topics_taxonomy(subject_name: str) -> dict:
 
 
 def is_developer() -> bool:
-    """判定當前使用者是否已通過開發者權限解鎖"""
-    return st.session_state.get("is_developer_authenticated", False) is True
+    """
+    嚴格判定當前獨立 Session 使用者是否已通過開發者金鑰驗證。
+    - 杜絕跨用戶、跨 Session 洩漏：Streamlit 各連線 Session 完全獨立隔離。
+    - 雙重鎖定驗證機制：
+      1. 當前 Session 內標記 is_developer_authenticated 為 True
+      2. 當前 Session 內輸入框金鑰必須存在且完全比對 'brrfdccee'
+    - 若任一條件不滿足（其他使用者瀏覽器訪問、未填金鑰、金鑰錯誤或主動登出），100% 回傳 False。
+    """
+    if not st.session_state.get("is_developer_authenticated", False):
+        return False
+    current_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip().lower()
+    return current_pwd == "brrfdccee"
 
 
 def get_semantic_file_name(filename: str, subject: str = "", topic_hint: str = "") -> str:
@@ -1004,16 +1014,22 @@ with st.sidebar:
         st.rerun()
 
     with st.expander("🔒 開發者專區 (Developer Access)", expanded=False):
-        dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
+        dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd", placeholder="請輸入金鑰以解鎖開發者專用權限")
         st.caption("提示：boshiamy name")
+        
+        # 嚴格按當前獨立 Session 比對
         if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
             st.session_state["is_developer_authenticated"] = True
-            st.success("🟢 開發者權限已解鎖：開放全科筆記、講義與真題庫檢視與下載")
-        else:
-            if dev_pwd:
-                st.error("金鑰不正確")
-            if "is_developer_authenticated" not in st.session_state:
+            st.success("🟢 開發者權限已解鎖（僅限當前連線 Session）")
+            if st.button("🚪 立即鎖定並登出開發者模式", key="btn_logout_developer", use_container_width=True):
                 st.session_state["is_developer_authenticated"] = False
+                st.session_state["inp_developer_pwd"] = ""
+                st.rerun()
+        else:
+            st.session_state["is_developer_authenticated"] = False
+            if dev_pwd:
+                st.error("金鑰不正確，未獲授權")
+            st.caption("🔒 狀態：一般訪客模式（受著作權保護，未解鎖教材與筆記）")
 
 # ----------------- 模式 0: 首頁與系統導覽 (含隱私權政策與法律聲明) -----------------
 if app_mode == MODE_HOME:
@@ -5473,8 +5489,11 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
         )
 
         if "方案 A" in distill_mode:
-            from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
-            drive_notes = get_google_drive_notes_list()
+            if not is_developer():
+                st.warning("🔒 【雲端個人筆記庫已鎖定】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記僅限開發者本人調閱與微調。一般訪客請切換至【方案 B：手動上傳新筆記】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
+            else:
+                from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
+                drive_notes = get_google_drive_notes_list()
             if drive_notes:
                 sub_counts_dict = {}
                 for n in drive_notes:
@@ -5812,9 +5831,12 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
             st.info("目前尚未偵測到任何法學筆記檔案。")
 
     with sft_tab3:
-        from ingest_user_notes_to_sft import get_google_drive_notes_list
-        all_dn = get_google_drive_notes_list()
-        st.subheader(f"📂 SamsungNotes 已永久歸檔之個人法學筆記 ({len(all_dn)} 份)")
+        if not is_developer():
+            st.warning("🔒 【手寫筆記大庫受著作權保護】個人 Samsung Notes 手寫法學筆記檔案僅供開發者授權檢視。請於側邊欄輸入開發者金鑰解鎖。")
+        else:
+            from ingest_user_notes_to_sft import get_google_drive_notes_list
+            all_dn = get_google_drive_notes_list()
+            st.subheader(f"📂 SamsungNotes 已永久歸檔之個人法學筆記 ({len(all_dn)} 份)")
         if all_dn:
             st.caption(f"目前已於雲端硬碟永久歸檔 **{len(all_dn)} 份** 手寫與打字法學筆記：")
             sub_dict = {}
