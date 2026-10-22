@@ -1030,6 +1030,15 @@ with st.sidebar:
                         st.success(f"✅ DriveFS 整合完成！共掃描 {laf_report.get('total_files_scanned', 0)} 份檔案，整合 {laf_report.get('pdf_notes_unique_count', 0)} 份專案法學教材與 {laf_report.get('python_snapshots_count', 0)} 份程式碼快照。")
                     except Exception as le:
                         st.error(f"DriveFS 整合失敗: {le}")
+            if st.button("🌐 啟動雲端硬碟全量實體下載 (同步至本機)", key="btn_sync_net_all", use_container_width=True):
+                with st.spinner("正在向 Google 雲端發送全量實體檔案下載指令..."):
+                    try:
+                        from sync_gdrive_from_net import run_sync
+                        run_sync()
+                        load_all_drive_notes.clear()
+                        st.success("✅ 已成功向 Google 雲端發送全量實體下載指令！請稍候檔案於背景串流下載至本機。")
+                    except Exception as se:
+                        st.error(f"同步失敗: {se}")
             if st.button("🚪 立即鎖定並登出開發者模式", key="btn_logout_developer", use_container_width=True):
                 st.session_state["is_developer_authenticated"] = False
                 st.session_state["inp_developer_pwd"] = ""
