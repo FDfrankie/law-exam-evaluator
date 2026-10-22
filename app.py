@@ -5138,7 +5138,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             legis_data = anno.get("legislative_details", {}) or get_article_legislative_details(lname, ano, content)
             curated_amends = legis_data.get("curated_amendments", [])
             timeline_hits = legis_data.get("timeline_hits", [])
-            total_amends_display = len(curated_amends) if curated_amends else len(timeline_hits)
+            total_amends_display = max(len(curated_amends), len(timeline_hits))
             is_initial_enactment = (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
             badge_legis_text = "1 次立法制定對照" if is_initial_enactment else f"{total_amends_display} 次修法對照"
 
@@ -5426,16 +5426,18 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 p_text = amend.get("previous_text", "")
                                 c_text = amend.get("current_text", "")
                                 if p_text or c_text:
-                                    st.markdown("**⚖️ 新舊法條文文字對照：**")
+                                    st.markdown("**⚖️ 新舊法條文文字對照（分項分款分行完整全文）：**")
                                     col_old, col_new = st.columns(2)
                                     with col_old:
-                                        st.markdown("**🕰️ 修正前歷史條文（舊法）**")
-                                        st.caption(format_legal_article_text(p_text) if p_text else "（初次制定或舊無此條）")
+                                        if p_text:
+                                            st.markdown(render_formatted_article_quote(p_text, "🕰️ 修正前歷史條文（舊法）"))
+                                        else:
+                                            st.info("*(初次制定公布，舊無此條文)*")
                                     with col_new:
-                                        st.markdown("**📜 修正後施行條文（新法）**")
-                                        st.caption(format_legal_article_text(c_text) if c_text else format_legal_article_text(content))
+                                        st.markdown(render_formatted_article_quote(c_text or content, "📜 修正後施行條文（新法）"))
 
-                                st.markdown(f"**📜 立法院三讀官方修正理由全文：**\n{amend.get('reason')}")
+                                st.markdown("**📜 立法院三讀官方修正理由全文（官方公報照抄）：**")
+                                st.info(amend.get('reason', ''))
                                 if amend.get("exam_impact"):
                                     st.success(f"✍️ **司律國考新舊法適用要點：**\n{amend.get('exam_impact')}")
                                 st.markdown("---")
