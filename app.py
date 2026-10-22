@@ -903,19 +903,20 @@ def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
 
 
 # ==============================================================================
-# 系統導航模式常數（徹底避免索引位移錯位）
+# 系統導航模式常數（精簡俐落・完全消除側邊欄折行）
 # ==============================================================================
-MODE_HOME = "🏠 首頁與系統導覽 (功能總覽・隱私權政策・法律聲明)"
-MODE_EVAL = "📝 試卷評分與手寫辨識 (手寫/PDF/Word)"
-MODE_GEN = "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)"
-MODE_BANK = "📚 歷年真題庫檢索與模擬演練 (法研所 / 轉學考 / 司法官律師 / 司法特考)"
-MODE_ANS = "📖 高分權威擬答生成"
-MODE_SEARCH = "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)"
-MODE_QA = "💬 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算)"
-MODE_SUMMARIZER = "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)"
-MODE_SIX_CODES = "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)"
-MODE_SFT = "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
-MODE_DEV_MANAGER = "🛠️ 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名)"
+MODE_HOME = "🏠 系統首頁導覽"
+MODE_EVAL = "📝 試卷評分批改"
+MODE_GEN = "🎯 司律模擬命題"
+MODE_BANK = "📚 歷年真題檢索"
+MODE_ANS = "📖 權威擬答生成"
+MODE_SEARCH = "🔍 統一法學檢索"
+MODE_QA = "💬 專屬法學問答"
+MODE_SUMMARIZER = "📑 裁判函釋精鍊"
+MODE_SIX_CODES = "⚖️ 智慧六法標註"
+MODE_SFT = "📥 筆記蒸餾微調"
+MODE_INGEST = "📦 裁判大庫擴充 (入庫/刪原檔)"
+MODE_DEV_MANAGER = "🛠️ 開發者檔案總管"
 
 mode_options = [
     MODE_HOME,
@@ -927,7 +928,8 @@ mode_options = [
     MODE_QA,
     MODE_SUMMARIZER,
     MODE_SIX_CODES,
-    MODE_SFT
+    MODE_SFT,
+    MODE_INGEST
 ]
 if is_developer():
     mode_options.append(MODE_DEV_MANAGER)
@@ -935,7 +937,7 @@ if is_developer():
 # 側邊欄
 with st.sidebar:
     st.title("⚖️ 司律 AI 助手")
-    st.markdown(f"**雲端同步位置**:  \n`{GOOGLE_DRIVE_DATA_DIR}`")
+    st.caption("☁️ 雲端法學大庫已連線")
     st.divider()
 
     # 1. 僅在 app_mode 未初始化，或遭非標準別名字串設定時，才進行名稱正規化；在正常分頁點擊時絕不覆寫！
@@ -945,25 +947,27 @@ with st.sidebar:
         old_val = str(st.session_state["app_mode"])
         if "首頁" in old_val or "隱私權" in old_val:
             st.session_state["app_mode"] = MODE_HOME
-        elif "試卷評分" in old_val:
+        elif any(k in old_val for k in ["試卷", "評分", "批改", "手寫"]):
             st.session_state["app_mode"] = MODE_EVAL
-        elif "模擬出題" in old_val:
+        elif any(k in old_val for k in ["模擬", "命題", "出題"]):
             st.session_state["app_mode"] = MODE_GEN
-        elif "歷年真題庫" in old_val:
+        elif any(k in old_val for k in ["真題", "題庫"]):
             st.session_state["app_mode"] = MODE_BANK
-        elif "擬答生成" in old_val:
+        elif "擬答" in old_val:
             st.session_state["app_mode"] = MODE_ANS
-        elif "爭點查詢" in old_val or "統一法學檢索" in old_val or "爭點速查" in old_val:
+        elif any(k in old_val for k in ["統一法學", "檢索", "爭點"]):
             st.session_state["app_mode"] = MODE_SEARCH
-        elif any(k in old_val for k in ["法律問題", "法律諮詢", "生活法律", "一般法律", "智慧問答", "全能法律", "專屬法學", "萬能檢索"]):
+        elif any(k in old_val for k in ["問答", "法律問題", "法律諮詢"]):
             st.session_state["app_mode"] = MODE_QA
-        elif any(k in old_val for k in ["AI 裁判", "AI 摘要", "AI裁判", "起訴書"]):
+        elif any(k in old_val for k in ["精鍊", "裁判", "摘要"]):
             st.session_state["app_mode"] = MODE_SUMMARIZER
-        elif "智慧六法" in old_val:
+        elif "六法" in old_val:
             st.session_state["app_mode"] = MODE_SIX_CODES
-        elif "手寫筆記蒸餾" in old_val:
+        elif any(k in old_val for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
+            st.session_state["app_mode"] = MODE_INGEST
+        elif any(k in old_val for k in ["筆記", "蒸餾", "微調", "SFT"]):
             st.session_state["app_mode"] = MODE_SFT
-        elif any(k in old_val for k in ["檔案庫總管", "依內容智慧重命名", "開發者檔案", "重命名"]):
+        elif any(k in old_val for k in ["檔案總管", "檔案庫", "重命名"]):
             st.session_state["app_mode"] = MODE_DEV_MANAGER
         else:
             st.session_state["app_mode"] = MODE_HOME
@@ -1009,10 +1013,9 @@ with st.sidebar:
             os.environ["GEMINI_API_KEY"] = user_key.strip()
             st.success("API Key 已套用！")
     else:
-        st.success("🟢 AI 核心引擎已就緒 (Gemini 視覺多模態)")
-    st.info("💡 支援檔案：手寫/打字 PDF、照片 (JPG/PNG/WEBP)、Word (.docx)")
+        st.caption("🟢 AI 核心引擎已就緒")
     st.divider()
-    if st.button("🔒 隱私權政策與法律聲明 (首頁)", use_container_width=True, key="btn_sidebar_privacy_home"):
+    if st.button("🔒 隱私權與法律聲明", use_container_width=True, key="btn_sidebar_privacy_home"):
         st.session_state["app_mode"] = MODE_HOME
         st.session_state["nav_sidebar_radio_mode"] = MODE_HOME
         st.session_state["home_default_tab_privacy"] = True
@@ -1026,11 +1029,11 @@ with st.sidebar:
         if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
             st.session_state["is_developer_authenticated"] = True
             st.success("🟢 開發者權限已解鎖（僅限當前連線 Session）")
-            if st.button("🛠️ 開啟檔案庫總管 (在線檢視・體系組織・智慧重命名)", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
+            if st.button("🛠️ 開啟檔案庫總管", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
                 st.session_state["app_mode"] = MODE_DEV_MANAGER
                 st.session_state["nav_sidebar_radio_mode"] = MODE_DEV_MANAGER
                 st.rerun()
-            if st.button("🔄 掃描並整合 DriveFS 遺失修復庫 (lost_and_found)", key="btn_sync_laf", use_container_width=True):
+            if st.button("🔄 整合 DriveFS 修復庫", key="btn_sync_laf", use_container_width=True):
                 with st.spinner("正在掃描 Google DriveFS lost_and_found 庫..."):
                     try:
                         from ingest_lost_and_found import run_lost_and_found_ingest
@@ -1039,7 +1042,7 @@ with st.sidebar:
                         st.success(f"✅ DriveFS 整合完成！共掃描 {laf_report.get('total_files_scanned', 0)} 份檔案，整合 {laf_report.get('pdf_notes_unique_count', 0)} 份專案法學教材與 {laf_report.get('python_snapshots_count', 0)} 份程式碼快照。")
                     except Exception as le:
                         st.error(f"DriveFS 整合失敗: {le}")
-            if st.button("🌐 啟動雲端硬碟全量實體下載 (同步至本機)", key="btn_sync_net_all", use_container_width=True):
+            if st.button("🌐 雲端全量實體下載", key="btn_sync_net_all", use_container_width=True):
                 with st.spinner("正在向 Google 雲端發送全量實體檔案下載指令..."):
                     try:
                         from sync_gdrive_from_net import run_sync
@@ -1048,7 +1051,7 @@ with st.sidebar:
                         st.success("✅ 已成功向 Google 雲端發送全量實體下載指令！請稍候檔案於背景串流下載至本機。")
                     except Exception as se:
                         st.error(f"同步失敗: {se}")
-            if st.button("🚪 立即鎖定並登出開發者模式", key="btn_logout_developer", use_container_width=True):
+            if st.button("🚪 鎖定並登出", key="btn_logout_developer", use_container_width=True):
                 st.session_state["is_developer_authenticated"] = False
                 st.session_state["inp_developer_pwd"] = ""
                 st.rerun()
@@ -1057,6 +1060,338 @@ with st.sidebar:
             if dev_pwd:
                 st.error("金鑰不正確，未獲授權")
             st.caption("🔒 狀態：一般訪客模式（受著作權保護，未解鎖教材與筆記）")
+
+def render_judgements_ingest_view():
+    st.header("📦 司法院裁判資料夾極速入庫與實質爭點分析 (data/judgements)")
+    st.write("免開終端機、免本機打指令！只要將司法院裁判壓縮檔（`.rar`、`.7z`、`.zip`、`.json`）放入 `data/judgements`，點選按鈕即可全自動低記憶體串流解壓、完成法學實質爭點分析與 IRAC 萃取，並在入庫後自動刪除原始壓縮包以釋放雲端硬碟空間！")
+
+    op_tab_folder, op_tab_zip, op_tab_api = st.tabs([
+        "📂 方式一：【一鍵極速入庫】雲端硬碟 data/judgements 資料夾自動掃描 ➔ 爭點分析 ➔ 自動刪除 RAR",
+        "📤 方式二：手動上傳裁判檔案 (.zip, .json, .rar, .7z)",
+        "🌐 方式三：使用司法院開放平臺帳號密碼 API 直接連線同步"
+    ])
+
+    with op_tab_folder:
+        st.markdown("""
+#### 📂 雲端硬碟 `data/judgements` 資料夾一鍵全自動串流入庫與實質爭點分析
+系統直接鎖定本機/雲端硬碟專用收件匣，無需開啟終端機或手動上傳！只要將下載的裁判壓縮檔（`.rar`、`.7z`、`.zip`、`.json`）放入 `data/judgements`，點選下方按鈕即可全自動低記憶體串流解壓、完成法學實質爭點分析與 IRAC 萃取，並在入庫後自動刪除原始壓縮包以釋放雲端硬碟空間！
+""")
+        from config import JUDGEMENTS_DIR, OPENDATA_INBOX_DIR, DATA_DIR
+        target_ingest_dirs = [JUDGEMENTS_DIR]
+        if OPENDATA_INBOX_DIR.exists() and OPENDATA_INBOX_DIR != JUDGEMENTS_DIR:
+            target_ingest_dirs.append(OPENDATA_INBOX_DIR)
+
+        # 彙整待處理之壓縮檔案
+        queued_files = []
+        for t_dir in target_ingest_dirs:
+            if t_dir.exists():
+                for pattern in ("*.rar", "*.7z", "*.zip", "*.json", "*.jsonl"):
+                    for f in t_dir.glob(pattern):
+                        if not f.name.startswith((".", "~")):
+                            queued_files.append(f)
+
+        # 去除重複檔案
+        seen_queued = set()
+        unique_queued = []
+        for qf in queued_files:
+            rp = str(qf.resolve()) if qf.is_symlink() else str(qf)
+            if rp not in seen_queued:
+                seen_queued.add(rp)
+                unique_queued.append(qf)
+
+        if unique_queued:
+            st.info(f"📁 **當前鎖定目錄**：`{JUDGEMENTS_DIR}`（偵測到 **{len(unique_queued)} 個** 待處理裁判打包檔）")
+            tot_mb = sum([f.stat().st_size for f in unique_queued if f.exists()]) / (1024 * 1024)
+            st.caption(f"📦 待入庫總容量：`{tot_mb:.2f} MB` ｜ 格式支援：.rar, .7z, .zip, .json")
+
+            for qf in unique_queued:
+                sz_mb = qf.stat().st_size / (1024 * 1024) if qf.exists() else 0
+                st.markdown(f"- 📄 **`{qf.name}`** ｜ 大小：`{sz_mb:.1f} MB` ｜ 格式：`{qf.suffix.upper()}` ｜ 狀態：⏳ **待解壓分析入庫**")
+
+            col_del_opt, col_batch_opt = st.columns([2, 1])
+            with col_del_opt:
+                chk_del_source = st.checkbox(
+                    "🗑️ **入庫與爭點分析完成後，自動刪除原始壓縮包（釋放雲端硬碟空間）**",
+                    value=True,
+                    key="chk_auto_del_rar_in_app",
+                    help="勾選後，每個壓縮包內的裁判全數成功寫入 SQLite 大庫並完成實質爭點分析後，系統會自動在磁碟刪除該原始 .rar/.zip 檔案，避免佔用 Google Drive 雲端空間。"
+                )
+            with col_batch_opt:
+                batch_sz_val = st.select_slider("寫入批次大小：", options=[50, 100, 200, 500], value=100, key="sel_batch_sz_folder")
+
+            if st.button("🚀 一鍵啟動：低記憶體解壓入庫 ➔ 爭點智能分析 ➔ 刪除原檔釋放空間", type="primary", use_container_width=True, key="btn_run_folder_ingest"):
+                with st.spinner("正在啟動零拷貝串流解壓與爭點分析引擎..."):
+                    import gc
+                    from ingest_opendata_lowmem import low_memory_ingest
+
+                    prog_bar = st.progress(0.0)
+                    prog_txt = st.empty()
+
+                    grand_added = 0
+                    all_deleted_files = []
+                    grand_freed_bytes = 0
+
+                    for idx_f, target_f in enumerate(unique_queued, 1):
+                        prog_txt.info(f"⚡ [檔案 {idx_f}/{len(unique_queued)}] 正在解析與實質爭點檢定：**{target_f.name}**...")
+
+                        def _folder_prog_cb(n_curr, cur_doc_title):
+                            prog_txt.info(f"⚡ [檔案 {idx_f}/{len(unique_queued)}] 已寫入 SQLite: **{grand_added + n_curr:,}** 筆 ｜ 分析中：`{cur_doc_title[:30]}`")
+
+                        res_ingest = low_memory_ingest(
+                            target_f,
+                            batch_size=batch_sz_val,
+                            progress_callback=_folder_prog_cb,
+                            delete_source_after_ingest=chk_del_source
+                        )
+
+                        if res_ingest.get("success"):
+                            grand_added += res_ingest.get("added", 0)
+                            all_deleted_files.extend(res_ingest.get("deleted_files", []))
+                            grand_freed_bytes += res_ingest.get("freed_bytes", 0)
+                        else:
+                            st.warning(f"處理檔案 {target_f.name} 時回報：{res_ingest.get('error')}")
+
+                        prog_bar.progress(idx_f / len(unique_queued))
+
+                    prog_bar.progress(1.0)
+                    prog_txt.empty()
+                    gc.collect()
+
+                    st.balloons()
+                    freed_mb = grand_freed_bytes / (1024 * 1024)
+                    del_msg = f"\n\n🗑️ **已自動刪除原始壓縮包**：`{', '.join(all_deleted_files)}`（成功為您的雲端硬碟釋放 **{freed_mb:.1f} MB** 空間！）" if all_deleted_files else ""
+                    st.success(f"🎉 **大庫擴充與爭點分析全部完成！**\n\n- 📊 本次成功寫入 SQLite 大庫：**{grand_added:,}** 筆真實裁判\n- 🏛️ 目前百萬裁判大庫總筆數已達：**{get_million_db_engine().get_total_count():,}** 筆{del_msg}")
+                    time.sleep(2)
+                    st.rerun()
+        else:
+            st.info(f"📁 **當前監控目錄**：`{JUDGEMENTS_DIR}`")
+            st.success("✅ 目前該資料夾內尚無待處理的裁判壓縮包。")
+            st.caption("💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接上傳或複製到雲端硬碟 `data/judgements` 資料夾中。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
+            if st.button("🔄 重新掃描 `data/judgements` 資料夾", key="btn_rescan_judgements_empty"):
+                st.rerun()
+
+    with op_tab_zip:
+        st.markdown("""
+#### 📤 瀏覽器手動上傳裁判檔案 (.zip, .json, .rar, .7z)
+若您有單一裁判檔案欲直接上傳入庫，亦可在此直接拖放上傳。系統以超低記憶體串流逐筆寫入 SQLite，全程記憶體維持在低負載安全區間！
+""")
+        uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip, .json, .jsonl, .rar, .7z)：", type=["zip", "json", "jsonl", "rar", "7z"], key="uploader_opendata_zip")
+        if uploaded_op_file is not None:
+            chk_del_upload = st.checkbox("🗑️ 入庫完成後自動刪除上傳暫存檔（釋放空間）", value=True, key="chk_del_upload_temp")
+            if st.button("🚀 立即以低記憶體串流解析並擴充至裁判大庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
+                with st.spinner(f"正在以低記憶體串流解析【{uploaded_op_file.name}】中的裁判書..."):
+                    import gc, tempfile
+                    from ingest_opendata_lowmem import low_memory_ingest
+
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_op_file.name).suffix) as tmp_f:
+                        uploaded_op_file.seek(0)
+                        while True:
+                            chunk = uploaded_op_file.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            tmp_f.write(chunk)
+                        tmp_path = Path(tmp_f.name)
+
+                    p_bar = st.progress(0.0)
+                    p_text = st.empty()
+
+                    def _stream_cb(added_count, cur_file):
+                        p_text.info(f"⚡ 已串流寫入 SQLite 資料庫: {added_count:,} 筆 (目前檔案: {cur_file[:25]}...)")
+
+                    try:
+                        res = low_memory_ingest(tmp_path, batch_size=50, progress_callback=_stream_cb, delete_source_after_ingest=chk_del_upload)
+                        p_bar.progress(1.0)
+                        p_text.empty()
+                        if res.get("success"):
+                            st.balloons()
+                            st.success(f"🎉 串流匯入成功！本次成功寫入 {res.get('added', 0):,} 筆裁判至 SQLite 大庫，總計已達 {res.get('total_in_db', 0):,} 筆！全程記憶體維持在低負載安全區間。")
+                            time.sleep(1.5)
+                            st.rerun()
+                        else:
+                            st.error(f"串流解析失敗: {res.get('error')}")
+                    except Exception as ue:
+                        st.error(f"處理異常: {ue}")
+                    finally:
+                        tmp_path.unlink(missing_ok=True)
+                        gc.collect()
+
+    with op_tab_api:
+        st.markdown("""
+#### 🌐 司法院官方 API (RESTful) 直連登入同步
+依照司法院官方 API 規範，只要輸入您在司法院資料開放平臺註冊之**帳號**與**密碼**，系統將自動向 `https://data.judicial.gov.tw/jdg/api/Auth` 換取官方驗證 Token，並直接透過官方 API 調閱最新裁判書存入本地大庫！
+
+> ⚠️ **官方連線與憑證注意**：  
+> 1. 司法院伺服器之 SSL 憑證缺少 Subject Key Identifier，系統已自動啟用安全略過模式確保暢通連線。  
+> 2. 司法院官方 API 規範：伺服器每日僅於**凌晨 0 時至 6 時**提供大量下載與清單服務，其餘時段司法院端可能限制訪問。
+""")
+        col_api_u, col_api_p = st.columns(2)
+        with col_api_u:
+            api_user_in = st.text_input("司法院開放平臺帳號 (user)：", key="api_judicial_user")
+        with col_api_p:
+            api_pwd_in = st.text_input("司法院開放平臺密碼 (password)：", type="password", key="api_judicial_pwd")
+
+        col_api_btn1, col_api_btn2 = st.columns([2, 1])
+        with col_api_btn1:
+            btn_test_auth = st.button("🔑 測試連線並換取 6 小時官方 Token", use_container_width=True, key="btn_test_judicial_auth")
+        with col_api_btn2:
+            btn_clear_token = st.button("✖️ 清除 Token", use_container_width=True, key="btn_clear_judicial_token")
+            if btn_clear_token:
+                st.session_state.pop("judicial_api_token", None)
+                st.rerun()
+
+        if btn_test_auth:
+            if not api_user_in.strip() or not api_pwd_in.strip():
+                st.warning("請先輸入司法院開放平臺帳號與密碼！")
+            else:
+                with st.spinner("正在連線至司法院驗證伺服器 (https://data.judicial.gov.tw/jdg/api/Auth)..."):
+                    from import_judicial_opendata import JudicialOpenDataClient
+                    client = JudicialOpenDataClient()
+                    auth_res = client.authenticate(api_user_in.strip(), api_pwd_in.strip())
+                    if auth_res.get("success"):
+                        st.session_state["judicial_api_token"] = auth_res["token"]
+                        st.success(f"🎉 司法院官方驗證成功！取得 Token：`{auth_res['token'][:8]}...`（有效時間 6 小時）")
+                    else:
+                        st.error(f"❌ 司法院驗證失敗：{auth_res.get('error')}")
+
+        cur_token = st.session_state.get("judicial_api_token", "")
+        if cur_token:
+            st.info(f"✅ **目前授權狀態**：已取得司法院官方通行 Token (`{cur_token[:10]}...`)")
+            
+            crawler_mode_tab1, crawler_mode_tab2, crawler_mode_tab3 = st.tabs([
+                "🚀 【全自動爬蟲】多月份裁判打包檔自動下載並入庫 (免手打案號)",
+                "📋 【異動清單爬取】自動拉取司法院最新裁判清單 (JList)",
+                "🔍 【單筆精確調閱】依完整裁判 JID 調閱全文 (JDoc)"
+            ])
+
+            with crawler_mode_tab1:
+                st.markdown("##### 🚀 司法院開放平臺全月份裁判打包檔自動爬取與入庫")
+                st.caption("登入成功後，爬蟲會自動連線司法院開放平臺資料目錄，自動抓取官方打包好的各月份裁判檔（每個月份約數萬至十餘萬筆判決），直接串流下載並自動解壓入庫！")
+                
+                if st.button("🔍 步驟一：自動爬取官方可用之月份裁判清單", use_container_width=True, key="btn_crawl_month_datasets"):
+                    with st.spinner("爬蟲正在向司法院資料目錄查詢歷年月份裁判集..."):
+                        from import_judicial_opendata import JudicialBatchMonthCrawler
+                        month_crawler = JudicialBatchMonthCrawler(account=api_user_in, password=api_pwd_in)
+                        res_ds = month_crawler.fetch_available_month_datasets(token=cur_token)
+                        if res_ds.get("success"):
+                            st.session_state["crawled_month_datasets"] = res_ds.get("datasets", [])
+                            st.success(f"🎉 成功抓取到 {len(st.session_state['crawled_month_datasets'])} 項官方月份裁判資料集！")
+                        else:
+                            st.error(f"爬取資料集清單失敗: {res_ds.get('error')}")
+
+                crawled_datasets = st.session_state.get("crawled_month_datasets", [])
+                if crawled_datasets:
+                    ds_titles = [f"{ds['title']} ｜ 格式: {ds['format']} (ID: {ds['fileSetId']})" for ds in crawled_datasets]
+                    sel_ds_idx = st.selectbox(
+                        "請選擇欲自動下載入庫之月份資料集：",
+                        range(len(crawled_datasets)),
+                        format_func=lambda i: ds_titles[i],
+                        key="sel_crawled_ds_idx"
+                    )
+                    chosen_ds = crawled_datasets[sel_ds_idx]
+                    st.write(f"**資料描述**：{chosen_ds.get('desc', '月份裁判全文打包檔')}")
+                    
+                    if st.button(f"📥 步驟二：自動下載並入庫【{chosen_ds['title']}】", type="primary", use_container_width=True, key="btn_download_month_dataset"):
+                        prog_dl = st.progress(0.0)
+                        stat_dl = st.empty()
+                        stat_dl.info("正在連線司法院伺服器，啟動串流下載壓縮包中...")
+                        def _dl_cb(bytes_done):
+                            mb = bytes_done / (1024 * 1024)
+                            stat_dl.info(f"已下載: {mb:.1f} MB (背景解壓縮與解析中)...")
+                        
+                        from import_judicial_opendata import JudicialBatchMonthCrawler
+                        month_crawler = JudicialBatchMonthCrawler(account=api_user_in, password=api_pwd_in)
+                        ingest_res = month_crawler.download_and_ingest_dataset(
+                            file_set_id=chosen_ds["fileSetId"],
+                            title=chosen_ds["title"],
+                            token=cur_token,
+                            progress_cb=_dl_cb
+                        )
+                        prog_dl.progress(1.0)
+                        if ingest_res.get("success"):
+                            st.balloons()
+                            st.success(f"🎉 成功下載並解壓入庫！本次新增 {ingest_res['added']:,} 筆裁判，本機大庫總計已達 {ingest_res['total']:,} 筆！")
+                        else:
+                            st.error(f"下載入庫失敗: {ingest_res.get('error')}")
+
+            with crawler_mode_tab2:
+                st.markdown("##### 📋 自動拉取司法院最新異動裁判清單 (JList)")
+                st.caption("由司法院官方 JList 介面自動拉取近 7 日裁判異動清單，免手動輸入案號即可批次調閱入庫。")
+                if st.button("📥 自動拉取近 7 日 JList 清單", use_container_width=True, key="btn_fetch_jlist_auto"):
+                    with st.spinner("正在向司法院 API 請求 JList 異動清單..."):
+                        from import_judicial_opendata import JudicialOpenDataClient
+                        client = JudicialOpenDataClient()
+                        jlist_res = client.fetch_jlist(cur_token)
+                        if jlist_res.get("success"):
+                            raw_list = jlist_res.get("data", [])
+                            if isinstance(raw_list, dict):
+                                raw_list = raw_list.get("LIST") or raw_list.get("list") or []
+                            st.session_state["cached_jlist"] = raw_list
+                            st.success(f"✅ 成功取得最新異動清單，共 {len(raw_list)} 筆裁判！")
+                        else:
+                            st.error(f"拉取清單失敗：{jlist_res.get('error')}（提示：官方 API 僅於每日凌晨 00:00～06:00 開放）")
+
+                cached_jlist = st.session_state.get("cached_jlist", [])
+                if cached_jlist:
+                    batch_count = st.slider("選擇自動下載入庫筆數：", min_value=1, max_value=min(100, len(cached_jlist)), value=min(10, len(cached_jlist)), key="sli_jlist_batch")
+                    if st.button(f"🚀 自動批次下載前 {batch_count} 筆裁判全文入庫", type="primary", use_container_width=True, key="btn_batch_jlist_ingest"):
+                        from import_judicial_opendata import JudicialOpenDataClient, parse_official_opendata_record, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
+                        import json
+                        client = JudicialOpenDataClient()
+                        cur_c = json.loads(OUTPUT_CATALOG_PATH.read_text(encoding="utf-8")) if OUTPUT_CATALOG_PATH.exists() else []
+                        existing_ids = {x.get("case_id") for x in cur_c if x.get("case_id")}
+                        added_count = 0
+                        p_bar = st.progress(0.0)
+                        for idx_j, jid_item in enumerate(cached_jlist[:batch_count], 1):
+                            jid_str = jid_item if isinstance(jid_item, str) else str(jid_item.get("JID") or "")
+                            if jid_str:
+                                doc_res = client.fetch_jdoc(jid_str, cur_token)
+                                if doc_res.get("success"):
+                                    p_doc = parse_official_opendata_record(doc_res.get("data", {}))
+                                    if p_doc and p_doc.get("case_id") and p_doc["case_id"] not in existing_ids:
+                                        cur_c.append(p_doc)
+                                        existing_ids.add(p_doc["case_id"])
+                                        added_count += 1
+                            p_bar.progress(idx_j / batch_count)
+                        OUTPUT_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                        OUTPUT_CATALOG_PATH.write_text(json.dumps(cur_c, ensure_ascii=False, indent=2), encoding="utf-8")
+                        REPO_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+                        REPO_CATALOG_PATH.write_text(json.dumps(cur_c, ensure_ascii=False, indent=2), encoding="utf-8")
+                        st.success(f"🎉 批次同步完成！成功抓取並入庫 {added_count} 筆裁判全文！")
+
+            with crawler_mode_tab3:
+                st.markdown("##### 🚀 依指定裁判 JID 單筆抓取入庫：")
+                col_jid_in, col_jid_act = st.columns([3, 1])
+                with col_jid_in:
+                    inp_api_jid = st.text_input(
+                        "輸入欲調閱之裁判 JID (例如：`CHDM,100,訴,1552,20130517,2` 或 `TPAA,108,上,625,20191219,1`)：",
+                        placeholder="例如：TPAA,108,上,625,20191219,1",
+                        key="inp_api_fetch_jid"
+                    )
+                with col_jid_act:
+                    btn_fetch_jdoc = st.button("📥 線上抓取入庫", type="primary", use_container_width=True, key="btn_fetch_api_jdoc")
+
+                if btn_fetch_jdoc and inp_api_jid.strip():
+                    with st.spinner(f"正在向司法院 API 調閱【{inp_api_jid.strip()}】裁判全文..."):
+                        from import_judicial_opendata import JudicialOpenDataClient, parse_official_opendata_record, OUTPUT_CATALOG_PATH, REPO_CATALOG_PATH
+                        import json
+                        client = JudicialOpenDataClient()
+                        doc_res = client.fetch_jdoc(inp_api_jid.strip(), cur_token)
+                        if doc_res.get("success"):
+                            doc_data = doc_res.get("data", {})
+                            parsed_doc = parse_official_opendata_record(doc_data)
+                            if parsed_doc and parsed_doc.get("case_id"):
+                                with open(OUTPUT_CATALOG_PATH, "r", encoding="utf-8") as f:
+                                    cur_c = json.load(f)
+                                cur_c.append(parsed_doc)
+                                with open(OUTPUT_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                    json.dump(cur_c, f, ensure_ascii=False, indent=2)
+                                with open(REPO_CATALOG_PATH, "w", encoding="utf-8") as f:
+                                    json.dump(cur_c, f, ensure_ascii=False, indent=2)
+                                st.success(f"🎉 成功由司法院 API 調閱並入庫：【{parsed_doc['title']}】！全文共 {len(parsed_doc.get('full_text',''))} 字。")
+                            else:
+                                st.warning("裁判資料已下載，但欄位格式解析異常。")
+                        else:
+                            st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
 
 # ----------------- 模式 0: 首頁與系統導覽 (含隱私權政策與法律聲明) -----------------
 if app_mode == MODE_HOME:
@@ -1100,7 +1435,8 @@ if app_mode == MODE_HOME:
             (MODE_QA, "💬 專屬法學全能問答樞紐", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
             (MODE_SUMMARIZER, "📑 AI 判解與長篇函釋精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度 RAR/ZIP/JSON 開放資料包批次擴充入庫。"),
             (MODE_SIX_CODES, "⚖️ 智慧六法與條文判解標註", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
-            (MODE_SFT, "📥 手寫筆記蒸餾與 SFT 大庫", "將個人讀書筆記透過多模態視覺辨識提煉為結構化 SFT 微調語料，支援全科 PDF 合併與 Colab/Kaggle 訓練。")
+            (MODE_SFT, "📥 手寫筆記蒸餾與 SFT 大庫", "將個人讀書筆記透過多模態視覺辨識提煉為結構化 SFT 微調語料，支援全科 PDF 合併與 Colab/Kaggle 訓練。"),
+            (MODE_INGEST, "📦 裁判大庫擴充 (入庫/刪原檔)", "自動鎖定 data/judgements 資料夾，一鍵串流解壓、爭點智能分析，並在入庫後自動刪除原始 RAR 壓縮檔以釋放空間！")
         ]
         for row_i in range(0, len(nav_cards), 3):
             cols = st.columns(3)
@@ -5139,11 +5475,11 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
 
             combined_materials = handouts + notes
 
-            badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
-            badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
-            badge_orders_rulings = f" ｜ 📋 【{len(key_regulations)} 部法規/細則 ＋ {len(admin_rulings)} 筆主管函釋】" if (key_regulations or admin_rulings) else ""
-            badge_legis = f" ｜ 🕰️ 【{badge_legis_text}】" if total_amends_display > 0 else ""
-            badge_materials = f" ｜ 📘 【收錄 {len(combined_materials)} 份名師講義與個人讀書筆記】" if combined_materials else ""
+            badge_amend = " ｜ 🆕修法" if art.get("is_latest_amendment") else ""
+            badge_prec = f" ｜ 🏛️判解({len(precedents)})" if precedents else ""
+            badge_orders_rulings = f" ｜ 📋法規({len(key_regulations)})·函釋({len(admin_rulings)})" if (key_regulations or admin_rulings) else ""
+            badge_legis = f" ｜ 🕰️沿革({total_amends_display})" if total_amends_display > 0 else ""
+            badge_materials = f" ｜ 📘筆記({len(combined_materials)})" if combined_materials else ""
 
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
             with st.expander(exp_label, expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
@@ -5153,85 +5489,32 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.markdown(f"🏛️ **官方立法理由：** {art.get('amendment_reason')}")
                     if art.get("exam_points"):
                         st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
-                st.markdown(f"> **📜 條文全文**：\n> {content}")
-
-                with st.expander("🏛️ 【顯示/隱藏歷史條文及立法理由】", expanded=False):
-                    st.markdown("#### 📜 現行有效條文：")
-                    st.info(content)
-
-                    intent = legis_data.get("legislative_intent", "")
-                    if intent:
-                        st.success(f"**🎯 原始立法意旨與核心規範目的：**\n\n{intent}")
-                    summary_reasons = legis_data.get("summary_reasons", "")
-                    if summary_reasons:
-                        st.info(f"**💡 歷次修法總綱與法制演革重心：**\n\n{summary_reasons}")
-
-                    st.markdown("#### 🕰️ 歷次立法院三讀修正理由及新舊對照表：")
-                    if curated_amends:
-                        for am in curated_amends:
-                            st.markdown(f"**📅 【{am.get('date')}】{am.get('gazette', '')} ｜ {am.get('key_changes', '條文修正')}**")
-                            p_txt = am.get("previous_text", "")
-                            c_txt = am.get("current_text", "")
-                            if p_txt or c_txt:
-                                c_o, c_n = st.columns(2)
-                                with c_o:
-                                    st.caption(f"**修正前歷史條文：**\n{p_txt or '（初次制定或舊無此條）'}")
-                                with c_n:
-                                    st.caption(f"**修正後條文：**\n{c_txt or content}")
-                            st.markdown(f"**立法院官方修正理由：**\n{am.get('reason', '')}")
-                            if am.get("exam_impact"):
-                                st.success(f"✍️ **司律國考新舊法適用要點：**\n{am.get('exam_impact')}")
-                            st.markdown("---")
-                    elif timeline_hits:
-                        for h in timeline_hits:
-                            seq_t = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
-                            st.markdown(f"**🏷️ 【{seq_t}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
-                            st.caption(h['content'])
-                            if h.get('seq') == 1 or "制定" in h.get('action', ''):
-                                st.info("💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為私法核心法規準據！")
-                            st.markdown("---")
-                    else:
-                        st.caption("目前本地庫無此條文之歷次修正文字對照紀錄。")
-
-                    # AI 萃取立法理由按鈕（若本地無 curated 資料）
-                    leg_ai_key = f"ai_legis_{lname}_{ano}"
-                    if not curated_amends:
-                        if st.button("✨ 點此由 AI 智慧調閱立法院三讀修正理由、修法背景與新舊條文對照", key=f"btn_ai_legis_reason_{idx}"):
-                            with st.spinner(f"正在連線 Gemini 為【{lname} {ano}】萃取立法院官方修正理由與歷史條文演變..."):
-                                try:
-                                    synth = synthesize_article_legislative_details(lname, ano, content)
-                                    st.session_state[leg_ai_key] = synth
-                                    st.success("🎉 成功提煉並更新本條立法理由與新舊法對照表！已同步持久化保存。")
-                                    st.rerun()
-                                except Exception as e_syn:
-                                    st.error(f"立法理由提煉失敗: {e_syn}")
-
-                with st.container(border=True):
-                    st.markdown("##### 🏛️ 法源資訊關聯資料篩選 (LawsTable-Filter)")
-                    cat_all_key = f"laws_cat_all_{idx}"
-                    cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
-                    col_cats = st.columns(9)
-                    categories = ["司法解釋", "憲法法庭", "大法庭", "原判例", "精選裁判", "決議", "法律問題", "行政函釋", "法學論著"]
-                    for c_i, cat_name in enumerate(categories):
-                        with col_cats[c_i]:
-                            st.checkbox(cat_name, value=cat_all, key=f"laws_cat_{cat_name}_{idx}")
-                    d_c1, d_c2 = st.columns(2)
-                    with d_c1:
-                        st.text_input("📅 起始日期 (民國年/月/日)：", value=st.session_state.get(f"date_start_{idx}", "100年01月01日"), key=f"date_start_{idx}", placeholder="例：100年01月01日")
-                    with d_c2:
-                        st.text_input("📅 結束日期 (民國年/月/日)：", value=st.session_state.get(f"date_end_{idx}", "114年12月31日"), key=f"date_end_{idx}", placeholder="例：114年12月31日")
-
-                render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}")
 
                 tab_prec, tab_orders_rulings, tab_legis, tab_materials, tab_ai = st.tabs([
-                    f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
-                    f"📋 關聯法規命令、施行細則與主管機關行政函釋 ({len(key_regulations)} 部法規・{len(admin_rulings)} 筆函釋)",
-                    f"🕰️ 立法理由與歷史條文 ({total_amends_display} 次修法對照)",
-                    f"📘 關聯名師講義與個人手寫讀書筆記 ({len(combined_materials)} 份・線上閱讀 PDF)",
-                    "🤖 AI 深度釋析與作答模版"
+                    f"🏛️ 司法判解 ({len(precedents)})",
+                    f"📋 法規與函釋 ({len(key_regulations)}規·{len(admin_rulings)}函)",
+                    f"🕰️ 立法理由 ({total_amends_display}修)",
+                    f"📘 講義筆記 ({len(combined_materials)})",
+                    "🤖 AI 釋析"
                 ])
 
                 with tab_prec:
+                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}_prec")
+
+                    with st.expander("🔍 判解條件篩選 (9大裁判類別・日期區間)", expanded=False):
+                        cat_all_key = f"laws_cat_all_{idx}"
+                        cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
+                        col_cats = st.columns(9)
+                        categories = ["司法解釋", "憲法法庭", "大法庭", "原判例", "精選裁判", "決議", "法律問題", "行政函釋", "法學論著"]
+                        for c_i, cat_name in enumerate(categories):
+                            with col_cats[c_i]:
+                                st.checkbox(cat_name, value=cat_all, key=f"laws_cat_{cat_name}_{idx}")
+                        d_c1, d_c2 = st.columns(2)
+                        with d_c1:
+                            st.text_input("📅 起始日期：", value=st.session_state.get(f"date_start_{idx}", "100年01月01日"), key=f"date_start_{idx}", placeholder="例：100年01月01日")
+                        with d_c2:
+                            st.text_input("📅 結束日期：", value=st.session_state.get(f"date_end_{idx}", "114年12月31日"), key=f"date_end_{idx}", placeholder="例：114年12月31日")
                     if precedents:
                         for p_idx, p in enumerate(precedents):
                             st.markdown(f"**【{p.get('level')}】`{p.get('case_id')}`** ｜ **{p.get('title')}**")
@@ -5260,11 +5543,12 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或由 AI 進行歷審精選裁判與學說補強。")
 
                 with tab_orders_rulings:
-                    st.markdown(f"#### 📋 【{lname} {ano}】關聯法規命令、施行細則與主管機關行政函釋")
-                    st.caption("全面整合 **授權法規命令與細則全文點閱**、**主管機關行政指導與解釋令函**，以及**跨法典法律/命令快速直通聯結**！")
+                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown("#### 📋 法規命令與行政函釋")
+                    st.caption("授權法規命令/細則全文點閱、主管機關行政指導與令函解釋：")
 
                     # 第一區塊：關聯法規命令與施行細則
-                    st.markdown("##### 📘 一、授權法規命令、施行細則與相關關聯法規全文")
+                    st.markdown("##### 📘 一、授權法規命令與細則全文")
                     if key_regulations:
                         st.caption(f"已串接行政院及主管部會發布之法規命令與細則全文。點擊下方各命令卡片即可展開閱讀完整條文：")
                         for r_idx, reg in enumerate(key_regulations):
@@ -5347,7 +5631,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.info("此法規母法目前無直接對應之核心法規命令，或直接以母法本體為規範依據。")
 
                     # 任意快速直通調閱全國 2,053 部法律與 10,452 部行政命令 (任意調閱與連結其他法律)
-                    with st.expander(f"🔗 快速連結與直通調閱其他法律或行政命令全文 (支援全台 2,053 部法律與 10,452 部法規命令)", expanded=False):
+                    with st.expander("🔗 快速連結與直通調閱其他法律或行政命令全文", expanded=False):
                         st.caption("可在此直接搜尋並一鍵切換調閱任何相關法律（如：性侵害犯罪防治法、刑法、兒童及少年福利與權益保障法）或行政命令：")
                         col_rel1, col_rel2 = st.columns([3, 1])
                         with col_rel1:
@@ -5395,7 +5679,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                     st.markdown("---")
 
                     # 第二區塊：主管機關權威行政函釋庫
-                    st.markdown("##### 📜 二、主管機關權威行政函釋庫 (經濟部/智財局/金管會/法務部/衛福部/勞動部)")
+                    st.markdown("##### 📜 二、主管機關權威行政函釋庫")
                     st.caption("深度整合主管機關具拘束力之行政指導、函令解釋與實務爭點法律見解：")
 
                     if admin_rulings:
@@ -5444,8 +5728,9 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                 st.success(f"✍️ **作答指引：** {c.get('exam_point_hint')}")
 
                 with tab_legis:
-                    st.markdown(f"#### 📜 【{lname} {ano}】立法意旨、歷次修法理由與歷史新舊條文對照庫")
-                    st.caption("完整串接立法院法律提案公報、法律覆議與總統修正公布令，呈現原始立法意旨、歷次修正說明與條文新舊文字變革！")
+                    st.markdown(f"> **📜 現行條文**：\n> {content}")
+                    st.markdown("#### 📜 立法理由與修法沿革")
+                    st.caption("立法院公報與總統令三讀修正理由、立法意旨與新舊條文對照：")
 
                     intent = legis_data.get("legislative_intent", "")
                     summary_reasons = legis_data.get("summary_reasons", "")
@@ -5456,7 +5741,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.info(f"**💡 歷次修正總綱與規範演革重心：**\n\n{summary_reasons}")
 
                     if curated_amends:
-                        st.markdown(f"##### 🕰️ 歷次修法理由全文與新舊條文對照表 (收錄 {len(curated_amends)} 次重大修正)")
+                        st.markdown(f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)")
                         for a_idx, amend in enumerate(curated_amends):
                             with st.expander(f"📅 【{amend.get('date')}】{amend.get('gazette', '')} ｜ 🌟 {amend.get('key_changes', '條文修正')}", expanded=(a_idx == 0)):
                                 p_text = amend.get("previous_text", "")
@@ -5480,7 +5765,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
 
                     if timeline_hits:
                         is_single_enact = (len(timeline_hits) == 1 and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
-                        header_tag = "制定公布發布令（初次制定至今未曾修法，歷久彌新）" if is_single_enact else f"歷次修正發布令（全國法規資料庫官方紀錄共 {len(timeline_hits)} 次）"
+                        header_tag = "制定公布發布令（初次制定至今未曾修法）" if is_single_enact else f"歷次修正發布令（共 {len(timeline_hits)} 次）"
                         st.markdown(f"##### 🏛️ 本條於全法沿革中之{header_tag}")
                         with st.container(height=260):
                             for h in timeline_hits:
@@ -5493,15 +5778,16 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
 
                     # AI 智慧萃取/擴充按鈕
                     leg_ai_key = f"ai_legis_{lname}_{ano}"
-                    if st.button(f"✨ 啟動 AI 深度萃取立法理由與歷次新舊條文對照（立法院公報與法規資料庫）", key=f"btn_ai_legis_{idx}"):
-                        with st.spinner(f"正在連線 Gemini 3.x Flash 為【{lname} {ano}】萃取立法院三讀修正理由、修法背景與新舊法對照表..."):
-                            try:
-                                synthesized = synthesize_article_legislative_details(lname, ano, content)
-                                st.session_state[leg_ai_key] = synthesized
-                                st.success("🎉 成功提煉並更新本條立法理由與新舊法對照表！已同步持久化保存。")
-                                st.rerun()
-                            except Exception as le_err:
-                                st.error(f"立法理由提煉失敗: {le_err}")
+                    if not curated_amends:
+                        if st.button(f"✨ 啟動 AI 深度萃取立法理由與歷次新舊條文對照", key=f"btn_ai_legis_{idx}"):
+                            with st.spinner(f"正在連線 Gemini 為【{lname} {ano}】萃取立法院三讀修正理由、修法背景與新舊法對照表..."):
+                                try:
+                                    synthesized = synthesize_article_legislative_details(lname, ano, content)
+                                    st.session_state[leg_ai_key] = synthesized
+                                    st.success("🎉 成功提煉並更新本條立法理由與新舊法對照表！已同步持久化保存。")
+                                    st.rerun()
+                                except Exception as le_err:
+                                    st.error(f"立法理由提煉失敗: {le_err}")
 
                     if leg_ai_key in st.session_state:
                         ai_res = st.session_state[leg_ai_key]
@@ -5517,7 +5803,8 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                     st.success(f"**新舊法適用要點：**\n{a.get('exam_impact')}")
 
                 with tab_materials:
-                    st.markdown(f"#### 📘 關聯名師授課講義與個人手寫讀書筆記")
+                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown("#### 📘 講義與讀書筆記")
                     if not is_developer():
                         st.warning("🔒 【個人法學筆記與授課教材已受著作權保護】本條文關聯之個人手寫讀書筆記、課輔講義與考點體系僅供開發者本人授權調閱。未獲授權僅能調閱公開法條與司法裁判；若欲解鎖筆記全文與在線閱讀器，請於左側邊欄輸入開發者金鑰解鎖。")
                     else:
@@ -5539,7 +5826,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                     # 內嵌 PDF 線上閱讀與下載
                                     if m_path and Path(m_path).exists() and m_fn.lower().endswith(".pdf"):
                                         viewer_exp_key = f"exp_pdf_{idx}_{m_idx}"
-                                        with st.expander(f"👁️ 點此直接在線展開閱讀 PDF 講義 / 手寫筆記全文（無需跳出）", expanded=False):
+                                        with st.expander("👁️ 在線閱讀 PDF 講義 / 筆記全文", expanded=False):
                                             try:
                                                 with open(m_path, "rb") as f_pdf:
                                                     pdf_bytes = f_pdf.read()
@@ -5567,6 +5854,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                             st.info(f"💡 目前您的資料庫中暫無直接對應【{lname} {ano}】之專屬課輔講義或個人讀書筆記。您可前往【模式 9：手寫筆記蒸餾與 SFT 模型微調大庫】上傳並自動歸納您的專屬讀書筆記！")
 
                 with tab_ai:
+                    st.markdown(f"> **📜 條文全文**：\n> {content}")
                     ai_cache_key = f"ai_anno_{lname}_{ano}"
                     if st.button(f"✨ 啟動 AI 深度釋析（立法理由、主管機關函釋、通說有力說）", key=f"btn_run_anno_{idx}"):
                         with st.spinner(f"正在由 Gemini Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
