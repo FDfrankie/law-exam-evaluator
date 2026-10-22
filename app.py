@@ -663,6 +663,235 @@ def get_subject_topics_taxonomy(subject_name: str) -> dict:
     }
 
 
+def is_developer() -> bool:
+    """判定當前使用者是否已通過開發者權限解鎖"""
+    return st.session_state.get("is_developer_authenticated", False) is True
+
+
+def get_semantic_file_name(filename: str, subject: str = "", topic_hint: str = "") -> str:
+    """依內容與考科進行智慧語義化命名（標註具體章節與核心法學爭點）"""
+    base = Path(filename).stem
+    ext = Path(filename).suffix
+    
+    semantic_map = {
+        "民總": "【民法總則・意思表示與權利能力】",
+        "債總": "【債法總論・給付不能與損害賠償】",
+        "債各": "【債法各論・買賣瑕疵與侵權責任】",
+        "物權": "【物權法編・善意受讓與抵押權實行】",
+        "身分法": "【身分親屬繼承・特留分與婚後財產】",
+        "民法": "【民事實體法・核心爭點】",
+        "刑總": "【刑法總則・因果關係與阻卻違法】",
+        "刑分": "【刑法分則・背信偽造與生命財產罪】",
+        "刑法": "【刑事實體法・核心爭點】",
+        "憲法": "【憲法論述・基本權審查與權力分立】",
+        "行政法": "【行政法要點・行政處分定性與爭訟】",
+        "公法": "【公法核心爭點・憲法與行政法】",
+        "公司法": "【公司法制・董監義務與股東會決議】",
+        "證券交易法": "【證券交易・內線交易與財報不實】",
+        "保險法": "【保險契約・據實說明與保險代位】",
+        "商事法": "【商事法全輯・核心實務】",
+        "民訴": "【民事訴訟・既判力客觀範圍與爭點效】",
+        "刑訴": "【刑事訴訟・強制處分與證據法則】",
+        "智財": "【智慧財產・專利商標著作權】"
+    }
+    prefix = ""
+    for k, v in semantic_map.items():
+        if k in subject or k in filename:
+            prefix = v + " "
+            break
+    if not prefix and subject:
+        prefix = f"【{subject}核心考點】 "
+    if topic_hint:
+        return f"{prefix}{topic_hint} ｜ {base}{ext}"
+    return f"{prefix}{base}{ext}"
+
+
+def extract_legal_entities(text: str) -> dict:
+    """正則表達式識別文字中的法規條文與判決字號"""
+    if not text:
+        return {"laws": [], "cases": []}
+    
+    # 識別法規條文 (如：民法第184條、公司法第185條之1、行政訴訟法第4條、銀行法第125條)
+    law_pattern = re.compile(
+        r'([\u4e00-\u9fa5]{2,12}?(?:法|條例|通則|準則|規則|細則|辦法))第\s*(\d+(?:之\d+)?)\s*條'
+    )
+    
+    # 識別裁判字號 (如：108台上大1719、112台上315、110年度上字第15號、40台上86例、111憲判16、院字2949)
+    case_pattern = re.compile(
+        r'((?:最高法院|最高行政法院|臺灣高等法院|臺北高等行政法院|臺中高等行政法院|高雄高等行政法院|智慧財產及商業法院|憲法法庭)?\s*(?:\d{2,3}\s*年(?:度)?\s*[\u4e00-\u9fa5A-Za-z\(\)（）]+字第\s*\d+\s*號|\d{2,3}\s*(?:台上|台上大|台抗|台聲|上易|重訴|訴|簡上|大|憲判)\s*(?:大)?\d+(?:裁|決|例)?|院字第?\d+號?|院解字第?\d+號?|\d{2,3}憲判\d+))'
+    )
+    
+    laws = []
+    seen_laws = set()
+    for m in law_pattern.finditer(text):
+        law_name = m.group(1).strip()
+        art_no = m.group(2).strip()
+        law_str = f"{law_name}第{art_no}條"
+        if law_str not in seen_laws:
+            seen_laws.add(law_str)
+            laws.append({"full": law_str, "law_name": law_name, "article_no": art_no})
+            
+    cases = []
+    seen_cases = set()
+    for m in case_pattern.finditer(text):
+        case_id = m.group(1).strip()
+        if len(case_id) >= 4 and case_id not in seen_cases:
+            seen_cases.add(case_id)
+            cases.append(case_id)
+            
+    return {"laws": laws, "cases": cases}
+
+
+def render_clickable_legal_entities(text: str, key_prefix: str = "le"):
+    """在文字下方渲染一鍵跳轉的實體關聯膠囊按鈕"""
+    entities = extract_legal_entities(text)
+    laws = entities["laws"][:6]
+    cases = entities["cases"][:6]
+    
+    if not laws and not cases:
+        return
+        
+    st.markdown("##### 🔗 一鍵跳轉法學實體網絡 (點擊即查)：")
+    
+    if laws:
+        cols_l = st.columns(min(len(laws), 4))
+        for idx, item in enumerate(laws):
+            col_target = cols_l[idx % len(cols_l)]
+            with col_target:
+                if st.button(f"📜 {item['full']}", key=f"{key_prefix}_law_{idx}", use_container_width=True):
+                    st.session_state["six_codes_law"] = item["law_name"]
+                    st.session_state["six_codes_search_kw"] = item["article_no"]
+                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
+                    for br_name, br_laws in SIX_CODES_TAXONOMY.items():
+                        if item["law_name"] in br_laws:
+                            st.session_state["six_codes_branch"] = br_name
+                            break
+                    st.session_state["app_mode"] = MODE_SIX_CODES
+                    st.session_state["nav_sidebar_radio_mode"] = MODE_SIX_CODES
+                    st.rerun()
+
+    if cases:
+        cols_c = st.columns(min(len(cases), 4))
+        for idx, c_id in enumerate(cases):
+            col_target = cols_c[idx % len(cols_c)]
+            with col_target:
+                if st.button(f"⚖️ {c_id}", key=f"{key_prefix}_case_{idx}", use_container_width=True):
+                    st.session_state["sum_citation_search"] = c_id
+                    st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                    st.session_state["sum_input_title"] = c_id
+                    st.session_state["sum_input_text"] = ""
+                    st.session_state.pop("last_ai_sum_res", None)
+                    st.session_state["app_mode"] = MODE_SUMMARIZER
+                    st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
+                    st.rerun()
+
+
+def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
+    """
+    仿法源資訊規格呈現裁判詳情精美排版卡片
+    1. 標題資訊：裁判字號（附「精選裁判 / 本案已確定」徽章）、案由摘要、裁判日期
+    2. 上方工具列：提供【書類引用】、【論著引用】、【無格式複製】、【友善列印】按鈕
+    3. 關聯數據橫條：顯示【歷審裁判(數)】、【法條(數)】、【司法判解(數)】、【行政函釋(數)】、【被引用數】之錨點導航
+    4. 裁判內文區：標示【法院心證起始行標籤】、【要旨區塊】及【判決理由全文】
+    """
+    case_id = case_info.get("case_id") or case_info.get("title") or "裁判書"
+    court = case_info.get("court") or case_info.get("court_or_agency") or "最高法院"
+    case_date = case_info.get("date") or "民國 112 年 05 月 18 日"
+    cause = case_info.get("title") or case_info.get("cause") or case_info.get("subject") or "法律爭點研析"
+    holding = case_info.get("holding") or case_info.get("holding_preview") or case_info.get("holding_snippet") or ""
+    full_text = case_info.get("full_text") or case_info.get("text") or holding or "無裁判理由全文"
+    
+    laws = case_info.get("laws_cited", [])
+    if isinstance(laws, str):
+        laws_list = [x.strip() for x in laws.split("、") if x.strip()]
+    else:
+        laws_list = list(laws)
+        
+    hist = case_info.get("extracted_history_instances", []) or case_info.get("history_instances", [])
+    if isinstance(hist, str):
+        hist_list = [x.strip() for x in hist.split("、") if x.strip()]
+    else:
+        hist_list = list(hist)
+
+    # 1. 標題資訊
+    st.markdown(f"""
+    <div style="background: #f8fafc; border-left: 5px solid #1d3557; padding: 14px 18px; border-radius: 6px; margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">⚖️ {case_id}</h3>
+            <span style="background-color: #dbeafe; color: #1e40af; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">🏷️ 精選裁判</span>
+            <span style="background-color: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">✅ 本案已確定</span>
+        </div>
+        <div style="margin-top: 8px; color: #475569; font-size: 0.95rem;">
+            <b>📌 案由摘要：</b> {cause} &nbsp;｜&nbsp; <b>📅 裁判日期：</b> {case_date} &nbsp;｜&nbsp; <b>🏛️ 審理法院：</b> {court}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 2. 上方工具列
+    tool_col1, tool_col2, tool_col3, tool_col4 = st.columns(4)
+    with tool_col1:
+        if st.button("📋 【書類引用】", key=f"{key_prefix}_cite_doc", use_container_width=True):
+            st.session_state[f"{key_prefix}_cite_mode"] = "doc"
+    with tool_col2:
+        if st.button("📚 【論著引用】", key=f"{key_prefix}_cite_paper", use_container_width=True):
+            st.session_state[f"{key_prefix}_cite_mode"] = "paper"
+    with tool_col3:
+        if st.button("📄 【無格式複製】", key=f"{key_prefix}_cite_raw", use_container_width=True):
+            st.session_state[f"{key_prefix}_cite_mode"] = "raw"
+    with tool_col4:
+        if st.button("🖨️ 【友善列印】", key=f"{key_prefix}_print_friendly", use_container_width=True):
+            st.session_state[f"{key_prefix}_cite_mode"] = "print"
+            
+    active_cite = st.session_state.get(f"{key_prefix}_cite_mode")
+    if active_cite == "doc":
+        st.code(f"{court} {case_id}", language="text")
+        st.caption("已生成標準書類訴狀引用格式，點擊右上角複製圖標即可複製。")
+    elif active_cite == "paper":
+        st.code(f"{court} {case_id}，{case_date}。", language="text")
+        st.caption("已生成標準學術論著註腳引用格式，點擊右上角複製圖標即可複製。")
+    elif active_cite == "raw":
+        clean_raw = f"{case_id}\n裁判日期：{case_date}\n案由：{cause}\n\n要旨：\n{holding}\n\n裁判全文：\n{full_text}"
+        st.text_area("無格式純文字（直接全選複製）：", value=clean_raw, height=120, key=f"{key_prefix}_raw_copy_area")
+    elif active_cite == "print":
+        st.info("💡 友善列印模式：請使用瀏覽器快捷鍵 Ctrl+P / Cmd+P 即可進行乾淨雙面列印。")
+
+    # 3. 關聯數據橫條
+    hist_cnt = len(hist_list)
+    laws_cnt = len(laws_list)
+    precedents_cnt = case_info.get("precedents_count", 3)
+    rulings_cnt = case_info.get("rulings_count", 2)
+    cited_cnt = case_info.get("cited_count", 18)
+    
+    p_c1, p_c2, p_c3, p_c4, p_c5 = st.columns(5)
+    p_c1.metric("🌿 歷審裁判", f"{hist_cnt} 審", "前審與更審路徑")
+    p_c2.metric("📜 關聯法條", f"{laws_cnt} 條", "實體法與訴訟法")
+    p_c3.metric("🏛️ 司法判解", f"{precedents_cnt} 筆", "大法庭與要旨")
+    p_c4.metric("🏢 行政函釋", f"{rulings_cnt} 則", "部會解釋令")
+    p_c5.metric("📌 被引用數", f"{cited_cnt} 次", "權威判決影響力")
+    
+    # 4. 裁判內文區
+    st.markdown("---")
+    
+    # 法院心證起始行定位
+    opinion_marker = "第 18 行（得心證之理由 / 本院之判斷）"
+    lines = full_text.split("\n")
+    for l_idx, line in enumerate(lines, 1):
+        if any(kw in line for kw in ["得心證之理由", "本院之判斷", "本院之判斷如下", "本院判斷如下", "理由如下", "本院判斷"]):
+            opinion_marker = f"第 {l_idx} 行（{line.strip()[:20]}）"
+            break
+            
+    st.markdown(f"**🎯 【法院心證起始行標籤】：** :blue-background[`{opinion_marker}`]")
+    
+    if holding:
+        st.markdown("#### 💡 【裁判核心要旨 (Holding / Key Point)】")
+        st.info(holding)
+        
+    with st.expander("📜 【判決理由與主文全文 (Full Judgment Text)】", expanded=True):
+        st.text_area("裁判全文內容：", value=full_text, height=360, key=f"{key_prefix}_full_text_area", disabled=True)
+        
+    render_clickable_legal_entities(holding + "\n" + full_text[:1000], key_prefix=f"{key_prefix}_card_ents")
+
+
 # ==============================================================================
 # 系統導航模式常數（徹底避免索引位移錯位）
 # ==============================================================================
@@ -773,6 +1002,18 @@ with st.sidebar:
         st.session_state["nav_sidebar_radio_mode"] = MODE_HOME
         st.session_state["home_default_tab_privacy"] = True
         st.rerun()
+
+    with st.expander("🔒 開發者專區 (Developer Access)", expanded=False):
+        dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
+        st.caption("提示：boshiamy name")
+        if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
+            st.session_state["is_developer_authenticated"] = True
+            st.success("🟢 開發者權限已解鎖：開放全科筆記、講義與真題庫檢視與下載")
+        else:
+            if dev_pwd:
+                st.error("金鑰不正確")
+            if "is_developer_authenticated" not in st.session_state:
+                st.session_state["is_developer_authenticated"] = False
 
 # ----------------- 模式 0: 首頁與系統導覽 (含隱私權政策與法律聲明) -----------------
 if app_mode == MODE_HOME:
@@ -1553,12 +1794,14 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                 else:
                     q_count = int(q_count_option.split(" ")[0])
 
+            q_difficulty = st.slider("🎯 題目難度設定：", min_value=1, max_value=10, value=10, help="10分滿分即為考選部司律一試全真難度；新手練習可調至1~5分", key="stage1_difficulty_slider")
+
             if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
                 target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
 
                 progress_bar = st.progress(0)
                 status_text = st.empty()
-                status_text.text(f"正在以司律一試命題規格批次生成 {q_count} 題，每批 5 題穩定出題中...")
+                status_text.text(f"正在以司律一試命題規格（難度 {q_difficulty}/10）批次生成 {q_count} 題，每批 5 題穩定出題中...")
 
                 def update_progress(curr, tot):
                     progress_bar.progress(min(1.0, curr / tot))
@@ -1572,7 +1815,8 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                         count=q_count,
                         question_mode=q_mode,
                         notes_content=final_notes if final_notes else None,
-                        progress_callback=update_progress
+                        progress_callback=update_progress,
+                        difficulty=q_difficulty
                     )
                     progress_bar.progress(1.0)
                     
@@ -2182,7 +2426,10 @@ elif app_mode == MODE_BANK or "歷年真題庫" in app_mode:
                     fprev = cw.get("summary_preview", "")
                     frel = cw.get("relative_path", "")
 
-                    with st.expander(f"📖 【{fsub}】{fname} ｜ (收錄 {fchars:,} 字)"):
+                    disp_title = get_semantic_file_name(fname, subject=fsub) if is_developer() else f"【{fsub}】{fname}"
+                    with st.expander(f"📖 {disp_title} ｜ (收錄 {fchars:,} 字)"):
+                        if not is_developer():
+                            st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖完整檔案下載。")
                         st.markdown(f"**考科領域**：{fsub} ｜ **相對路徑**：`{frel}` ｜ **字元數**：{fchars:,}")
                         st.divider()
                         st.markdown("#### 講義核心重點與爭點摘要：")
@@ -2475,6 +2722,7 @@ elif app_mode == MODE_ANS or "高分權威擬答" in app_mode:
                     ans = gen.generate_model_answer(question=target_q, subject=m4_subject)
                     st.markdown("### 🏆 示範擬答全文 (IRAC)：")
                     st.markdown(ans)
+                    render_clickable_legal_entities(ans, key_prefix="m4_ans_ents")
                     st.divider()
                     if st.button("📝 將此題與示範擬答帶入【試卷評分】批改 (自動帶入題目與評分標準)"):
                         st.session_state["question_text_content"] = target_q
@@ -2705,6 +2953,9 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                             st.caption(f"📚 **學說實務對比：** {sch}")
                         if hint:
                             st.success(f"✍️ **國考作答提示：** {hint}")
+
+                        with st.expander("🏛️ 【法源資訊規格】裁判排版詳情、引述工具列與關聯網絡", expanded=False):
+                            render_lawsource_judgment_card(r, key_prefix=f"m5_card_{idx}")
 
                         b_c1, b_c2, b_c3, b_c4, b_c5 = st.columns([1.5, 1.4, 1.4, 1.0, 1.0])
                         with b_c1:
@@ -4052,6 +4303,9 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
     if matched_doc and matched_doc.get("found"):
         st.success(f"🎉 **【資料庫權威收錄命中】**：成功比對本機裁判庫【{matched_doc['title']}】！已即時載入案由爭點、主文心證與歷審完整論理。")
 
+        with st.expander("🏛️ 【法源資訊規格】裁判排版詳情、引述工具列與關聯數據", expanded=True):
+            render_lawsource_judgment_card(matched_doc, key_prefix="sum_hit_doc")
+
         with st.container(border=True):
             m_c1, m_c2, m_c3 = st.columns([2.2, 1.8, 3])
             m_c1.markdown(f"**🏛️ 機關 / 審理法院**：  \n`{matched_doc.get('court_or_agency', '司法/行政機關')}`")
@@ -4272,6 +4526,7 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
 
         st.markdown(f"### 📑 【{active_title}】AI 專業級 核心要旨精鍊報告")
         st.markdown(sum_res.get("markdown_result", ""))
+        render_clickable_legal_entities(sum_res.get("markdown_result", ""), key_prefix="sum_res_ents")
 
         st.divider()
         st.subheader("🔗 摘要成果一鍵轉化為司律考卷戰力：")
@@ -4771,6 +5026,51 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
 
+                with st.expander("🏛️ 【顯示/隱藏歷史條文及立法理由】(#reason_title)", expanded=False):
+                    st.markdown("#### 📜 現行有效條文：")
+                    st.info(content)
+                    st.markdown("#### 🕰️ 歷次立法院三讀修正理由及新舊對照表：")
+                    if curated_amends:
+                        for am in curated_amends:
+                            st.markdown(f"**📅 【{am.get('date')}】{am.get('gazette', '')} ｜ {am.get('key_changes', '條文修正')}**")
+                            p_txt = am.get("previous_text", "")
+                            c_txt = am.get("current_text", "")
+                            if p_txt or c_txt:
+                                c_o, c_n = st.columns(2)
+                                with c_o:
+                                    st.caption(f"**修正前歷史條文：**\n{p_txt or '（初次制定或舊無此條）'}")
+                                with c_n:
+                                    st.caption(f"**修正後條文：**\n{c_txt or content}")
+                            st.markdown(f"**立法院官方修正理由：**\n{am.get('reason', '')}")
+                            if am.get("exam_impact"):
+                                st.success(f"✍️ **司律國考新舊法適用要點：**\n{am.get('exam_impact')}")
+                            st.markdown("---")
+                    elif timeline_hits:
+                        for h in timeline_hits:
+                            seq_t = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
+                            st.markdown(f"**🏷️ 【{seq_t}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
+                            st.caption(h['content'])
+                            st.markdown("---")
+                    else:
+                        st.caption("目前本地庫無此條文之歷次修正文字對照紀錄。")
+
+                with st.container(border=True):
+                    st.markdown("##### 🏛️ 法源資訊關聯資料篩選 (LawsTable-Filter)")
+                    cat_all_key = f"laws_cat_all_{idx}"
+                    cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
+                    col_cats = st.columns(9)
+                    categories = ["司法解釋", "憲法法庭", "大法庭", "原判例", "精選裁判", "決議", "法律問題", "行政函釋", "法學論著"]
+                    for c_i, cat_name in enumerate(categories):
+                        with col_cats[c_i]:
+                            st.checkbox(cat_name, value=cat_all, key=f"laws_cat_{cat_name}_{idx}")
+                    d_c1, d_c2 = st.columns(2)
+                    with d_c1:
+                        st.text_input("📅 起始日期 (民國年/月/日)：", value=st.session_state.get(f"date_start_{idx}", "100年01月01日"), key=f"date_start_{idx}", placeholder="例：100年01月01日")
+                    with d_c2:
+                        st.text_input("📅 結束日期 (民國年/月/日)：", value=st.session_state.get(f"date_end_{idx}", "114年12月31日"), key=f"date_end_{idx}", placeholder="例：114年12月31日")
+
+                render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}")
+
                 tab_prec, tab_orders_rulings, tab_legis, tab_materials, tab_ai = st.tabs([
                     f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
                     f"📋 關聯法規命令、施行細則與主管機關行政函釋 ({len(key_regulations)} 部法規・{len(admin_rulings)} 筆函釋)",
@@ -5076,31 +5376,37 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                 st.markdown(f"**📄 `{m_tag}` 《{m_fn}》** (`{m_size}` KB)")
                                 st.info(f"🎯 **關聯章節與考點標註**：{m_reason}")
 
-                                # 內嵌 PDF 線上閱讀與下載
-                                if m_path and Path(m_path).exists() and m_fn.lower().endswith(".pdf"):
-                                    viewer_exp_key = f"exp_pdf_{idx}_{m_idx}"
-                                    with st.expander(f"👁️ 點此直接在線展開閱讀 PDF 講義 / 手寫筆記全文（無需跳出）", expanded=False):
-                                        try:
-                                            with open(m_path, "rb") as f_pdf:
-                                                pdf_bytes = f_pdf.read()
-                                            b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                                            pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
-                                            st.markdown(pdf_display, unsafe_allow_html=True)
-                                            st.download_button(
-                                                label=f"💾 下載此份 PDF ({m_fn})",
-                                                data=pdf_bytes,
-                                                file_name=m_fn,
-                                                mime="application/pdf",
-                                                key=f"dl_pdf_{idx}_{m_idx}"
-                                            )
-                                        except Exception as pe:
-                                            st.warning(f"PDF 讀取提示: {pe}")
-                                            if Path(m_path).exists():
-                                                with open(m_path, "rb") as fp:
-                                                    st.download_button(f"💾 下載《{m_fn}》至本機閱讀", fp, file_name=m_fn, key=f"dl_fb_{idx}_{m_idx}")
-                                elif m_path and Path(m_path).exists():
-                                    with open(m_path, "rb") as fp:
-                                        st.download_button(f"💾 下載《{m_fn}》", fp, file_name=m_fn, key=f"dl_non_pdf_{idx}_{m_idx}")
+                                # 著作權保護檢核：未獲授權隱藏閱讀器與下載按鈕
+                                if not is_developer():
+                                    st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                                else:
+                                    semantic_disp_name = get_semantic_file_name(m_fn, subject=lname, topic_hint=m_reason)
+                                    st.caption(f"🏷️ **智慧語義題名**：`{semantic_disp_name}`")
+                                    # 內嵌 PDF 線上閱讀與下載
+                                    if m_path and Path(m_path).exists() and m_fn.lower().endswith(".pdf"):
+                                        viewer_exp_key = f"exp_pdf_{idx}_{m_idx}"
+                                        with st.expander(f"👁️ 點此直接在線展開閱讀 PDF 講義 / 手寫筆記全文（無需跳出）", expanded=False):
+                                            try:
+                                                with open(m_path, "rb") as f_pdf:
+                                                    pdf_bytes = f_pdf.read()
+                                                b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                                                pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+                                                st.markdown(pdf_display, unsafe_allow_html=True)
+                                                st.download_button(
+                                                    label=f"💾 下載此份 PDF ({m_fn})",
+                                                    data=pdf_bytes,
+                                                    file_name=m_fn,
+                                                    mime="application/pdf",
+                                                    key=f"dl_pdf_{idx}_{m_idx}"
+                                                )
+                                            except Exception as pe:
+                                                st.warning(f"PDF 讀取提示: {pe}")
+                                                if Path(m_path).exists():
+                                                    with open(m_path, "rb") as fp:
+                                                        st.download_button(f"💾 下載《{m_fn}》至本機閱讀", fp, file_name=m_fn, key=f"dl_fb_{idx}_{m_idx}")
+                                    elif m_path and Path(m_path).exists():
+                                        with open(m_path, "rb") as fp:
+                                            st.download_button(f"💾 下載《{m_fn}》", fp, file_name=m_fn, key=f"dl_non_pdf_{idx}_{m_idx}")
 
                                 st.markdown("---")
                     else:
@@ -5367,7 +5673,9 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
 
                     with st.expander(f"📄 【{c_n_sub}】《{c_n_title}》 ｜ 👤 {c_n_uploader} ｜ 📅 {c_n_time} ({c_n_size} KB)"):
                         st.caption(f"檔案路徑：`{c_note.get('relative_path')}`")
-                        if c_n_path and Path(c_n_path).exists():
+                        if not is_developer():
+                            st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                        elif c_n_path and Path(c_n_path).exists():
                             try:
                                 with open(c_n_path, "rb") as bf:
                                     st.download_button(
@@ -5445,7 +5753,9 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
                 if f"merged_pdf_{sel_subject}" in st.session_state:
                     m_info = st.session_state[f"merged_pdf_{sel_subject}"]
                     st.info(f"📄 總頁數：**{m_info['total_pages']} 頁** ｜ 檔案大小：**{m_info['file_size_mb']:.2f} MB**")
-                    if m_info["output_path"].exists():
+                    if not is_developer():
+                        st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                    elif m_info["output_path"].exists():
                         with open(m_info["output_path"], "rb") as f_pdf:
                             st.download_button(
                                 label=f"⬇️ 立即下載【{sel_subject}】全科整合手寫體系總筆記 PDF",
@@ -5486,13 +5796,16 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
                 if f"corpus_{sel_subject}" in st.session_state:
                     c_info = st.session_state[f"corpus_{sel_subject}"]
                     st.info(f"📝 總文字量：**{c_info['total_chars']:,} 字元** ｜ 收錄章節：**{c_info['total_notes']} 章**")
-                    st.download_button(
-                        label=f"⬇️ 立即下載【{sel_subject}】全科筆記文字總彙編 Markdown",
-                        data=c_info["full_text"].encode("utf-8"),
-                        file_name=f"{sel_subject}_全科筆記文字總彙編.md",
-                        mime="text/markdown",
-                        key="btn_dl_corpus_md"
-                    )
+                    if not is_developer():
+                        st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                    else:
+                        st.download_button(
+                            label=f"⬇️ 立即下載【{sel_subject}】全科筆記文字總彙編 Markdown",
+                            data=c_info["full_text"].encode("utf-8"),
+                            file_name=f"{sel_subject}_全科筆記文字總彙編.md",
+                            mime="text/markdown",
+                            key="btn_dl_corpus_md"
+                        )
                     with st.expander(f"🔍 檢視【{sel_subject}】全科文字彙總預覽 (前 2,000 字)", expanded=False):
                         st.markdown(c_info["full_text"][:2000] + "\n\n*(篇幅過長，已截斷預覽，完整全文請點擊上方按鈕下載)*")
         else:
