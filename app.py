@@ -5048,6 +5048,8 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
             curated_amends = legis_data.get("curated_amendments", [])
             timeline_hits = legis_data.get("timeline_hits", [])
             total_amends_display = len(curated_amends) if curated_amends else len(timeline_hits)
+            is_initial_enactment = (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
+            badge_legis_text = "1 次立法制定對照" if is_initial_enactment else f"{total_amends_display} 次修法對照"
 
             questions = anno.get("questions", [])
             handouts = anno.get("handouts", [])
@@ -5057,7 +5059,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
             badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
             badge_orders_rulings = f" ｜ 📋 【{len(key_regulations)} 部法規/細則 ＋ {len(admin_rulings)} 筆主管函釋】" if (key_regulations or admin_rulings) else ""
-            badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
+            badge_legis = f" ｜ 🕰️ 【{badge_legis_text}】" if total_amends_display > 0 else ""
             badge_materials = f" ｜ 📘 【收錄 {len(combined_materials)} 份名師講義與個人讀書筆記】" if combined_materials else ""
 
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
@@ -5073,6 +5075,14 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                 with st.expander("🏛️ 【顯示/隱藏歷史條文及立法理由】(#reason_title)", expanded=False):
                     st.markdown("#### 📜 現行有效條文：")
                     st.info(content)
+
+                    intent = legis_data.get("legislative_intent", "")
+                    if intent:
+                        st.success(f"**🎯 原始立法意旨與核心規範目的：**\n\n{intent}")
+                    summary_reasons = legis_data.get("summary_reasons", "")
+                    if summary_reasons:
+                        st.info(f"**💡 歷次修法總綱與法制演革重心：**\n\n{summary_reasons}")
+
                     st.markdown("#### 🕰️ 歷次立法院三讀修正理由及新舊對照表：")
                     if curated_amends:
                         for am in curated_amends:
@@ -5094,9 +5104,24 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                             seq_t = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
                             st.markdown(f"**🏷️ 【{seq_t}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
                             st.caption(h['content'])
+                            if h.get('seq') == 1 or "制定" in h.get('action', ''):
+                                st.info("💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為私法核心法規準據！")
                             st.markdown("---")
                     else:
                         st.caption("目前本地庫無此條文之歷次修正文字對照紀錄。")
+
+                    # AI 萃取立法理由按鈕（若本地無 curated 資料）
+                    leg_ai_key = f"ai_legis_{lname}_{ano}"
+                    if not curated_amends:
+                        if st.button("✨ 點此由 AI 智慧調閱立法院三讀修正理由、修法背景與新舊條文對照", key=f"btn_ai_legis_reason_{idx}"):
+                            with st.spinner(f"正在連線 Gemini 為【{lname} {ano}】萃取立法院官方修正理由與歷史條文演變..."):
+                                try:
+                                    synth = synthesize_article_legislative_details(lname, ano, content)
+                                    st.session_state[leg_ai_key] = synth
+                                    st.success("🎉 成功提煉並更新本條立法理由與新舊法對照表！已同步持久化保存。")
+                                    st.rerun()
+                                except Exception as e_syn:
+                                    st.error(f"立法理由提煉失敗: {e_syn}")
 
                 with st.container(border=True):
                     st.markdown("##### 🏛️ 法源資訊關聯資料篩選 (LawsTable-Filter)")
@@ -5371,12 +5396,16 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.info(f"💡 目前本地精選庫中暫無針對【{lname} {ano}】之預載深度立法理由。您可以查看下方官方公報沿革，或點擊下方按鈕由 AI 智慧萃取歷次修正理由與新舊條文對照！")
 
                     if timeline_hits:
-                        st.markdown(f"##### 🏛️ 本條於全法沿革中之歷次修正發布令（全國法規資料庫官方紀錄共 {len(timeline_hits)} 次）")
+                        is_single_enact = (len(timeline_hits) == 1 and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
+                        header_tag = "制定公布發布令（初次制定至今未曾修法，歷久彌新）" if is_single_enact else f"歷次修正發布令（全國法規資料庫官方紀錄共 {len(timeline_hits)} 次）"
+                        st.markdown(f"##### 🏛️ 本條於全法沿革中之{header_tag}")
                         with st.container(height=260):
                             for h in timeline_hits:
                                 seq_tag = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
                                 st.markdown(f"**🏷️ 【{seq_tag}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
                                 st.caption(h['content'])
+                                if is_single_enact:
+                                    st.info("💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為私法核心法規準據！")
                                 st.markdown("---")
 
                     # AI 智慧萃取/擴充按鈕
