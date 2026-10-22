@@ -198,7 +198,8 @@ class LawExamGenerator:
         count: int = 5,
         question_mode: str = "標準單選題",
         notes_content: Optional[str] = None,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        difficulty: int = 10
     ) -> Dict[str, Any]:
         """
         生成司律一試測驗題卷（支援批次生成以防 token 溢位）。
@@ -208,6 +209,7 @@ class LawExamGenerator:
         :param question_mode: "標準單選題" / "綜合案例實事實務題組題" / "全真綜合模考卷"
         :param notes_content: 考生筆記內容（可由手寫 OCR 或純文字傳入）
         :param progress_callback: 進度回報回調函數 callback(current, total)
+        :param difficulty: 題目難度設定 (1~10 分，10為全真司律一試難度)
         :return: 包含 questions 清單與答案速查表 answer_key 的字典
         """
         notes_instruction = ""
@@ -240,21 +242,30 @@ class LawExamGenerator:
             else:
                 mode_spec = "每題均為獨立實例案例單選題，全面考核具體事實之行為定性、效力與法理辨析。"
 
+            difficulty_spec = ""
+            if difficulty >= 8:
+                difficulty_spec = f"【題目難度設定：{difficulty}/10（考選部司律一試全真頂級難度）】：維持考選部司律一試高難度標竿，包含複雜長篇案例事實、多面法律關係、跨法條跨爭點、具實務最新判解爭鳴或大法庭裁定之高誘答性選項，嚴格檢驗考生深層法理涵攝與爭點洞察力。"
+            elif difficulty >= 6:
+                difficulty_spec = f"【題目難度設定：{difficulty}/10（中階進階難度）】：採中等篇幅案例事實，涵蓋核心法條構成要件與重要實務通說，注重核心概念之辨析與法理定性判斷。"
+            else:
+                difficulty_spec = f"【題目難度設定：{difficulty}/10（初階入門/新手練習觀念題）】：專為法學新手循序漸進建立信心設計。採用基礎單一法條、構成要件直觀判斷之情境題，題幹敘述精簡明確，選項直接測試基本法學概念，避免過度複雜之跨法條交錯陷阱。"
+
             prompt = f"""
 你是一位台灣「律師司法官高等考試一試」命題典試委員。
-請針對科目【{subject}】，主題【{topic}】，依據司律一試全真全規格，命題第 {start_num} 題至第 {end_num} 題（共 {this_batch_count} 題，四選一單選題）。
+請針對科目【{subject}】，主題【{topic}】，依據司律一試全真規格，命題第 {start_num} 題至第 {end_num} 題（共 {this_batch_count} 題，四選一單選題）。
 
 【命題最高準則（比照司法官律師考試標準）】：
-1. 【試題區去條號、去字號】：題目情境題幹一律「隱匿法條條號」與「法院裁判字號」，純以具體案例事實盲測考生真實法理涵攝與爭點洞察力！
-2. 【時間與時效精算規範（絕對零矛盾、零草稿流出）】：
+1. {difficulty_spec}
+2. 【試題區去條號、去字號】：題目情境題幹一律「隱匿法條條號」與「法院裁判字號」，純以具體案例事實盲測考生真實法理涵攝與爭點洞察力！
+3. 【時間與時效精算規範（絕對零矛盾、零草稿流出）】：
    - 凡涉及民法第125條消滅時效（15年）、第126條（5年）、第127條（2年）、民法第337條（時效完成前已適於抵銷）、票據時效、撤銷除斥期間、年齡等任何時間要素：
    - 命題前【必須精確驗算】：『起算民國年份 + 期間年數 = 屆滿民國年份』。題幹中設定的具體年份與月份，必須 100% 精確符合所欲呈現之法定效果（例如：起算日為民國94年5月1日，則至民國109年5月1日始屆滿15年；若在110年間主張抵銷，始符合『時效已完成』之事實！切勿寫成96年起算卻在110年稱時效已完成）。
    - 嚴禁在題目（question）或解析（explanation）中出現年份算錯、事後推翻自己的草稿字眼（例如「等等，仔細計算...調整案件事實...」）！題幹事實與解析推導必須從一開始就完全一致、定稿輸出！
-3. 【選項辨析深度與答案唯一自洽性】：
+4. 【選項辨析深度與答案唯一自洽性】：
    - 四個選項 (A, B, C, D) 必須針對核心爭議、關鍵字眼或實務通說與少數說之差別設定深層辨析陷阱，僅有一最正確答案。
    - "answer" 欄位之選項英文字母（A/B/C/D），必須與 "explanation" 解析中最終判定為【正確】（例如『故(C)正確』、『故(C)敘述精確』、『故本題選(C)』）的選項字母 100% 絕對完全一致！嚴禁 answer 寫 A 解析卻說 (C) 正確！
-4. 【題型要求】：{mode_spec}
-5. {notes_instruction}
+5. 【題型要求】：{mode_spec}
+6. {notes_instruction}
 
 請輸出嚴格的 JSON 陣列格式：
 [

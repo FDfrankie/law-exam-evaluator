@@ -124,7 +124,9 @@ class MillionJudgmentsSQLiteEngine:
                     holding_preview TEXT,
                     shard_key TEXT,
                     has_legal_issue INTEGER DEFAULT 1,
-                    history_instances TEXT
+                    history_instances TEXT,
+                    substantive_prior TEXT DEFAULT '',
+                    history_cases TEXT DEFAULT ''
                 )
             """)
             try:
@@ -133,6 +135,14 @@ class MillionJudgmentsSQLiteEngine:
                 pass
             try:
                 conn.execute("ALTER TABLE judgments_meta ADD COLUMN history_instances TEXT;")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE judgments_meta ADD COLUMN substantive_prior TEXT DEFAULT '';")
+            except Exception:
+                pass
+            try:
+                conn.execute("ALTER TABLE judgments_meta ADD COLUMN history_cases TEXT DEFAULT '';")
             except Exception:
                 pass
             conn.execute("CREATE INDEX IF NOT EXISTS idx_meta_ywn ON judgments_meta(jud_year, jud_word, jud_no);")
@@ -282,7 +292,19 @@ class MillionJudgmentsSQLiteEngine:
 
                 hist_json_str = json.dumps(hist_inst_val, ensure_ascii=False) if hist_inst_val else ""
 
-                meta_rows.append((cid, jid, court, level, c_type, subject, y, w, n, date_s, title, laws_str, issue, holding_prev, s_key, has_issue_val, hist_json_str))
+                sub_prior_val = rec.get("substantive_prior") or ""
+                if not sub_prior_val and rec.get("substantive_prior_instance"):
+                    spi = rec.get("substantive_prior_instance")
+                    sub_prior_val = spi.get("case_id", "") if isinstance(spi, dict) else str(spi)
+
+                hist_cases_str = rec.get("history_cases_str") or rec.get("history_cases") or ""
+                if not hist_cases_str and hist_inst_val:
+                    if isinstance(hist_inst_val, list):
+                        hist_cases_str = "、".join([x.get("case_id", "") if isinstance(x, dict) else str(x) for x in hist_inst_val if x])
+                    else:
+                        hist_cases_str = str(hist_inst_val)
+
+                meta_rows.append((cid, jid, court, level, c_type, subject, y, w, n, date_s, title, laws_str, issue, holding_prev, s_key, has_issue_val, hist_json_str, sub_prior_val, hist_cases_str))
                 fts_rows.append((cid, title, holding_prev, issue, laws_str))
                 if full_text:
                     compressed_blob = zlib.compress(full_text.encode("utf-8", errors="ignore"), level=6)
@@ -295,8 +317,8 @@ class MillionJudgmentsSQLiteEngine:
                 cur = conn.cursor()
                 cur.executemany("""
                     INSERT OR REPLACE INTO judgments_meta
-                    (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key, has_legal_issue, history_instances)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key, has_legal_issue, history_instances, substantive_prior, history_cases)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, meta_rows)
                 cur.executemany("DELETE FROM judgments_fts WHERE case_id = ?", [(r[0],) for r in fts_rows])
                 cur.executemany("""
@@ -443,6 +465,8 @@ class MillionJudgmentsSQLiteEngine:
                 if row:
                     full_txt = self.get_full_text(row["case_id"], row["shard_key"]) or row["holding_preview"]
                     laws_arr = [x.strip() for x in (row["laws_cited"] or "").split("、") if x.strip()]
+                    sub_prior = row["substantive_prior"] if "substantive_prior" in row.keys() else ""
+                    hist_cases = row["history_cases"] if "history_cases" in row.keys() else ""
                     return {
                         "found": True,
                         "matched": True,
@@ -454,7 +478,9 @@ class MillionJudgmentsSQLiteEngine:
                         "laws_cited": laws_arr,
                         "holding_snippet": row["holding_preview"],
                         "text": full_txt,
-                        "shard_key": row["shard_key"]
+                        "shard_key": row["shard_key"],
+                        "substantive_prior": sub_prior,
+                        "history_cases": hist_cases
                     }
         except Exception:
             pass
