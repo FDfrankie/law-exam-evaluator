@@ -277,3 +277,4 @@ if __name__ == "__main__":
     print(f"Python 模組快照比對: {res.get('python_snapshots_count', 0)} 份")
     print("=" * 60)
     print("✅ 整合與審計完成！已輸出 lost_and_found_manifest.json 與審計報告。")
+
