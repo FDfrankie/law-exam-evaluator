@@ -1027,10 +1027,46 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
     
     # 標準化條號鍵
     clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
-    key = f"{law_name}_第{clean_no}條"
     
     prec_index = meta.get("precedents_article_index", {})
-    matched_precedents = prec_index.get(key, [])
+    
+    # 建立多重候選鍵以相容枝條寫法（如 205-2 vs 205條之2）與法典全稱簡稱
+    law_names = [law_name]
+    if law_name == "刑法":
+        law_names.append("中華民國刑法")
+    elif law_name == "中華民國刑法":
+        law_names.append("刑法")
+    elif law_name == "憲法":
+        law_names.append("中華民國憲法")
+    elif law_name == "中華民國憲法":
+        law_names.append("憲法")
+
+    no_variants = [clean_no]
+    if "-" in clean_no:
+        no_variants.append(clean_no.replace("-", "之"))
+        no_variants.append(clean_no.replace("-", "條之"))
+    elif "之" in clean_no:
+        no_variants.append(clean_no.replace("條之", "-").replace("之", "-"))
+
+    cand_keys = []
+    for ln in law_names:
+        for nv in no_variants:
+            cand_keys.append(f"{ln}_第{nv}條")
+            cand_keys.append(f"{ln}_第{nv}")
+
+    raw_precedents = []
+    for ck in cand_keys:
+        if ck in prec_index:
+            raw_precedents.extend(prec_index[ck])
+
+    # 嚴格去重（徹底消除同一裁判在同條文中重複渲染問題）
+    seen_cids = set()
+    matched_precedents = []
+    for p in raw_precedents:
+        cid = p.get("case_id") or p.get("title")
+        if cid and cid not in seen_cids:
+            seen_cids.add(cid)
+            matched_precedents.append(p)
     
     # 相關命令與細則
     reg_map = meta.get("regulations_map", {})

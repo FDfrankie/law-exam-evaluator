@@ -905,18 +905,17 @@ def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
 # ==============================================================================
 # 系統導航模式常數（精簡俐落・完全消除側邊欄折行）
 # ==============================================================================
-MODE_HOME = "🏠 系統首頁導覽"
-MODE_EVAL = "📝 試卷評分批改"
-MODE_GEN = "🎯 司律模擬命題"
-MODE_BANK = "📚 歷年真題檢索"
-MODE_ANS = "📖 權威擬答生成"
-MODE_SEARCH = "🔍 統一法學檢索"
-MODE_QA = "💬 專屬法學問答"
-MODE_SUMMARIZER = "📑 裁判函釋精鍊"
-MODE_SIX_CODES = "⚖️ 智慧六法標註"
-MODE_SFT = "📥 筆記蒸餾微調"
-MODE_INGEST = "📦 裁判大庫擴充 (入庫/刪原檔)"
-MODE_DEV_MANAGER = "🛠️ 開發者檔案總管"
+MODE_HOME = "🏠 系統首頁"
+MODE_EVAL = "📝 試卷批改"
+MODE_GEN = "🎯 模擬命題"
+MODE_BANK = "📚 歷年真題"
+MODE_ANS = "📖 擬答生成"
+MODE_SEARCH = "🔍 法學檢索"
+MODE_QA = "💬 法律問答"
+MODE_SUMMARIZER = "📑 裁判精鍊"
+MODE_SIX_CODES = "⚖️ 智慧六法"
+MODE_SFT = "📥 筆記蒸餾"
+MODE_DEV_MANAGER = "🛠️ 檔案總管"
 
 mode_options = [
     MODE_HOME,
@@ -928,8 +927,7 @@ mode_options = [
     MODE_QA,
     MODE_SUMMARIZER,
     MODE_SIX_CODES,
-    MODE_SFT,
-    MODE_INGEST
+    MODE_SFT
 ]
 if is_developer():
     mode_options.append(MODE_DEV_MANAGER)
@@ -955,19 +953,17 @@ with st.sidebar:
             st.session_state["app_mode"] = MODE_BANK
         elif "擬答" in old_val:
             st.session_state["app_mode"] = MODE_ANS
-        elif any(k in old_val for k in ["統一法學", "檢索", "爭點"]):
+        elif any(k in old_val for k in ["法學檢索", "統一法學", "檢索", "爭點"]):
             st.session_state["app_mode"] = MODE_SEARCH
         elif any(k in old_val for k in ["問答", "法律問題", "法律諮詢"]):
             st.session_state["app_mode"] = MODE_QA
-        elif any(k in old_val for k in ["精鍊", "裁判", "摘要"]):
+        elif any(k in old_val for k in ["精鍊", "裁判", "摘要", "大庫", "入庫", "judgements", "judgments"]):
             st.session_state["app_mode"] = MODE_SUMMARIZER
         elif "六法" in old_val:
             st.session_state["app_mode"] = MODE_SIX_CODES
-        elif any(k in old_val for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
-            st.session_state["app_mode"] = MODE_INGEST
         elif any(k in old_val for k in ["筆記", "蒸餾", "微調", "SFT"]):
             st.session_state["app_mode"] = MODE_SFT
-        elif any(k in old_val for k in ["檔案總管", "檔案庫", "重命名"]):
+        elif any(k in old_val for k in ["檔案總管", "檔案庫", "總管", "重命名"]):
             st.session_state["app_mode"] = MODE_DEV_MANAGER
         else:
             st.session_state["app_mode"] = MODE_HOME
@@ -997,7 +993,7 @@ with st.sidebar:
     st.session_state["nav_sidebar_radio_mode"] = cur_mode
 
     app_mode = st.radio(
-        "選擇功能模式：",
+        "功能目錄：",
         mode_options,
         index=cur_idx,
         key="main_app_nav_radio"
@@ -1006,14 +1002,14 @@ with st.sidebar:
     st.session_state["_last_rendered_mode"] = app_mode
     api_key = get_gemini_api_key()
     if not api_key:
-        st.warning("⚠️ 尚未偵測到 API Key！請在 Streamlit Cloud 的 Secrets 設定 `GEMINI_API_KEY`，或在下方直接輸入：")
-        user_key = st.text_input("輸入 Gemini API Key：", type="password")
+        st.warning("⚠️ 請輸入 Gemini API Key")
+        user_key = st.text_input("API Key：", type="password")
         if user_key.strip():
             import os
             os.environ["GEMINI_API_KEY"] = user_key.strip()
             st.success("API Key 已套用！")
     else:
-        st.caption("🟢 AI 核心引擎已就緒")
+        st.caption("🟢 AI 核心引擎已連線")
     st.divider()
     if st.button("🔒 隱私權與法律聲明", use_container_width=True, key="btn_sidebar_privacy_home"):
         st.session_state["app_mode"] = MODE_HOME
@@ -1021,37 +1017,37 @@ with st.sidebar:
         st.session_state["home_default_tab_privacy"] = True
         st.rerun()
 
-    with st.expander("🔒 開發者專區 (Developer Access)", expanded=False):
-        dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd", placeholder="請輸入金鑰以解鎖開發者專用權限")
+    with st.expander("🔒 開發者專區", expanded=False):
+        dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
         st.caption("提示：boshiamy name")
         
         # 嚴格按當前獨立 Session 比對
         if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
             st.session_state["is_developer_authenticated"] = True
-            st.success("🟢 開發者權限已解鎖（僅限當前連線 Session）")
-            if st.button("🛠️ 開啟檔案庫總管", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
+            st.success("🟢 已驗證開發者身分")
+            if st.button("🛠️ 開啟檔案總管", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
                 st.session_state["app_mode"] = MODE_DEV_MANAGER
                 st.session_state["nav_sidebar_radio_mode"] = MODE_DEV_MANAGER
                 st.rerun()
-            if st.button("🔄 整合 DriveFS 修復庫", key="btn_sync_laf", use_container_width=True):
-                with st.spinner("正在掃描 Google DriveFS lost_and_found 庫..."):
+            if st.button("🔄 整合 DriveFS", key="btn_sync_laf", use_container_width=True):
+                with st.spinner("正在掃描 Google DriveFS..."):
                     try:
                         from ingest_lost_and_found import run_lost_and_found_ingest
                         laf_report = run_lost_and_found_ingest()
                         load_all_drive_notes.clear()
-                        st.success(f"✅ DriveFS 整合完成！共掃描 {laf_report.get('total_files_scanned', 0)} 份檔案，整合 {laf_report.get('pdf_notes_unique_count', 0)} 份專案法學教材與 {laf_report.get('python_snapshots_count', 0)} 份程式碼快照。")
+                        st.success(f"✅ 整合完成！共掃描 {laf_report.get('total_files_scanned', 0)} 份檔案，整合 {laf_report.get('pdf_notes_unique_count', 0)} 份專案法學教材。")
                     except Exception as le:
                         st.error(f"DriveFS 整合失敗: {le}")
-            if st.button("🌐 雲端全量實體下載", key="btn_sync_net_all", use_container_width=True):
-                with st.spinner("正在向 Google 雲端發送全量實體檔案下載指令..."):
+            if st.button("🌐 雲端實體下載", key="btn_sync_net_all", use_container_width=True):
+                with st.spinner("正在發送雲端下載指令..."):
                     try:
                         from sync_gdrive_from_net import run_sync
                         run_sync()
                         load_all_drive_notes.clear()
-                        st.success("✅ 已成功向 Google 雲端發送全量實體下載指令！請稍候檔案於背景串流下載至本機。")
+                        st.success("✅ 已成功向雲端發送下載指令，背景處理中。")
                     except Exception as se:
                         st.error(f"同步失敗: {se}")
-            if st.button("🚪 鎖定並登出", key="btn_logout_developer", use_container_width=True):
+            if st.button("🚪 登出鎖定", key="btn_logout_developer", use_container_width=True):
                 st.session_state["is_developer_authenticated"] = False
                 st.session_state["inp_developer_pwd"] = ""
                 st.rerun()
@@ -1059,7 +1055,7 @@ with st.sidebar:
             st.session_state["is_developer_authenticated"] = False
             if dev_pwd:
                 st.error("金鑰不正確，未獲授權")
-            st.caption("🔒 狀態：一般訪客模式（受著作權保護，未解鎖教材與筆記）")
+            st.caption("🔒 訪客模式（受著作權保護，未解鎖教材與筆記）")
 
 def render_judgements_ingest_view():
     st.header("📦 司法院裁判資料夾極速入庫與實質爭點分析 (data/judgements)")
@@ -1427,16 +1423,15 @@ if app_mode == MODE_HOME:
     with home_tab_nav:
         st.subheader("🧭 平台九大法學核心模組一覽（點擊即可直接進入）")
         nav_cards = [
-            (MODE_EVAL, "📝 試卷評分與手寫辨識", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行 OCR 辨識、爭點命中分析與四大維度閱卷評分。"),
-            (MODE_GEN, "🎯 司律模擬出題與全真題庫", "支援互動式考點列表增刪、AI 一試/二試客製命題，並整合行政法 300 題與全科既有選擇題庫隨機抽考。"),
-            (MODE_BANK, "📚 歷年真題庫與名師講義", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與百題實戰演練，一鍵帶入批改或生成擬答。"),
-            (MODE_ANS, "📖 高分權威擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、大前提、實務學說對比與事實涵攝 IRAC 示範擬答。"),
-            (MODE_SEARCH, "🔍 統一法學檢索樞紐", "支援專業布林語法檢索、原判例／最高院決議／高院座談會篩選、審級歷審脈絡鏈，以及基準判決相同/相反見解比對。"),
-            (MODE_QA, "💬 專屬法學全能問答樞紐", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
-            (MODE_SUMMARIZER, "📑 AI 判解與長篇函釋精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度 RAR/ZIP/JSON 開放資料包批次擴充入庫。"),
-            (MODE_SIX_CODES, "⚖️ 智慧六法與條文判解標註", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
-            (MODE_SFT, "📥 手寫筆記蒸餾與 SFT 大庫", "將個人讀書筆記透過多模態視覺辨識提煉為結構化 SFT 微調語料，支援全科 PDF 合併與 Colab/Kaggle 訓練。"),
-            (MODE_INGEST, "📦 裁判大庫擴充 (入庫/刪原檔)", "自動鎖定 data/judgements 資料夾，一鍵串流解壓、爭點智能分析，並在入庫後自動刪除原始 RAR 壓縮檔以釋放空間！")
+            (MODE_EVAL, "📝 試卷批改", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行 OCR 辨識、爭點命中分析與四大維度閱卷評分。"),
+            (MODE_GEN, "🎯 模擬命題", "支援互動式考點列表增刪、AI 一試/二試客製命題，並整合行政法 300 題與全科既有選擇題庫隨機抽考。"),
+            (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與百題實戰演練，一鍵帶入批改或生成擬答。"),
+            (MODE_ANS, "📖 擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、大前提、實務學說對比與事實涵攝 IRAC 示範擬答。"),
+            (MODE_SEARCH, "🔍 法學檢索", "支援專業布林語法檢索、原判例／最高院決議／高院座談會篩選、審級歷審脈絡鏈，以及基準判決相同/相反見解比對。"),
+            (MODE_QA, "💬 法律問答", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
+            (MODE_SUMMARIZER, "📑 裁判精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度開放資料包批次擴充入庫。"),
+            (MODE_SIX_CODES, "⚖️ 智慧六法", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
+            (MODE_SFT, "📥 筆記蒸餾", "將個人讀書筆記透過多模態視覺辨識提煉為結構化 SFT 微調語料，支援全科 PDF 合併與 Colab/Kaggle 訓練。")
         ]
         for row_i in range(0, len(nav_cards), 3):
             cols = st.columns(3)
@@ -1506,8 +1501,8 @@ if app_mode == MODE_HOME:
 2. 本平台雖提供「一鍵更新最新修法」與「司法院開放資料同步」工具，惟正式應試或撰寫訴訟書狀時，仍請以立法院法律系統、全國法規資料庫及司法院裁判書系統最新公告之官方文本為準。
         """)
 
-# ----------------- 模式 1: 試卷評分 -----------------
-elif app_mode == MODE_EVAL or app_mode == "📝 試卷評分與手寫辨識 (手寫/PDF/Word)":
+# ----------------- 模式 1: 試卷批改 -----------------
+elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "批改", "手寫"]):
     st.header("📝 司律申論試卷 - 多模態 AI 批改與診斷")
     st.write("上傳考生的手寫試卷照片、PDF 檔或 Word 電子稿，系統將自動進行 OCR 辨識、爭點比對與四大維度評分。")
 
@@ -1727,8 +1722,8 @@ elif app_mode == MODE_EVAL or app_mode == "📝 試卷評分與手寫辨識 (手
                 except Exception as e:
                     st.error(f"評閱失敗: {e}")
 
-# ----------------- 模式 2: 司律出題 -----------------
-elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試 & 手寫筆記客製命題)":
+# ----------------- 模式 2: 模擬命題 -----------------
+elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "出題"]):
     st.header("🎯 司律考試模擬命題系統（一試選擇 / 二試申論實例題）")
     st.write("可放入個人手寫/打字讀書筆記、指定考科與考點，由法學大模型為您量身打造司律一試選擇題或二試實例申論題。")
 
@@ -2658,8 +2653,8 @@ elif app_mode == MODE_GEN or app_mode == "🎯 司律模擬出題 (一試/二試
                     st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
                     st.rerun()
 
-# ----------------- 模式 3: 歷年真題庫檢索 -----------------
-elif app_mode == MODE_BANK or "歷年真題庫" in app_mode:
+# ----------------- 模式 3: 歷年真題 -----------------
+elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
     st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
 
     comm_q_all = load_community_questions()
@@ -2974,7 +2969,7 @@ elif app_mode == MODE_BANK or "歷年真題庫" in app_mode:
                                 st.markdown(m_ans)
 
 # ----------------- 模式 4: 擬答生成 -----------------
-elif app_mode == MODE_ANS or "高分權威擬答" in app_mode:
+elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答"]):
     st.header("📖 司律二試 - 高分示範擬答生成器")
     st.write("針對二試爭議題目，自動撰寫具備榜首水準的開標、大前提、實務學說對比與事實涵攝完美擬答。支援直接貼入文字，或拍照、上傳試卷 PDF/Word 自動轉錄！")
 
@@ -3124,8 +3119,8 @@ elif app_mode == MODE_ANS or "高分權威擬答" in app_mode:
                 except Exception as e:
                     st.error(f"出題失敗: {e}")
 
-# ----------------- 模式 5: 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典) -----------------
-elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索・多庫矩陣・爭點大典)" or "爭點查詢" in app_mode or "統一法學檢索" in app_mode or "爭點速查" in app_mode:
+# ----------------- 模式 5: 法學檢索 -----------------
+elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統一法學", "檢索", "爭點"]):
     st.header("🔍 統一法學檢索樞紐與 AI 判決深度研析中心")
     st.caption("全面整合【專業布林邏輯精準檢索】、【全方位法學統一檢索】、【AI 判決精華深度摘要】與【案例橫向比對 (Case Distinguishing)】，直通審級脈絡、權威法學庫與司法院 30 年判決，支援一站式爭點與判解秒級研析。")
 
@@ -4132,8 +4127,8 @@ elif app_mode == "🔍 統一法學檢索樞紐與 AI 判決研析 (布林檢索
                         st.rerun()
 
 
-# ----------------- 模式: 專屬法學全能問答樞紐 (萬能檢索・條文定位・爭點論辯・金額精算) -----------------
-elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_mode or "生活法律" in app_mode or "一般法律" in app_mode or "智慧問答" in app_mode or "全能法律" in app_mode or "專屬法學" in app_mode or "萬能檢索" in app_mode:
+# ----------------- 模式 6: 法律問答 -----------------
+elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題", "法律諮詢", "智慧問答", "生活法律", "一般法律", "全能法律", "專屬法學"]):
     st.markdown("""
         <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
             <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
@@ -4597,8 +4592,8 @@ elif app_mode == MODE_QA or "法律問題" in app_mode or "法律諮詢" in app_
                 except Exception as fe:
                     st.error(f"追問回答失敗: {fe}")
 
-# ----------------- 模式: 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦) -----------------
-elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in app_mode or "AI裁判" in app_mode or "起訴書" in app_mode:
+# ----------------- 模式 7: 裁判精鍊 -----------------
+elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁判", "摘要", "函釋", "起訴書"]):
     st.header("📑 一鍵 AI 裁判與長篇函釋核心要旨自動精鍊系統")
     st.caption("完美對標權威法學庫旗艦功能！支援「先輸入字號秒查」；若大庫未直接收錄，即時引導貼上裁判/函釋全文，由 AI 秒級深度萃取六大標準化法學精髓與司律上位 IRAC 論理！")
     st.divider()
@@ -4952,8 +4947,8 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
         render_judgements_ingest_view()
 
 
-# ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
-elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
+# ----------------- 模式 8: 智慧六法 -----------------
+elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條"]):
     st.header("⚖️ 智慧六法全書與條文爭點判解綜合標註系統")
     st.write("全面收錄全台 **2,053 部國家法律、法規命令與施行細則，共 62,342 條法定條文，及 600+ 則中央部會權威行政函釋**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則全文點閱**、**主管機關權威函釋**及**考生個人手寫讀書筆記**！")
 
@@ -5191,9 +5186,20 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         with d_c2:
                             st.text_input("📅 結束日期：", value=st.session_state.get(f"date_end_{idx}", "114年12月31日"), key=f"date_end_{idx}", placeholder="例：114年12月31日")
                     if precedents:
-                        for p_idx, p in enumerate(precedents):
+                        seen_p_cases = set()
+                        unique_precedents = []
+                        for p in precedents:
+                            cid = p.get("case_id") or p.get("title")
+                            if cid and cid not in seen_p_cases:
+                                seen_p_cases.add(cid)
+                                unique_precedents.append(p)
+
+                        for p_idx, p in enumerate(unique_precedents):
                             st.markdown(f"**【{p.get('level')}】`{p.get('case_id')}`** ｜ **{p.get('title')}**")
-                            st.info(f"**核心要旨/主文：**\n{p.get('holding')}")
+                            holding_val = p.get('holding') or p.get('title') or ""
+                            if holding_val == p.get('title') and p.get('issue'):
+                                holding_val = p.get('issue')
+                            st.info(f"**核心要旨/主文：**\n{holding_val}")
                             if p.get('scholarly_views'):
                                 st.caption(f"📚 **學說實務對比：** {p.get('scholarly_views')}")
                             if p.get('exam_application_hint'):
@@ -5566,8 +5572,8 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.session_state["app_mode"] = MODE_ANS; st.session_state["nav_sidebar_radio_mode"] = MODE_ANS
                         st.rerun()
 
-# ----------------- 模式 7: 手寫筆記蒸餾與 SFT 模型微調大庫 -----------------
-elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
+# ----------------- 模式 9: 筆記蒸餾 -----------------
+elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "微調", "SFT"]):
     st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
     st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
 
@@ -6043,8 +6049,8 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
 elif app_mode == MODE_INGEST or any(k in str(app_mode) for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
     render_judgements_ingest_view()
 
-# ----------------- 模式 10: 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名) -----------------
-elif app_mode == MODE_DEV_MANAGER or "開發者檔案庫總管" in app_mode:
+# ----------------- 模式 10: 檔案總管 -----------------
+elif app_mode == MODE_DEV_MANAGER or any(k in app_mode for k in ["檔案總管", "檔案庫", "總管"]):
     if not is_developer():
         st.header("🛠️ 開發者檔案庫總管")
         st.warning("🔒 【開發者模式已鎖定】此功能專供系統管理員與開發者進行法學講義筆記在線檢視、考科組織與依內容智慧重命名。請於左側邊欄輸入開發者金鑰解鎖。")
