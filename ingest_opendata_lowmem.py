@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Generator
 
-from config import DATA_DIR, RAW_DATA_DIR, OPENDATA_INBOX_DIR
+from config import DATA_DIR, RAW_DATA_DIR, OPENDATA_INBOX_DIR, JUDGEMENTS_DIR
 from build_million_judgments_db import get_million_db_engine, MillionJudgmentsSQLiteEngine
 from legal_judgment_analyzer import evaluate_judgment_substance, extract_instance_history
 
@@ -189,25 +189,49 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
     return parsed
 
 
+def _safe_delete_source(p: Path) -> tuple:
+    """刪除原始壓縮檔並回傳釋放之位元組數與檔名"""
+    try:
+        real_p = p.resolve() if p.is_symlink() else p
+        sz = real_p.stat().st_size if real_p.exists() else (p.stat().st_size if p.exists() else 0)
+        p.unlink(missing_ok=True)
+        if real_p != p:
+            real_p.unlink(missing_ok=True)
+        return sz, p.name
+    except Exception as e_del:
+        print(f"⚠️ 刪除原始檔案失敗 {p}: {e_del}")
+        return 0, p.name
+
+
 def low_memory_ingest(
     target_path: Path,
     batch_size: int = 100,
     max_records: int = 1000000,
-    progress_callback = None
+    progress_callback = None,
+    delete_source_after_ingest: bool = False
 ) -> Dict[str, Any]:
     """
     超低記憶體裁判匯入主程序：
-    - 支援 .zip、.json、.jsonl、.rar、.7z 或包含上述檔案之資料夾
+    - 支援 .zip、.json、.jsonl、.rar、.7z 或包含上述檔案之資料夾 (如 data/judgements)
     - 逐筆串流讀取，累積 batch_size (預設 100) 筆即寫入 SQLite，寫入後立即釋放並回收記憶體
     - 記憶體消耗全程維持在 30MB~50MB 以內！
+    - 支援 delete_source_after_ingest=True：入庫分析完成後自動刪除原始壓縮包以節省雲端硬碟空間。
     """
     target = Path(target_path)
     if not target.exists():
-        return {"success": False, "error": f"路徑不存在: {target}", "added": 0}
+        return {
+            "success": False,
+            "error": f"路徑不存在: {target}",
+            "added": 0,
+            "deleted_files": [],
+            "freed_bytes": 0
+        }
 
     engine = get_million_db_engine()
     total_added = 0
     batch_buffer: List[Dict[str, Any]] = []
+    deleted_files: List[str] = []
+    total_freed_bytes = 0
 
     def _flush_buffer():
         nonlocal batch_buffer, total_added
@@ -232,7 +256,17 @@ def low_memory_ingest(
         _flush_buffer()
         db_count = engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
-        return {"success": True, "added": total_added, "total_in_db": db_count}
+        if delete_source_after_ingest and total_added > 0:
+            sz, fn = _safe_delete_source(target)
+            deleted_files.append(fn)
+            total_freed_bytes += sz
+        return {
+            "success": True,
+            "added": total_added,
+            "total_in_db": db_count,
+            "deleted_files": deleted_files,
+            "freed_bytes": total_freed_bytes
+        }
 
     # 2. 單一 JSON / JSONL 處理
     if target.is_file() and target.suffix.lower() in (".json", ".jsonl"):
@@ -249,7 +283,17 @@ def low_memory_ingest(
         _flush_buffer()
         db_count = engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
-        return {"success": True, "added": total_added, "total_in_db": db_count}
+        if delete_source_after_ingest and total_added > 0:
+            sz, fn = _safe_delete_source(target)
+            deleted_files.append(fn)
+            total_freed_bytes += sz
+        return {
+            "success": True,
+            "added": total_added,
+            "total_in_db": db_count,
+            "deleted_files": deleted_files,
+            "freed_bytes": total_freed_bytes
+        }
 
     # 3. RAR 或 7Z 檔案（使用獨立臨時節流目錄，處理一個檔案立即刪除）
     if target.is_file() and target.suffix.lower() in (".rar", ".7z"):
@@ -259,7 +303,13 @@ def low_memory_ingest(
             extract_dir.mkdir(parents=True, exist_ok=True)
             ok = extract_archive_to_temp(target, extract_dir)
             if not ok:
-                return {"success": False, "error": f"解壓縮工具無法開啟 {target.name}，請確認是否安裝 unar、7z 或 WinRAR。", "added": 0}
+                return {
+                    "success": False,
+                    "error": f"解壓縮工具無法開啟 {target.name}，請確認是否安裝 unar、7z 或 WinRAR。",
+                    "added": 0,
+                    "deleted_files": [],
+                    "freed_bytes": 0
+                }
 
             # 遍歷臨時解壓目錄中所有 JSON 或 ZIP
             for root, _, files in os.walk(extract_dir):
@@ -298,9 +348,19 @@ def low_memory_ingest(
         _flush_buffer()
         db_count = engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
-        return {"success": True, "added": total_added, "total_in_db": db_count}
+        if delete_source_after_ingest and total_added > 0:
+            sz, fn = _safe_delete_source(target)
+            deleted_files.append(fn)
+            total_freed_bytes += sz
+        return {
+            "success": True,
+            "added": total_added,
+            "total_in_db": db_count,
+            "deleted_files": deleted_files,
+            "freed_bytes": total_freed_bytes
+        }
 
-    # 4. 資料夾掃描處理
+    # 4. 資料夾掃描處理 (如 data/judgements)
     if target.is_dir():
         all_entries = sorted(
             list(target.rglob("*.zip")) +
@@ -310,16 +370,37 @@ def low_memory_ingest(
             list(target.rglob("*.7z"))
         )
         for f_item in all_entries:
-            res_sub = low_memory_ingest(f_item, batch_size=batch_size, max_records=(max_records - total_added), progress_callback=progress_callback)
+            res_sub = low_memory_ingest(
+                f_item,
+                batch_size=batch_size,
+                max_records=(max_records - total_added),
+                progress_callback=progress_callback,
+                delete_source_after_ingest=delete_source_after_ingest
+            )
             total_added += res_sub.get("added", 0)
+            deleted_files.extend(res_sub.get("deleted_files", []))
+            total_freed_bytes += res_sub.get("freed_bytes", 0)
             if total_added >= max_records:
                 break
 
         db_count = engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
-        return {"success": True, "added": total_added, "total_in_db": db_count}
+        return {
+            "success": True,
+            "added": total_added,
+            "total_in_db": db_count,
+            "files_processed": len(all_entries),
+            "deleted_files": deleted_files,
+            "freed_bytes": total_freed_bytes
+        }
 
-    return {"success": False, "error": f"無法識別之格式: {target.suffix}", "added": 0}
+    return {
+        "success": False,
+        "error": f"無法識別之格式: {target.suffix}",
+        "added": 0,
+        "deleted_files": [],
+        "freed_bytes": 0
+    }
 
 
 def main():
@@ -327,19 +408,27 @@ def main():
     parser.add_argument("--input", "-i", type=str, required=True, help="欲匯入之檔案路徑或資料夾 (.zip, .json, .rar, .7z)")
     parser.add_argument("--batch-size", "-b", type=int, default=100, help="每批寫入 SQLite 筆數 (預設: 100)")
     parser.add_argument("--max-records", "-m", type=int, default=1000000, help="最大匯入筆數上限")
+    parser.add_argument("--delete-source", action="store_true", help="匯入完成後自動刪除原始壓縮檔案以釋放空間")
     args = parser.parse_args()
 
     input_p = Path(args.input)
     print(f"🚀 開始執行超低記憶體串流匯入: {input_p}")
-    print(f"⚙️ 批次大小: {args.batch_size}，上限: {args.max_records} 筆")
+    print(f"⚙️ 批次大小: {args.batch_size}，上限: {args.max_records} 筆，自動刪除原檔: {args.delete_source}")
 
     def _cli_cb(added, cur_name):
         print(f"\r[串流中] 已寫入大庫: {added:,} 筆 | 目前檔案: {cur_name[:30]}", end="", flush=True)
 
-    result = low_memory_ingest(input_p, batch_size=args.batch_size, max_records=args.max_records, progress_callback=_cli_cb)
+    result = low_memory_ingest(
+        input_p,
+        batch_size=args.batch_size,
+        max_records=args.max_records,
+        progress_callback=_cli_cb,
+        delete_source_after_ingest=args.delete_source
+    )
     print()
     if result.get("success"):
-        print(f"🎉 匯入完成！本次成功入庫: {result['added']:,} 筆，資料庫總筆數: {result['total_in_db']:,} 筆。")
+        del_msg = f"（已自動刪除 {len(result.get('deleted_files', []))} 個原始檔，釋放 {result.get('freed_bytes', 0)/(1024*1024):.2f} MB）" if result.get("deleted_files") else ""
+        print(f"🎉 匯入完成！本次成功入庫: {result['added']:,} 筆，資料庫總筆數: {result['total_in_db']:,} 筆。{del_msg}")
     else:
         print(f"❌ 匯入失敗: {result.get('error')}")
 

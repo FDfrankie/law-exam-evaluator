@@ -684,6 +684,13 @@ def render_developer_file_manager():
     """
     import streamlit as st
 
+    # 嚴格多層防護機制：若當前獨立 Session 未經金鑰授權，立即阻絕存取
+    is_auth = st.session_state.get("is_developer_authenticated", False)
+    dev_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip().lower()
+    if not (is_auth and dev_pwd == "brrfdccee"):
+        st.error("🔒 【權限不足・存取遭拒】此檔案庫總管收錄作者個人未公開之法學手寫筆記與教材檔案，未獲授權嚴禁調閱。請於左側邊欄輸入開發者金鑰解鎖。")
+        return
+
     st.markdown("""
         <div style="padding: 16px 20px; border-radius: 10px; background: linear-gradient(135deg, #1f4068 0%, #162447 100%); color: white; margin-bottom: 20px;">
             <h2 style="color: white; margin-bottom: 4px; font-size: 1.6rem;">🛠️ 開發者檔案庫總管 (Developer File Hub)</h2>

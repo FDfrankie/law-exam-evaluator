@@ -88,10 +88,10 @@ if (-not $InputDir) {
 
 Write-Output "📂 輸入目標目錄: $InputDir" | Tee-Object -FilePath $LogFile -Append
 
-# 4. 執行串流匯入
+# 4. 執行串流匯入與爭點分析（完成後自動刪除原檔以釋放空間）
 $IngestScript = Join-Path $ScriptDir "ingest_opendata_lowmem.py"
 
-& $PythonExe $IngestScript --input $InputDir --batch-size 100 2>&1 | Tee-Object -FilePath $LogFile -Append
+& $PythonExe $IngestScript --input $InputDir --batch-size 100 --delete-source 2>&1 | Tee-Object -FilePath $LogFile -Append
 
 $ExitCode = $LASTEXITCODE
 

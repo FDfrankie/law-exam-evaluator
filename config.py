@@ -102,13 +102,14 @@ SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
 MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
 JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db" if (DATA_DIR / "judicial_1m_db").exists() else (DATA_DIR / "data" / "judicial_1m_db" if (DATA_DIR / "data" / "judicial_1m_db").exists() else DATA_DIR / "judicial_1m_db")
 OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox" if (DATA_DIR / "opendata_inbox").exists() else (DATA_DIR / "data" / "opendata_inbox" if (DATA_DIR / "data" / "opendata_inbox").exists() else DATA_DIR / "opendata_inbox")
+JUDGEMENTS_DIR = DATA_DIR / "data" / "judgements" if (DATA_DIR / "data" / "judgements").exists() else (DATA_DIR / "judgements" if (DATA_DIR / "judgements").exists() else DATA_DIR / "data" / "judgements")
 
 def init_directories():
     """Ensure data directories exist"""
     for folder in [
         RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR,
         CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR,
-        SAMSUNG_NOTES_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR
+        SAMSUNG_NOTES_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR, JUDGEMENTS_DIR
     ]:
         try:
             folder.mkdir(parents=True, exist_ok=True)
