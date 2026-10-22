@@ -241,6 +241,148 @@ def get_laws_in_branch(branch_name: str) -> List[str]:
 
     return available or list(law_map.keys())[:10]
 
+def format_legal_article_text(raw_text: str) -> str:
+    """
+    將法律條文內容進行標準法學結構化排版：
+    1. 各項（Paragraphs）獨立成段，若有 2 項以上自動清晰標註【第 X 項】，絕不連在一起。
+    2. 各款（Subparagraphs，一、二、三...）獨立換行並加 2 格縮排，絕不連寫。
+    3. 各目（Items，（一）、（二）...）獨立換行並加 4 格縮排。
+    4. 各分目（Sub-items，１、２...）獨立換行並加 6 格縮排。
+    5. 修復舊式資料庫中單一句子被 40 字強行斷行的殘留問題，確保語句完整流暢。
+    """
+    if not raw_text or not isinstance(raw_text, str):
+        return ""
+    
+    # 0. 統一換行與全形空白標準化
+    text = raw_text.replace('\r\n', '\n').replace('\r', '\n')
+    text = text.replace('\u3000', ' ')
+    
+    # 預處理：若條文為單行混連（如從未斷行），在標點符號後接「一、」或「2   」處補上換行
+    text = re.sub(r'(?<=[。；:：\n])\s*(?=[一二三四五六七八九十百]+[、\s])', '\n', text)
+    text = re.sub(r'(?<=[。；:：\n])\s*(?=[（\(][一二三四五六七八九十\d]+[）\)])', '\n', text)
+    text = re.sub(r'(?<=[。；\n])\s*(?=\d+\s{2,})', '\n', text)
+    
+    raw_lines = text.split('\n')
+    
+    # 1. 消除句子中間的無意義硬斷行（如因 40 字排版被切斷的中文詞彙）
+    merged_lines = []
+    element_head_pattern = re.compile(
+        r'^\s*([一二三四五六七八九十百]+[、\s]|\([一二三四五六七八九十\d]+\)|（[一二三四五六七八九十\d]+）|\d+\s{2,}|\d+\.\s+|[１２３４５６７８９０]+[、\s])'
+    )
+    
+    for line in raw_lines:
+        line_s = line.strip()
+        if not line_s:
+            continue
+            
+        if not merged_lines:
+            merged_lines.append(line_s)
+            continue
+            
+        prev = merged_lines[-1]
+        is_new_element = bool(element_head_pattern.match(line_s))
+        prev_has_terminator = prev.endswith(('。', '：', ':', '；', ';', '？', '?'))
+        
+        if not is_new_element and not prev_has_terminator:
+            merged_lines[-1] = prev + line_s
+        else:
+            merged_lines.append(line_s)
+
+    # 2. 識別各項、各款、各目、各分目
+    digit_para_pattern = re.compile(r'^(\d+)\s{2,}(.*)$')
+    subpara_pattern = re.compile(r'^([一二三四五六七八九十百]+[、\s])(.*)$')
+    item_pattern = re.compile(r'^([（\(][一二三四五六七八九十\d]+[）\)])(.*)$')
+    subitem_pattern = re.compile(r'^([１２３４５６７８９０]+[、\s]|\d+\.\s+)(.*)$')
+    
+    has_digit_paras = any(digit_para_pattern.match(l) for l in merged_lines)
+    
+    formatted_paragraphs = []
+    current_para_no = 0
+    current_para_lines = []
+    
+    if has_digit_paras:
+        for line in merged_lines:
+            m_digit = digit_para_pattern.match(line)
+            if m_digit:
+                if current_para_lines:
+                    formatted_paragraphs.append((current_para_no, current_para_lines))
+                    current_para_lines = []
+                current_para_no = int(m_digit.group(1))
+                rest = m_digit.group(2).strip()
+                if rest:
+                    current_para_lines.append(('text', rest))
+            elif subpara_pattern.match(line):
+                current_para_lines.append(('sub', line))
+            elif item_pattern.match(line):
+                current_para_lines.append(('item', line))
+            elif subitem_pattern.match(line):
+                current_para_lines.append(('subitem', line))
+            else:
+                current_para_lines.append(('text', line))
+        if current_para_lines:
+            formatted_paragraphs.append((current_para_no, current_para_lines))
+    else:
+        # 無數字項號，依語意標點及款式層級判斷項次
+        current_para_no = 1
+        for line in merged_lines:
+            if subpara_pattern.match(line):
+                current_para_lines.append(('sub', line))
+            elif item_pattern.match(line):
+                current_para_lines.append(('item', line))
+            elif subitem_pattern.match(line):
+                current_para_lines.append(('subitem', line))
+            else:
+                if current_para_lines and any(t in ('sub', 'item', 'subitem') for t, _ in current_para_lines):
+                    formatted_paragraphs.append((current_para_no, current_para_lines))
+                    current_para_no += 1
+                    current_para_lines = [('text', line)]
+                elif current_para_lines and current_para_lines[-1][1].endswith(('。', '？', '?')):
+                    formatted_paragraphs.append((current_para_no, current_para_lines))
+                    current_para_no += 1
+                    current_para_lines = [('text', line)]
+                else:
+                    current_para_lines.append(('text', line))
+        if current_para_lines:
+            formatted_paragraphs.append((current_para_no, current_para_lines))
+
+    # 3. 組裝輸出結構
+    total_paras = len(formatted_paragraphs)
+    output_blocks = []
+    for p_no, elements in formatted_paragraphs:
+        block_lines = []
+        if total_paras > 1 and p_no > 0:
+            block_lines.append(f'**【第 {p_no} 項】**')
+            
+        for elem_type, text_content in elements:
+            if elem_type == 'sub':
+                block_lines.append(f'  {text_content}')
+            elif elem_type == 'item':
+                block_lines.append(f'    {text_content}')
+            elif elem_type == 'subitem':
+                block_lines.append(f'      {text_content}')
+            else:
+                block_lines.append(text_content)
+                
+        output_blocks.append('\n'.join(block_lines))
+        
+    return '\n\n'.join(output_blocks)
+
+
+def render_formatted_article_quote(content: str, title: str = '📜 條文全文') -> str:
+    """
+    將法律條文內容排版為符合 Streamlit/CommonMark 的漂亮引用區塊（Quote Block）。
+    每行自動加入雙空白確保硬換行，各款縮排呈現，各項段落分明。
+    """
+    formatted = format_legal_article_text(content)
+    lines = formatted.split('\n')
+    quoted = []
+    for l in lines:
+        if l.strip():
+            quoted.append(f'> {l}  ')
+        else:
+            quoted.append('>')
+    return f'> **{title}**：  \n' + '\n'.join(quoted)
+
 def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
     """獲取指定法典或法規命令的全部法定條文全文"""
     articles, meta, law_map = load_six_codes_data()
@@ -1307,7 +1449,7 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
 請針對【{law_name}】第 {clean_no} 條進行權威、專業之「立法理由與歷史條文演變」全面釋析。
 
 【條文內容】：
-{content}
+{format_legal_article_text(content)}
 
 請嚴謹產出 JSON 格式，包含以下欄位：
 {{
@@ -1318,8 +1460,8 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
       "date": "修正公布日期（例如：107年08月01日）",
       "gazette": "總統令/部會令號（例如：總統華總一經字第 10700083291 號令）",
       "reason": "詳細立法修正理由（官方立法院公報/提案部會說明理由）",
-      "previous_text": "本次修正前之歷史舊條文內容（若為初次制定請註明「制定公布全文」）",
-      "current_text": "本次修正後之條文內容",
+      "previous_text": "本次修正前之歷史舊條文內容（若包含多項或多款，嚴禁連在同一行，請分項分款分行）",
+      "current_text": "本次修正後之條文內容（若包含多項或多款，嚴禁連在同一行，請分項分款分行）",
       "key_changes": "核心修法要點與條文文字變更說明",
       "exam_impact": "國考實務影響與新舊法適用要點（如不溯及既往、程序從新實體從舊）"
     }}
@@ -1401,7 +1543,10 @@ class SixCodesDeepAnnotator:
 請針對【{law_name}】{article_no}進行「智慧六法全書・條文深度註釋」：
 
 【條文全文】：
-{content}
+{format_legal_article_text(content)}
+
+⚠️【法律條文引用與排版規範（極重要）】：
+若在分析、爭點論述或作答示範中引用法律條文，嚴禁將各項、各款、各目黏連在同一行！必須嚴格分項分款分行排版（各項獨立成段並明確標記第幾項或Ⅰ、Ⅱ；各款一、二、三...獨立換行縮排），使法條結構與層次清晰分明。
 
 請嚴謹、精確輸出以下五大專業法學註解板塊（請排版為工整 Markdown）：
 

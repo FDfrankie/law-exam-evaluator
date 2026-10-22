@@ -15,6 +15,11 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
+    from six_codes_engine import format_legal_article_text
+except Exception:
+    def format_legal_article_text(t): return t
+
+try:
     from google import genai
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
@@ -700,7 +705,8 @@ class LegalQAEngine:
             if matched_statutes:
                 prompt_lines.append("\n📚 【現行法定真實法規條文】：")
                 for s in matched_statutes:
-                    prompt_lines.append(f"- 《{s['law_name']}》{s['article_no']}：{s['content']}")
+                    formatted_content = format_legal_article_text(s.get('content', ''))
+                    prompt_lines.append(f"- 《{s['law_name']}》{s['article_no']}：\n{formatted_content}")
                     
             if matched_cases:
                 prompt_lines.append("\n🏛️ 【司法院資料庫真實收錄裁判字號與判旨】：")
@@ -710,6 +716,7 @@ class LegalQAEngine:
             prompt_lines.append("\n⚠️ 【防範幻覺核心指令 (Zero Hallucination Directive)】：")
             prompt_lines.append("1. 【嚴禁捏造判決字號數字】：你所引用的判決案號，必須以本機資料庫真實收錄之案號為依歸。若要援引其他最高法院判決、判例、決議、大法庭或憲判字，必須是真實存在的確切字號。若無法百分之百確認字號數字，請直陳「司法實務通說見解認為...」，絕對嚴禁隨機捏造虛構字號與數字！")
             prompt_lines.append("2. 【嚴禁捏造法規條號】：引用的條號必須對應中華民國現行法規的真實條號（如上方條文庫），嚴禁引用不存在的條號或無中生有之項次！")
+            prompt_lines.append("3. 【法律條文引用排版規範（極重要）】：輸出文字中出現或引用法律條文時，嚴禁將各款、各項都連在一起！必須清楚分項分款分行（每一項獨立成段並標記項次，各款一、二、三...獨立換行縮排），使條文清晰可辨、絕不混淆！")
             prompt_lines.append("================================================================================")
 
         grounding_block = "\n".join(prompt_lines)

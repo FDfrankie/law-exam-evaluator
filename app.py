@@ -48,7 +48,9 @@ from six_codes_engine import (
     get_article_legislative_details,
     synthesize_article_legislative_details,
     clear_six_codes_cache,
-    load_six_codes_data
+    load_six_codes_data,
+    format_legal_article_text,
+    render_formatted_article_quote
 )
 from six_codes_updater import update_law_amendments, load_amendments_history
 from community_archive_engine import (
@@ -3516,7 +3518,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                 with st.expander(f"📜 關聯法條命中 ({len(articles)} 條)", expanded=True):
                     for a in articles:
                         st.markdown(f"**📖 【{a.get('law_name')} 第 {a.get('article_no')} 條】**")
-                        st.write(a.get("content", ""))
+                        st.markdown(render_formatted_article_quote(a.get("content", ""), f"{a.get('law_name')} 第 {a.get('article_no')} 條"))
                         st.markdown("---")
 
             # 跨功能一鍵跳轉
@@ -4996,7 +4998,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             st.caption(f"更新狀態：`{last_res.get('status')}` ｜ 本次更新條文數：`{last_res.get('amended_count', 0)}` 條")
             for am_item in last_res.get("amended_articles", []):
                 st.markdown(f"##### 📌 {am_item.get('article_no')}")
-                st.info(f"**最新施行條文全文：**\n{am_item.get('new_content', '')}")
+                st.markdown(render_formatted_article_quote(am_item.get('new_content', ''), "最新施行條文全文"))
                 if am_item.get('amendment_reason'):
                     st.markdown(f"🏛️ **立法院官方立法理由：**\n{am_item.get('amendment_reason')}")
                 if am_item.get('exam_points'):
@@ -5169,7 +5171,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                 ])
 
                 with tab_prec:
-                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}_prec")
 
                     with st.expander("🔍 判解條件篩選 (9大裁判類別・日期區間)", expanded=False):
@@ -5224,7 +5226,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或由 AI 進行歷審精選裁判與學說補強。")
 
                 with tab_orders_rulings:
-                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     st.markdown("#### 📋 法規命令與行政函釋")
                     st.caption("授權法規命令/細則全文點閱、主管機關行政指導與令函解釋：")
 
@@ -5272,13 +5274,11 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                         )
                                         chosen_idx = art_options.index(chosen_art_str)
                                         target_art = arts[chosen_idx]
-                                        st.markdown(f"**【{target_art['no']}】**")
-                                        st.info(target_art['content'])
+                                        st.markdown(render_formatted_article_quote(target_art['content'], target_art['no']))
                                     elif read_mode == "📜 展開瀏覽全法規所有條文":
                                         with st.container(height=350):
                                             for a in arts:
-                                                st.markdown(f"**{a['no']}**")
-                                                st.markdown(f"> {a['content']}")
+                                                st.markdown(render_formatted_article_quote(a['content'], a['no']))
                                                 st.markdown("---")
                                     elif read_mode == "🔎 條文內關鍵字搜尋":
                                         sub_kw = st.text_input(f"輸入在《{reg_name}》內搜尋之文字：", key=f"sub_kw_{idx}_{r_idx}")
@@ -5286,8 +5286,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                             hit_arts = [a for a in arts if sub_kw in a['no'] or sub_kw in a['content']]
                                             st.caption(f"在《{reg_name}》中找到 {len(hit_arts)} 條包含「{sub_kw}」之條文：")
                                             for a in hit_arts:
-                                                st.markdown(f"**{a['no']}**")
-                                                st.markdown(f"> {a['content']}")
+                                                st.markdown(render_formatted_article_quote(a['content'], a['no']))
                                                 st.markdown("---")
                                         else:
                                             st.caption("請輸入關鍵字以即時過濾法規命令條文。")
@@ -5351,8 +5350,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                     st.success(f"已載入《{c_details['name']}》（主管部會：{c_details['category']}，共 {c_details['total_articles']} 條）")
                                     with st.container(height=300):
                                         for a in c_details["articles"]:
-                                            st.markdown(f"**{a['no']}**")
-                                            st.markdown(f"> {a['content']}")
+                                            st.markdown(render_formatted_article_quote(a['content'], a['no']))
                                             st.markdown("---")
                             else:
                                 st.warning("未找到相符之法規命令名稱。")
@@ -5409,7 +5407,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 st.success(f"✍️ **作答指引：** {c.get('exam_point_hint')}")
 
                 with tab_legis:
-                    st.markdown(f"> **📜 現行條文**：\n> {content}")
+                    st.markdown(render_formatted_article_quote(content, "📜 現行條文"))
                     st.markdown("#### 📜 立法理由與修法沿革")
                     st.caption("立法院公報與總統令三讀修正理由、立法意旨與新舊條文對照：")
 
@@ -5432,10 +5430,10 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                     col_old, col_new = st.columns(2)
                                     with col_old:
                                         st.markdown("**🕰️ 修正前歷史條文（舊法）**")
-                                        st.caption(p_text if p_text else "（初次制定或舊無此條）")
+                                        st.caption(format_legal_article_text(p_text) if p_text else "（初次制定或舊無此條）")
                                     with col_new:
                                         st.markdown("**📜 修正後施行條文（新法）**")
-                                        st.caption(c_text if c_text else content)
+                                        st.caption(format_legal_article_text(c_text) if c_text else format_legal_article_text(content))
 
                                 st.markdown(f"**📜 立法院三讀官方修正理由全文：**\n{amend.get('reason')}")
                                 if amend.get("exam_impact"):
@@ -5484,7 +5482,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                     st.success(f"**新舊法適用要點：**\n{a.get('exam_impact')}")
 
                 with tab_materials:
-                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     st.markdown("#### 📘 講義與讀書筆記")
                     if not is_developer():
                         st.warning("🔒 【個人法學筆記與授課教材已受著作權保護】本條文關聯之個人手寫讀書筆記、課輔講義與考點體系僅供開發者本人授權調閱。未獲授權僅能調閱公開法條與司法裁判；若欲解鎖筆記全文與在線閱讀器，請於左側邊欄輸入開發者金鑰解鎖。")
@@ -5535,7 +5533,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                             st.info(f"💡 目前您的資料庫中暫無直接對應【{lname} {ano}】之專屬課輔講義或個人讀書筆記。您可前往【模式 9：手寫筆記蒸餾與 SFT 模型微調大庫】上傳並自動歸納您的專屬讀書筆記！")
 
                 with tab_ai:
-                    st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     ai_cache_key = f"ai_anno_{lname}_{ano}"
                     if st.button(f"✨ 啟動 AI 深度釋析（立法理由、主管機關函釋、通說有力說）", key=f"btn_run_anno_{idx}"):
                         with st.spinner(f"正在由 Gemini Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
@@ -5553,7 +5551,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                 act1, act2, act3 = st.columns(3)
                 with act1:
                     if st.button(f"📝 帶入試卷評分標準", key=f"btn_pass_eval_{idx}", use_container_width=True):
-                        st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano}\n\n【條文內容】：\n{content}"
+                        st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano}\n\n【條文內容】：\n{format_legal_article_text(content)}"
                         st.session_state["rubric_text_content"] = f"【評分指標與法規依據】：\n1. 正確引述 {lname} {ano} 之構成要件與法律效果。\n2. 參酌相關實務見解與立法理由進行涵攝。"
                         st.session_state["imported_from_bank_label"] = f"六法條文【{lname} {ano}】"
                         st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
@@ -5568,7 +5566,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         st.rerun()
                 with act3:
                     if st.button(f"📖 針對此法條出題/擬答", key=f"btn_pass_ans_{idx}", use_container_width=True):
-                        st.session_state["m4_target_question"] = f"請針對【{lname} {ano}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：{content}"
+                        st.session_state["m4_target_question"] = f"請針對【{lname} {ano}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：\n{format_legal_article_text(content)}"
                         st.session_state["app_mode"] = MODE_ANS; st.session_state["nav_sidebar_radio_mode"] = MODE_ANS
                         st.rerun()
 
