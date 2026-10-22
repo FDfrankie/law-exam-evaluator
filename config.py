@@ -108,7 +108,7 @@ def init_directories():
     for folder in [
         RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR,
         CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR,
-        SAMSUNG_NOTES_DIR, MODEL_WEIGHTS_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR
+        SAMSUNG_NOTES_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR
     ]:
         try:
             folder.mkdir(parents=True, exist_ok=True)

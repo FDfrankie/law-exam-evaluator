@@ -5905,8 +5905,8 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
 
             c1, c2, c3 = st.columns(3)
             c1.metric("純核實核心庫 (100% 真跡)", f"{5082:,} 筆" if ver_file.exists() else "建構中")
-            c2.metric("混合加權平衡庫 (推薦)", f"{118650:,} 筆" if bal_file.exists() else "建構中")
-            c3.metric("全量百萬統一大庫", f"{1005082:,} 筆" if mas_file.exists() else "建構中")
+            c2.metric("混合加權平衡庫 (推薦)", f"{118650:,} 筆" if bal_file.exists() else "已精簡 (節省空間)")
+            c3.metric("全量百萬統一大庫", f"{1005082:,} 筆" if mas_file.exists() else "已精簡 (節省空間)")
 
             st.markdown("""
             #### 🛡️ Hugging Face Arrow 綱要相容保證：

@@ -19,6 +19,7 @@ model_weights/
 *.log
 *.tmp
 _cache/
+data/ingest_log.jsonl
 
 # 大檔排除 (超過 GitHub 100MB 限制之全量合成庫與權重)
 *1m_judicial_reasoning*.jsonl
