@@ -915,6 +915,7 @@ MODE_QA = "💬 專屬法學全能問答樞紐 (萬能檢索・條文定位・�
 MODE_SUMMARIZER = "📑 一鍵 AI 裁判與長篇函釋要旨自動精鍊 (AI 判解精鍊旗艦)"
 MODE_SIX_CODES = "⚖️ 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記)"
 MODE_SFT = "📥 手寫筆記蒸餾與 SFT 模型微調大庫"
+MODE_DEV_MANAGER = "🛠️ 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名)"
 
 mode_options = [
     MODE_HOME,
@@ -928,6 +929,8 @@ mode_options = [
     MODE_SIX_CODES,
     MODE_SFT
 ]
+if is_developer():
+    mode_options.append(MODE_DEV_MANAGER)
 
 # 側邊欄
 with st.sidebar:
@@ -960,6 +963,8 @@ with st.sidebar:
             st.session_state["app_mode"] = MODE_SIX_CODES
         elif "手寫筆記蒸餾" in old_val:
             st.session_state["app_mode"] = MODE_SFT
+        elif any(k in old_val for k in ["檔案庫總管", "依內容智慧重命名", "開發者檔案", "重命名"]):
+            st.session_state["app_mode"] = MODE_DEV_MANAGER
         else:
             st.session_state["app_mode"] = MODE_HOME
 
@@ -1021,6 +1026,10 @@ with st.sidebar:
         if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
             st.session_state["is_developer_authenticated"] = True
             st.success("🟢 開發者權限已解鎖（僅限當前連線 Session）")
+            if st.button("🛠️ 開啟檔案庫總管 (在線檢視・體系組織・智慧重命名)", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
+                st.session_state["app_mode"] = MODE_DEV_MANAGER
+                st.session_state["nav_sidebar_radio_mode"] = MODE_DEV_MANAGER
+                st.rerun()
             if st.button("🔄 掃描並整合 DriveFS 遺失修復庫 (lost_and_found)", key="btn_sync_laf", use_container_width=True):
                 with st.spinner("正在掃描 Google DriveFS lost_and_found 庫..."):
                     try:
@@ -5874,6 +5883,19 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
             else:
                 st.info("目前尚未有手寫筆記檔案。")
 
+            # 開發者檔案庫總管快捷展開入口
+            st.markdown("---")
+            c_dev_hub1, c_dev_hub2 = st.columns([2.5, 1.5])
+            with c_dev_hub1:
+                st.markdown("#### 🛠️ 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名)")
+                st.caption("您已獲開發者授權，可直接於下方展開全功能檔案總管：支援在線 PDF / 圖片預覽閱讀、考科體系組織與依據內文爭點一鍵 AI 智慧重命名。")
+            with c_dev_hub2:
+                toggle_dev_hub = st.toggle("📂 展開檔案庫總管與重命名面板", value=False, key="toggle_sft_dev_hub")
+
+            if toggle_dev_hub:
+                from developer_file_manager import render_developer_file_manager
+                render_developer_file_manager()
+
             st.divider()
             st.subheader("📝 目前個人筆記 SFT 庫提煉精華 (law_exam_user_notes_sft.jsonl)")
             user_sft_file = Path(DATA_DIR) / "training_data" / "law_exam_user_notes_sft.jsonl"
@@ -5943,3 +5965,12 @@ elif app_mode == MODE_SFT or "手寫筆記蒸餾" in app_mode:
             2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，支援自訂/官方平衡庫（具備全檔串流校驗與 SHA-256 審計）或推薦使用 Private Dataset 本地掛載；
             3. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
             """)
+
+# ----------------- 模式 10: 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名) -----------------
+elif app_mode == MODE_DEV_MANAGER or "開發者檔案庫總管" in app_mode:
+    if not is_developer():
+        st.header("🛠️ 開發者檔案庫總管")
+        st.warning("🔒 【開發者模式已鎖定】此功能專供系統管理員與開發者進行法學講義筆記在線檢視、考科組織與依內容智慧重命名。請於左側邊欄輸入開發者金鑰解鎖。")
+    else:
+        from developer_file_manager import render_developer_file_manager
+        render_developer_file_manager()

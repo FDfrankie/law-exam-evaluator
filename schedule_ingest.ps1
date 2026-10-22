@@ -55,15 +55,34 @@ if (-not $PythonExe) {
 
 Write-Output "🐍 使用 Python: $PythonExe" | Tee-Object -FilePath $LogFile -Append
 
-# 3. 指定匯入資料來源目錄
-$InputDir = "G:\我的雲端硬碟\LawExamData\data\judgements"
-if (-not (Test-Path $InputDir)) {
-    # 備選本機目錄
-    $AltInput = Join-Path $ScriptDir "data\judgements"
-    if (Test-Path $AltInput) {
-        $InputDir = $AltInput
-    } else {
-        $InputDir = "G:\My Drive\LawExamData\data\judgements"
+# 3. 指定匯入資料來源目錄 (智慧探測 data\judgements 與 opendata_inbox)
+$ParentDir = Split-Path -Parent $ScriptDir
+$CandidateDirs = @(
+    "G:\我的雲端硬碟\LawExamData\data\judgements",
+    "G:\我的雲端硬碟\LawExamData\opendata_inbox",
+    "G:\My Drive\LawExamData\data\judgements",
+    "G:\My Drive\LawExamData\opendata_inbox",
+    (Join-Path $ParentDir "data\judgements"),
+    (Join-Path $ParentDir "opendata_inbox"),
+    (Join-Path $ScriptDir "data\judgements")
+)
+
+$InputDir = $null
+foreach ($cand in $CandidateDirs) {
+    if (Test-Path $cand) {
+        $archives = Get-ChildItem -Path $cand -Include *.rar,*.7z,*.zip,*.json,*.jsonl -File -Recurse -ErrorAction SilentlyContinue
+        if ($archives.Count -gt 0) {
+            $InputDir = $cand
+            break
+        }
+    }
+}
+
+if (-not $InputDir) {
+    # 若資料夾皆為空，預設鎖定 data\judgements
+    $InputDir = "G:\我的雲端硬碟\LawExamData\data\judgements"
+    if (-not (Test-Path $InputDir)) {
+        $InputDir = Join-Path $ParentDir "data\judgements"
     }
 }
 

@@ -1111,23 +1111,69 @@ def parse_law_history_entries(raw_text: str) -> List[Dict[str, Any]]:
         })
     return parsed
 
-def is_article_in_history_entry(art_no: str, entry_text: str) -> bool:
-    """精準檢驗某條號是否受該次立法/修法公報影響（支援連號範圍如 204～206 及枝條如 759-1）"""
+def is_article_in_history_entry(art_no: str, entry_text: str, law_name: str = "") -> bool:
+    """
+    精準檢驗某條號是否受該次立法/修法公報影響：
+    1. 支援連號範圍 (如 32～36、42～44、881-1～881-17)
+    2. 支援枝條 (如 15-1、1030-1、191-2) 與各種全形/半形/破折號
+    3. 嚴格邊界判定，徹底排除如 1030-1 或 151 被錯誤判定為第 1 條之假陽性瑕疵
+    4. 支援民法各編制定公布全文 (總則 1-152, 債 153-756, 物權 757-966, 親屬 967-1137, 繼承 1138-1225)
+    5. 支援一般法規制定公布全文 X 條判定
+    """
     clean_no = normalize_article_no(art_no)
     if not clean_no:
         return False
-    # 邊界完全匹配
-    pattern = r'(?:第\s*)?' + re.escape(clean_no) + r'(?:\s*條|[、，,\s]|$)'
-    if re.search(pattern, entry_text):
-        return True
+        
+    text = re.sub(r'(\d)\s+(\d)', r'\1\2', str(entry_text or ''))
+    is_pure_int = clean_no.isdigit()
+    target_int = int(clean_no) if is_pure_int else None
     
-    # 範圍匹配，例如 204～206, 200～210, 197-205
-    if '-' not in clean_no and clean_no.isdigit():
-        target_int = int(clean_no)
-        ranges = re.findall(r'(\d+)\s*[～~至到-]\s*(\d+)', entry_text)
-        for r_start, r_end in ranges:
-            if int(r_start) <= target_int <= int(r_end):
+    # 1. 制定或全文修正發布
+    if is_pure_int and any(kw in text for kw in ['制定公布', '制定發布', '訂定發布', '全文修正', '修正公布全文', '公布全文']):
+        if '民法' in law_name:
+            if '總則編' in text and 1 <= target_int <= 152:
                 return True
+            if '債編' in text and 153 <= target_int <= 756:
+                return True
+            if '物權編' in text and 757 <= target_int <= 966:
+                return True
+            if '親屬編' in text and 967 <= target_int <= 1137:
+                return True
+            if '繼承編' in text and 1138 <= target_int <= 1225:
+                return True
+        else:
+            m_full = re.search(r'(?:制定公布|修正公布|訂定發布|公布)?(?:各編)?全文\s*(\d+)\s*條', text)
+            if m_full:
+                total_arts = int(m_full.group(1))
+                if 1 <= target_int <= total_arts:
+                    return True
+
+    # 2. 局部修法條號提取
+    chunks = re.findall(r'(?:修\s*正\s*公\s*布|修\s*正|增\s*訂|刪\s*除|公\s*布)(?:第)?\s*([0-9\s、，,～~至到\-\/之與及條暨節章目編全]+?)(?:條條文|條文|條)', text)
+    if not chunks:
+        chunks = re.findall(r'第\s*([0-9\s、，,～~至到\-\/之與及]+?)\s*條', text)
+        
+    for chunk in chunks:
+        # A. 範圍匹配
+        r_matches = re.findall(r'([0-9]+(?:-[0-9]+)?)\s*[～~至到]\s*([0-9]+(?:-[0-9]+)?)', chunk)
+        for r1, r2 in r_matches:
+            if is_pure_int and '-' not in r1 and '-' not in r2:
+                if int(r1) <= target_int <= int(r2):
+                    return True
+            elif '-' in clean_no and '-' in r1 and '-' in r2:
+                b1, s1 = r1.split('-', 1)
+                b2, s2 = r2.split('-', 1)
+                tb, ts = clean_no.split('-', 1)
+                if b1 == b2 == tb and s1.isdigit() and s2.isdigit() and ts.isdigit():
+                    if int(s1) <= int(ts) <= int(s2):
+                        return True
+                        
+        # B. 單號匹配
+        sub_chunk = re.sub(r'[0-9]+(?:-[0-9]+)?\s*[～~至到]\s*[0-9]+(?:-[0-9]+)?', ' ', chunk)
+        singles = re.findall(r'(?<![0-9\-])([0-9]+(?:-[0-9]+)?)(?![0-9\-之])', sub_chunk.replace('之', '-'))
+        if clean_no in singles:
+            return True
+
     return False
 
 def get_law_legislative_history(law_name: str) -> Dict[str, Any]:
@@ -1196,7 +1242,7 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
     law_hist = get_law_legislative_history(law_name)
     timeline_hits = []
     for entry in law_hist.get("timeline", []):
-        if is_article_in_history_entry(clean_no, entry.get("content", "")):
+        if is_article_in_history_entry(clean_no, entry.get("content", ""), law_name=law_name):
             timeline_hits.append(entry)
             
     return {
