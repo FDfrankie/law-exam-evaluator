@@ -122,3 +122,4 @@ def run_sync(target_path: Path = TARGET_DIR, batch_size: int = 100):
 
 if __name__ == "__main__":
     run_sync()
+
