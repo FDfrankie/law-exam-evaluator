@@ -54,3 +54,5 @@ desktop.ini
 
 
 data/lost_and_found_archive/
+data/ingest_log.jsonl
+logs/
