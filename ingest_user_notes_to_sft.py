@@ -32,8 +32,15 @@ if hasattr(sys.stderr, "reconfigure"):
     except Exception:
         pass
 
-from PIL import Image
-import pypdfium2 as pdfium
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
+try:
+    import pypdfium2 as pdfium
+except ImportError:
+    pdfium = None
 
 try:
     from google import genai
@@ -246,7 +253,14 @@ def get_resources_dir() -> Optional[Path]:
     return None
 
 def sync_all_drive_notes_to_samsung_notes() -> int:
-    """自動自 Google Drive「資源」目錄與 SamsungNotes 動態掃描並同步所有法學考科最新檔案（涵蓋 550+ 份講義筆記）"""
+    """自動自 Google Drive「資源」目錄與 SamsungNotes 動態掃描並同步所有法學考科最新檔案（涵蓋 550+ 份講義筆記，整合 DriveFS lost_and_found）"""
+    # 優先執行 Google DriveFS lost_and_found 遺失修復整合
+    try:
+        from ingest_lost_and_found import run_lost_and_found_ingest
+        run_lost_and_found_ingest()
+    except Exception as _lafe:
+        pass
+
     drive_notes = get_google_drive_notes_list()
     manifest_paths = [
         Path(DATA_DIR) / "drive_notes_manifest.json",
@@ -689,9 +703,11 @@ def get_google_drive_notes_list(force_refresh: bool = False) -> List[Dict[str, A
     _DRIVE_NOTES_CACHE_TIME = time.time()
     return sorted_notes
 
-def render_pdf_to_images(pdf_path: Path, max_pages: int = 15) -> List[Image.Image]:
+def render_pdf_to_images(pdf_path: Path, max_pages: int = 15):
     """使用 pypdfium2 高速 C++ 引擎將 PDF 頁面渲染為高品質 PIL 圖片"""
     images = []
+    if pdfium is None:
+        return images
     try:
         pdf = pdfium.PdfDocument(pdf_path)
         total = min(len(pdf), max_pages)

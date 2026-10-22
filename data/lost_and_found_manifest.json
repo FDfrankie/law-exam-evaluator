@@ -1,0 +1,133 @@
+{
+  "timestamp": "2026-10-22T14:49:31.953668",
+  "source_directory": "/Users/liuguanfu/Library/Application Support/Google/DriveFS/lost_and_found",
+  "total_files_scanned": 385,
+  "mapping_records_found": 384,
+  "pdf_notes_total_instances": 126,
+  "pdf_notes_unique_count": 9,
+  "unique_pdf_list": [
+    "民總_民總課輔講義-法律行為_251021_000101.pdf",
+    "憲法_2025憲法期中課輔練習題_251020_162636.pdf",
+    "身分法_一、親屬總論_260722_143647.pdf",
+    "憲法_釋字.pdf",
+    "民訴_0930.pdf",
+    "憲法_三、修憲_250908_123740.pdf",
+    "身分法_三、婚姻_260831_125641.pdf",
+    "身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf",
+    "民總_民總課輔講義-權利概論_251015_201221.pdf"
+  ],
+  "python_snapshots_count": 207,
+  "meta_other_files_count": 52,
+  "dry_run": false,
+  "details": {
+    "unique_pdfs": {
+      "民總_民總課輔講義-法律行為_251021_000101.pdf": {
+        "clean_name": "民總_民總課輔講義-法律行為_251021_000101.pdf",
+        "laf_filename": "民總_民總課輔講義-法律行為_251021_000101 (1792564566208).pdf",
+        "size_bytes": 622767,
+        "mtime": "2026-10-21T14:35:14.842616",
+        "sha256": "9f7c4c0daa97714950298a53610c05820b193696952492da5c0c6849c7583051",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民總_民總課輔講義-法律行為_251021_000101.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/民總_民總課輔講義-法律行為_251021_000101.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民總_民總課輔講義-法律行為_251021_000101.pdf"
+      },
+      "憲法_2025憲法期中課輔練習題_251020_162636.pdf": {
+        "clean_name": "憲法_2025憲法期中課輔練習題_251020_162636.pdf",
+        "laf_filename": "憲法_2025憲法期中課輔練習題_251020_162636 (1792559814346).pdf",
+        "size_bytes": 212545,
+        "mtime": "2026-10-21T13:14:33.639199",
+        "sha256": "3f392e9718f0b0f78865c94a9f9ddfb8210e24fcf8cc94729b995efe35dc696a",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_2025憲法期中課輔練習題_251020_162636.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/憲法_2025憲法期中課輔練習題_251020_162636.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_2025憲法期中課輔練習題_251020_162636.pdf"
+      },
+      "身分法_一、親屬總論_260722_143647.pdf": {
+        "clean_name": "身分法_一、親屬總論_260722_143647.pdf",
+        "laf_filename": "身分法_一、親屬總論_260722_143647 (1792651120317).pdf",
+        "size_bytes": 1001477,
+        "mtime": "2026-10-21T14:35:14.853215",
+        "sha256": "cd8cffa32834dfb1074f9a5c223248d7191c51f39e349bd4c56a53ef865434d6",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_一、親屬總論_260722_143647.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/身分法_一、親屬總論_260722_143647.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_一、親屬總論_260722_143647.pdf"
+      },
+      "憲法_釋字.pdf": {
+        "clean_name": "憲法_釋字.pdf",
+        "laf_filename": "憲法_釋字 (1792564540639).pdf",
+        "size_bytes": 5338789,
+        "mtime": "2026-10-21T14:35:14.838042",
+        "sha256": "f220596659a3d2e1c29d87f63e68af9d3fbd45ec9b743e55a4f122f1bc1f8332",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_釋字.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/憲法_釋字.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_釋字.pdf"
+      },
+      "民訴_0930.pdf": {
+        "clean_name": "民訴_0930.pdf",
+        "laf_filename": "民訴_0930 (1792565119977).pdf",
+        "size_bytes": 419319,
+        "mtime": "2026-10-21T13:14:33.741685",
+        "sha256": "032fbbbfdb9853a793a41530a96a8c6358b60f6e22060ba26748b5ad13a7c42c",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民訴_0930.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/民訴_0930.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民訴_0930.pdf"
+      },
+      "憲法_三、修憲_250908_123740.pdf": {
+        "clean_name": "憲法_三、修憲_250908_123740.pdf",
+        "laf_filename": "憲法_三、修憲_250908_123740 (1792570134642).pdf",
+        "size_bytes": 2107458,
+        "mtime": "2026-10-21T14:35:14.822437",
+        "sha256": "75458438f592746920826599654843e29ceefe90e0a687c0139a7eb867e2ab47",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_三、修憲_250908_123740.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/憲法_三、修憲_250908_123740.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/憲法_三、修憲_250908_123740.pdf"
+      },
+      "身分法_三、婚姻_260831_125641.pdf": {
+        "clean_name": "身分法_三、婚姻_260831_125641.pdf",
+        "laf_filename": "身分法_三、婚姻_260831_125641.pdf",
+        "size_bytes": 3877000,
+        "mtime": "2026-10-21T14:35:14.858895",
+        "sha256": "26555cf1e368f7e8cd0c08e38e488ed9d0b543156953e13ee23c31f21f4e4afb",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_三、婚姻_260831_125641.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/身分法_三、婚姻_260831_125641.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_三、婚姻_260831_125641.pdf"
+      },
+      "身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf": {
+        "clean_name": "身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf",
+        "laf_filename": "身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420 (1792559741216).pdf",
+        "size_bytes": 1960438,
+        "mtime": "2026-10-21T13:14:33.794774",
+        "sha256": "fc93c5fc24cd33be4e1abee7a6fd0d580a6aa143286a7eebf1da660870fdb210",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/身分法_二十二、拋棄繼承與無人承認之繼承_260819_150420.pdf"
+      },
+      "民總_民總課輔講義-權利概論_251015_201221.pdf": {
+        "clean_name": "民總_民總課輔講義-權利概論_251015_201221.pdf",
+        "laf_filename": "民總_民總課輔講義-權利概論_251015_201221 (1792575254355).pdf",
+        "size_bytes": 263453,
+        "mtime": "2026-10-21T14:35:14.839620",
+        "sha256": "22f5b2fd47a839b8b191ed71b7a6c9b84f6f4e6331abfd9277d80d0e2bc21f1f",
+        "target_code": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民總_民總課輔講義-權利概論_251015_201221.pdf",
+        "target_root": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes/民總_民總課輔講義-權利概論_251015_201221.pdf",
+        "status": "already_synced",
+        "original_path_hint": "/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/code/data/SamsungNotes/民總_民總課輔講義-權利概論_251015_201221.pdf"
+      }
+    },
+    "code_snapshots_summary": {
+      "evaluator.py": 33,
+      "config.py": 46,
+      "app.py": 32,
+      "legal_query_engine.py": 32,
+      "six_codes_engine.py": 32,
+      "exam_generator.py": 32
+    }
+  }
+}
