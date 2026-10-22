@@ -21,6 +21,7 @@ import shutil
 import tempfile
 import argparse
 import gc
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Generator
 
@@ -109,9 +110,36 @@ def stream_json_from_file(file_path: Path) -> Generator[Dict[str, Any], None, No
             pass
 
 
+def _log_ingest_metrics(target_name: str, added_count: int, total_db_count: int):
+    """
+    將匯入指標自動 append 寫入 data/ingest_log.jsonl
+    """
+    log_record = {
+        "timestamp": datetime.now().isoformat(),
+        "target": target_name,
+        "added": added_count,
+        "total_in_db": total_db_count
+    }
+    log_targets = [
+        Path(__file__).resolve().parent / "data" / "ingest_log.jsonl",
+        DATA_DIR / "data" / "ingest_log.jsonl",
+        DATA_DIR / "ingest_log.jsonl"
+    ]
+    for lp in log_targets:
+        try:
+            lp.parent.mkdir(parents=True, exist_ok=True)
+            with open(lp, "a", encoding="utf-8") as f:
+                f.write(json.dumps(log_record, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
+
 def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     將司法院標準 JSON 紀錄轉換為大庫結構，並掛載實質法律爭點檢定與歷審脈絡鏈。
+    【嚴格過濾情境 A / 純事實爭點排除】：
+    若為純程序性駁回 (is_procedural_dismissal)、純事實爭點 (is_pure_factual_dispute)
+    或無實質法律爭點 (has_legal_issue == False)，一律回傳 None 剔除不入庫！
     """
     if not isinstance(raw_item, dict):
         return None
@@ -136,6 +164,27 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
         parsed["discard_reason"] = sub_info.get("discard_reason", "")
         parsed["extracted_history_instances"] = sub_info.get("extracted_history_instances", [])
         parsed["substantive_prior_instance"] = sub_info.get("substantive_prior_instance")
+
+    # 提取前審案號與歷審鏈字串 (供 build_million_judgments_db 寫入 substantive_prior 與 history_cases 欄位)
+    spi = parsed.get("substantive_prior_instance")
+    if spi:
+        parsed["substantive_prior"] = spi.get("case_id", "") if isinstance(spi, dict) else str(spi)
+    else:
+        parsed["substantive_prior"] = parsed.get("substantive_prior") or ""
+
+    hist_list = parsed.get("extracted_history_instances") or []
+    if isinstance(hist_list, list):
+        parsed["history_cases_str"] = "、".join([x.get("case_id", "") if isinstance(x, dict) else str(x) for x in hist_list if x])
+    else:
+        parsed["history_cases_str"] = str(hist_list)
+
+    # 嚴格落實過濾：排除純程序性駁回、純事實爭點或無實質法律爭點之裁判
+    if (
+        parsed.get("is_procedural_dismissal") is True
+        or parsed.get("has_legal_issue") is False
+        or parsed.get("is_pure_factual_dispute") is True
+    ):
+        return None
 
     return parsed
 
@@ -181,7 +230,9 @@ def low_memory_ingest(
             if total_added >= max_records:
                 break
         _flush_buffer()
-        return {"success": True, "added": total_added, "total_in_db": engine.get_total_count()}
+        db_count = engine.get_total_count()
+        _log_ingest_metrics(str(target), total_added, db_count)
+        return {"success": True, "added": total_added, "total_in_db": db_count}
 
     # 2. 單一 JSON / JSONL 處理
     if target.is_file() and target.suffix.lower() in (".json", ".jsonl"):
@@ -196,7 +247,9 @@ def low_memory_ingest(
             if total_added >= max_records:
                 break
         _flush_buffer()
-        return {"success": True, "added": total_added, "total_in_db": engine.get_total_count()}
+        db_count = engine.get_total_count()
+        _log_ingest_metrics(str(target), total_added, db_count)
+        return {"success": True, "added": total_added, "total_in_db": db_count}
 
     # 3. RAR 或 7Z 檔案（使用獨立臨時節流目錄，處理一個檔案立即刪除）
     if target.is_file() and target.suffix.lower() in (".rar", ".7z"):
@@ -208,37 +261,44 @@ def low_memory_ingest(
             if not ok:
                 return {"success": False, "error": f"解壓縮工具無法開啟 {target.name}，請確認是否安裝 unar、7z 或 WinRAR。", "added": 0}
 
-            # 遞迴搜尋解出的 json 或 zip
-            sub_files = sorted(list(extract_dir.rglob("*.json")) + list(extract_dir.rglob("*.zip")))
-            for sf in sub_files:
-                if sf.suffix.lower() == ".zip":
-                    for raw_doc in stream_json_from_zip(sf):
-                        rec = process_record_to_db_payload(raw_doc)
-                        if rec:
-                            batch_buffer.append(rec)
-                            if len(batch_buffer) >= batch_size:
-                                _flush_buffer()
-                        if total_added >= max_records:
-                            break
-                elif sf.suffix.lower() == ".json":
-                    for raw_doc in stream_json_from_file(sf):
-                        rec = process_record_to_db_payload(raw_doc)
-                        if rec:
-                            batch_buffer.append(rec)
-                            if len(batch_buffer) >= batch_size:
-                                _flush_buffer()
-                        if total_added >= max_records:
-                            break
-                # 處理完立即刪除該子檔以省硬碟與記憶體
-                sf.unlink(missing_ok=True)
-                _flush_buffer()
-                if progress_callback:
-                    progress_callback(total_added, sf.name)
+            # 遍歷臨時解壓目錄中所有 JSON 或 ZIP
+            for root, _, files in os.walk(extract_dir):
+                for fn in sorted(files):
+                    sf = Path(root) / fn
+                    low_fn = fn.lower()
+                    if low_fn.endswith(".zip"):
+                        for raw_doc in stream_json_from_zip(sf):
+                            rec = process_record_to_db_payload(raw_doc)
+                            if rec:
+                                batch_buffer.append(rec)
+                                if len(batch_buffer) >= batch_size:
+                                    _flush_buffer()
+                                    if progress_callback:
+                                        progress_callback(total_added, sf.name)
+                            if total_added >= max_records:
+                                break
+                    elif low_fn.endswith(".json"):
+                        for raw_doc in stream_json_from_file(sf):
+                            rec = process_record_to_db_payload(raw_doc)
+                            if rec:
+                                batch_buffer.append(rec)
+                                if len(batch_buffer) >= batch_size:
+                                    _flush_buffer()
+                                    if progress_callback:
+                                        progress_callback(total_added, sf.name)
+                            if total_added >= max_records:
+                                break
+                    # 處理完立即刪除該子檔以省硬碟與記憶體
+                    sf.unlink(missing_ok=True)
+                    if total_added >= max_records:
+                        break
                 if total_added >= max_records:
                     break
 
         _flush_buffer()
-        return {"success": True, "added": total_added, "total_in_db": engine.get_total_count()}
+        db_count = engine.get_total_count()
+        _log_ingest_metrics(str(target), total_added, db_count)
+        return {"success": True, "added": total_added, "total_in_db": db_count}
 
     # 4. 資料夾掃描處理
     if target.is_dir():
@@ -255,7 +315,9 @@ def low_memory_ingest(
             if total_added >= max_records:
                 break
 
-        return {"success": True, "added": total_added, "total_in_db": engine.get_total_count()}
+        db_count = engine.get_total_count()
+        _log_ingest_metrics(str(target), total_added, db_count)
+        return {"success": True, "added": total_added, "total_in_db": db_count}
 
     return {"success": False, "error": f"無法識別之格式: {target.suffix}", "added": 0}
 
