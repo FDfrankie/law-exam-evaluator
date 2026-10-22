@@ -4612,27 +4612,156 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
 
     # 批次匯入司法院開放資料擴充大庫區塊
     st.divider()
-    with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (Open Data ZIP/JSON) 至本機庫", expanded=False):
-        op_tab_zip, op_tab_api = st.tabs([
-            "📂 方式一：手動上傳司法院 Open Data 打包檔 (ZIP / JSON)",
-            "🌐 方式二：使用司法院開放平臺帳號密碼 API 直接連線同步"
+    with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (data/judgements / ZIP / RAR) 至本機庫", expanded=False):
+        op_tab_folder, op_tab_zip, op_tab_api = st.tabs([
+            "📂 方式一：【一鍵極速入庫】雲端硬碟 data/judgements 資料夾自動掃描 ➔ 爭點分析 ➔ 自動刪除 RAR",
+            "📤 方式二：手動上傳裁判檔案 (.zip, .json, .rar, .7z)",
+            "🌐 方式三：使用司法院開放平臺帳號密碼 API 直接連線同步"
         ])
+
+        with op_tab_folder:
+            st.markdown("""
+#### 📂 雲端硬碟 `data/judgements` 資料夾一鍵全自動串流入庫與實質爭點分析
+系統直接鎖定本機/雲端硬碟專用收件匣，無需開啟終端機或手動上傳！只要將下載的裁判壓縮檔（`.rar`、`.7z`、`.zip`、`.json`）放入 `data/judgements`，點選下方按鈕即可全自動低記憶體串流解壓、完成法學實質爭點分析與 IRAC 萃取，並在入庫後自動刪除原始壓縮包以釋放雲端硬碟空間！
+""")
+            from config import JUDGEMENTS_DIR, OPENDATA_INBOX_DIR, DATA_DIR
+            target_ingest_dirs = [JUDGEMENTS_DIR]
+            if OPENDATA_INBOX_DIR.exists() and OPENDATA_INBOX_DIR != JUDGEMENTS_DIR:
+                target_ingest_dirs.append(OPENDATA_INBOX_DIR)
+
+            # 彙整待處理之壓縮檔案
+            queued_files = []
+            for t_dir in target_ingest_dirs:
+                if t_dir.exists():
+                    for pattern in ("*.rar", "*.7z", "*.zip", "*.json", "*.jsonl"):
+                        for f in t_dir.glob(pattern):
+                            if not f.name.startswith((".", "~")):
+                                queued_files.append(f)
+
+            # 去除重複檔案
+            seen_queued = set()
+            unique_queued = []
+            for qf in queued_files:
+                rp = str(qf.resolve()) if qf.is_symlink() else str(qf)
+                if rp not in seen_queued:
+                    seen_queued.add(rp)
+                    unique_queued.append(qf)
+
+            if unique_queued:
+                st.info(f"📁 **當前鎖定目錄**：`{JUDGEMENTS_DIR}`（偵測到 **{len(unique_queued)} 個** 待處理裁判打包檔）")
+                tot_mb = sum([f.stat().st_size for f in unique_queued if f.exists()]) / (1024 * 1024)
+                st.caption(f"📦 待入庫總容量：`{tot_mb:.2f} MB` ｜ 格式支援：.rar, .7z, .zip, .json")
+
+                for qf in unique_queued:
+                    sz_mb = qf.stat().st_size / (1024 * 1024) if qf.exists() else 0
+                    st.markdown(f"- 📄 **`{qf.name}`** ｜ 大小：`{sz_mb:.1f} MB` ｜ 格式：`{qf.suffix.upper()}` ｜ 狀態：⏳ **待解壓分析入庫**")
+
+                col_del_opt, col_batch_opt = st.columns([2, 1])
+                with col_del_opt:
+                    chk_del_source = st.checkbox(
+                        "🗑️ **入庫與爭點分析完成後，自動刪除原始壓縮包（釋放雲端硬碟空間）**",
+                        value=True,
+                        key="chk_auto_del_rar_in_app",
+                        help="勾選後，每個壓縮包內的裁判全數成功寫入 SQLite 大庫並完成實質爭點分析後，系統會自動在磁碟刪除該原始 .rar/.zip 檔案，避免佔用 Google Drive 雲端空間。"
+                    )
+                with col_batch_opt:
+                    batch_sz_val = st.select_slider("寫入批次大小：", options=[50, 100, 200, 500], value=100, key="sel_batch_sz_folder")
+
+                if st.button("🚀 一鍵啟動：低記憶體解壓入庫 ➔ 爭點智能分析 ➔ 刪除原檔釋放空間", type="primary", use_container_width=True, key="btn_run_folder_ingest"):
+                    with st.spinner("正在啟動零拷貝串流解壓與爭點分析引擎..."):
+                        import gc
+                        from ingest_opendata_lowmem import low_memory_ingest
+
+                        prog_bar = st.progress(0.0)
+                        prog_txt = st.empty()
+
+                        grand_added = 0
+                        all_deleted_files = []
+                        grand_freed_bytes = 0
+
+                        for idx_f, target_f in enumerate(unique_queued, 1):
+                            prog_txt.info(f"⚡ [檔案 {idx_f}/{len(unique_queued)}] 正在解析與實質爭點檢定：**{target_f.name}**...")
+
+                            def _folder_prog_cb(n_curr, cur_doc_title):
+                                prog_txt.info(f"⚡ [檔案 {idx_f}/{len(unique_queued)}] 已寫入 SQLite: **{grand_added + n_curr:,}** 筆 ｜ 分析中：`{cur_doc_title[:30]}`")
+
+                            res_ingest = low_memory_ingest(
+                                target_f,
+                                batch_size=batch_sz_val,
+                                progress_callback=_folder_prog_cb,
+                                delete_source_after_ingest=chk_del_source
+                            )
+
+                            if res_ingest.get("success"):
+                                grand_added += res_ingest.get("added", 0)
+                                all_deleted_files.extend(res_ingest.get("deleted_files", []))
+                                grand_freed_bytes += res_ingest.get("freed_bytes", 0)
+                            else:
+                                st.warning(f"處理檔案 {target_f.name} 時回報：{res_ingest.get('error')}")
+
+                            prog_bar.progress(idx_f / len(unique_queued))
+
+                        prog_bar.progress(1.0)
+                        prog_txt.empty()
+                        gc.collect()
+
+                        st.balloons()
+                        freed_mb = grand_freed_bytes / (1024 * 1024)
+                        del_msg = f"\n\n🗑️ **已自動刪除原始壓縮包**：`{', '.join(all_deleted_files)}`（成功為您的雲端硬碟釋放 **{freed_mb:.1f} MB** 空間！）" if all_deleted_files else ""
+                        st.success(f"🎉 **大庫擴充與爭點分析全部完成！**\n\n- 📊 本次成功寫入 SQLite 大庫：**{grand_added:,}** 筆真實裁判\n- 🏛️ 目前百萬裁判大庫總筆數已達：**{get_million_db_engine().get_total_count():,}** 筆{del_msg}")
+                        time.sleep(2)
+                        st.rerun()
+            else:
+                st.info(f"📁 **當前監控目錄**：`{JUDGEMENTS_DIR}`")
+                st.success("✅ 目前該資料夾內尚無待處理的裁判壓縮包。")
+                st.caption("💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接上傳或複製到雲端硬碟 `data/judgements` 資料夾中。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
+                if st.button("🔄 重新掃描 `data/judgements` 資料夾", key="btn_rescan_judgements_empty"):
+                    st.rerun()
 
         with op_tab_zip:
             st.markdown("""
-司法院資料開放平臺（[`opendata.judicial.gov.tw`](https://opendata.judicial.gov.tw/)）所提供之裁判書開放資料：
-
-#### ⚡ 【超低記憶體極速入庫架構・全面杜絕 Streamlit 崩潰】
-> ⚠️ **記憶體防護聲明**：  
-> 司法院月度 `.rar` 檔案動輒包含數萬篇裁判全文，若直接在 Streamlit 伺服器解壓縮會瞬間突破容器記憶體上限（觸發 OOM 導致服務斷線）。  
-> **系統已全面改採「超低記憶體零拷貝串流（Zero-Copy Streaming）與直接寫入 SQLite」架構**：
-> 1. 🌟 **首選推薦**：切換至右側【**方式二：司法院開放平臺 API 直接連線同步**】，免下載、免解壓，單筆 JID 或近 7 日 JList 清單秒級直入！
-> 2. 📦 **檔案上傳**：支援 **`.zip`**、**`.json`**、**`.jsonl`** 格式，系統以串流方式逐筆寫入 SQLite，記憶體恆定低於 30MB，極速安全！
-> 3. 🖥️ **若手邊為大型 `.rar` 檔案**：請於終端機執行本專案內建專用背景腳本：  
->    `python ingest_opendata_lowmem.py --input <你的rar檔案路徑>`  
->    在獨立進程中以節流方式批次入庫，既快又永不當機！
+#### 📤 瀏覽器手動上傳裁判檔案 (.zip, .json, .rar, .7z)
+若您有單一裁判檔案欲直接上傳入庫，亦可在此直接拖放上傳。系統以超低記憶體串流逐筆寫入 SQLite，全程記憶體維持在低負載安全區間！
 """)
-            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip, .json, .jsonl)：", type=["zip", "json", "jsonl"], key="uploader_opendata_zip")
+            uploaded_op_file = st.file_uploader("📂 選擇司法院開放資料檔案 (.zip, .json, .jsonl, .rar, .7z)：", type=["zip", "json", "jsonl", "rar", "7z"], key="uploader_opendata_zip")
+            if uploaded_op_file is not None:
+                chk_del_upload = st.checkbox("🗑️ 入庫完成後自動刪除上傳暫存檔（釋放空間）", value=True, key="chk_del_upload_temp")
+                if st.button("🚀 立即以低記憶體串流解析並擴充至裁判大庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
+                    with st.spinner(f"正在以低記憶體串流解析【{uploaded_op_file.name}】中的裁判書..."):
+                        import gc, tempfile
+                        from ingest_opendata_lowmem import low_memory_ingest
+
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_op_file.name).suffix) as tmp_f:
+                            uploaded_op_file.seek(0)
+                            while True:
+                                chunk = uploaded_op_file.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                tmp_f.write(chunk)
+                            tmp_path = Path(tmp_f.name)
+
+                        p_bar = st.progress(0.0)
+                        p_text = st.empty()
+
+                        def _stream_cb(added_count, cur_file):
+                            p_text.info(f"⚡ 已串流寫入 SQLite 資料庫: {added_count:,} 筆 (目前檔案: {cur_file[:25]}...)")
+
+                        try:
+                            res = low_memory_ingest(tmp_path, batch_size=50, progress_callback=_stream_cb, delete_source_after_ingest=chk_del_upload)
+                            p_bar.progress(1.0)
+                            p_text.empty()
+                            if res.get("success"):
+                                st.balloons()
+                                st.success(f"🎉 串流匯入成功！本次成功寫入 {res.get('added', 0):,} 筆裁判至 SQLite 大庫，總計已達 {res.get('total_in_db', 0):,} 筆！全程記憶體維持在低負載安全區間。")
+                                time.sleep(1.5)
+                                st.rerun()
+                            else:
+                                st.error(f"串流解析失敗: {res.get('error')}")
+                        except Exception as ue:
+                            st.error(f"處理異常: {ue}")
+                        finally:
+                            tmp_path.unlink(missing_ok=True)
+                            gc.collect()
 
         with op_tab_api:
             st.markdown("""
@@ -4810,64 +4939,7 @@ elif app_mode == MODE_SUMMARIZER or "AI 裁判" in app_mode or "AI 摘要" in ap
                                     st.warning("裁判資料已下載，但欄位格式解析異常。")
                             else:
                                 st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
-        if uploaded_op_file is not None:
-            fn_lower = uploaded_op_file.name.lower()
-            uploaded_op_file.seek(0)
-            head_bytes = uploaded_op_file.read(16)
-            uploaded_op_file.seek(0)
 
-            is_rar_format = fn_lower.endswith((".rar", ".7z")) or head_bytes.startswith((b'Rar!\x1a\x07', b'7z\xbc\xaf\x27\x1c'))
-
-            if is_rar_format:
-                st.error("🚫 **【記憶體保護防護：已安全阻擋在瀏覽器中直接解壓縮 RAR / 7Z】**")
-                st.markdown("""
-**原因說明**：司法院月度 `.rar` 檔案內部常包含數萬筆裁判全文，在 Streamlit 伺服器進程內直接解壓極易耗盡容器記憶體導致服務中斷重啟（Streamlit is down / OOM Crash）。
-
-**系統為您提供以下零負載、零當機替代方案：**
-1. 🌟 **推薦方案 A（首選）**：點擊上方【**方式二：使用司法院開放平臺 API 直接連線同步**】，以 JList 或 JDoc 即時免解壓線上秒級入庫！
-2. 📦 **推薦方案 B**：將壓縮檔轉為標準 **`.zip`** 或解出 **`.json` / `.jsonl`** 檔案後上傳，系統已全面升級為「**逐筆串流寫入 SQLite 技術**」，記憶體恆定在 30MB 以下，極速且安全！
-3. 🖥️ **推薦方案 C（本機離線批次）**：在終端機執行本專案專用低記憶體離線轉檔工具：
-   ```bash
-   python ingest_opendata_lowmem.py --input <你的rar檔案路徑>
-   ```
-   工具將在背景獨立進程中安全、節流地寫入本機 SQLite 大庫，完全不佔用 Web 記憶體！
-""")
-            else:
-                if st.button("🚀 立即以低記憶體串流解析並擴充至裁判大庫", type="primary", use_container_width=True, key="btn_exec_opendata_expand"):
-                    with st.spinner(f"正在以低記憶體串流解析【{uploaded_op_file.name}】中的裁判書..."):
-                        import gc, tempfile
-                        from ingest_opendata_lowmem import low_memory_ingest
-
-                        # 以 1MB 串流塊寫入暫存，杜絕一次性加載爆記憶體
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_op_file.name).suffix) as tmp_f:
-                            uploaded_op_file.seek(0)
-                            while True:
-                                chunk = uploaded_op_file.read(1024 * 1024)
-                                if not chunk:
-                                    break
-                                tmp_f.write(chunk)
-                            tmp_path = Path(tmp_f.name)
-
-                        p_bar = st.progress(0.0)
-                        p_text = st.empty()
-
-                        def _stream_cb(added_count, cur_file):
-                            p_text.info(f"⚡ 已串流寫入 SQLite 資料庫: {added_count:,} 筆 (目前檔案: {cur_file[:25]}...)")
-
-                        try:
-                            res = low_memory_ingest(tmp_path, batch_size=50, progress_callback=_stream_cb)
-                            p_bar.progress(1.0)
-                            p_text.empty()
-                            if res.get("success"):
-                                st.success(f"🎉 串流匯入成功！本次成功寫入 {res.get('added', 0):,} 筆裁判至 SQLite 大庫，總計已達 {res.get('total_in_db', 0):,} 筆！全程記憶體維持在低負載安全區間。")
-                                st.rerun()
-                            else:
-                                st.error(f"串流解析失敗: {res.get('error')}")
-                        except Exception as ue:
-                            st.error(f"處理異常: {ue}")
-                        finally:
-                            tmp_path.unlink(missing_ok=True)
-                            gc.collect()
 
 # ----------------- 模式 6: 智慧六法與條文判解綜合標註 (法條・沿革・爭點・筆記) -----------------
 elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
@@ -5083,7 +5155,7 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                         st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
                 st.markdown(f"> **📜 條文全文**：\n> {content}")
 
-                with st.expander("🏛️ 【顯示/隱藏歷史條文及立法理由】(#reason_title)", expanded=False):
+                with st.expander("🏛️ 【顯示/隱藏歷史條文及立法理由】", expanded=False):
                     st.markdown("#### 📜 現行有效條文：")
                     st.info(content)
 
@@ -5134,20 +5206,15 @@ elif app_mode == MODE_SIX_CODES or "智慧六法" in app_mode:
                                 except Exception as e_syn:
                                     st.error(f"立法理由提煉失敗: {e_syn}")
 
-                with st.expander("🔍 【顯示/隱藏裁判與判解條件篩選】(LawsTable-Filter：9大裁判類別・日期區間)", expanded=False):
-                    c_all, c_desc = st.columns([1, 4])
-                    with c_all:
-                        cat_all_key = f"laws_cat_all_{idx}"
-                        cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
-                    with c_desc:
-                        st.caption("仿法源資訊核心元件：可勾選篩選特定之裁判判解類別與裁判日期範圍。")
-
+                with st.container(border=True):
+                    st.markdown("##### 🏛️ 法源資訊關聯資料篩選 (LawsTable-Filter)")
+                    cat_all_key = f"laws_cat_all_{idx}"
+                    cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
                     col_cats = st.columns(9)
                     categories = ["司法解釋", "憲法法庭", "大法庭", "原判例", "精選裁判", "決議", "法律問題", "行政函釋", "法學論著"]
                     for c_i, cat_name in enumerate(categories):
                         with col_cats[c_i]:
                             st.checkbox(cat_name, value=cat_all, key=f"laws_cat_{cat_name}_{idx}")
-
                     d_c1, d_c2 = st.columns(2)
                     with d_c1:
                         st.text_input("📅 起始日期 (民國年/月/日)：", value=st.session_state.get(f"date_start_{idx}", "100年01月01日"), key=f"date_start_{idx}", placeholder="例：100年01月01日")
