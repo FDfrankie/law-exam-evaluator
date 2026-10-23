@@ -1180,19 +1180,35 @@ def render_judgements_ingest_view():
 #### 📂 雲端硬碟 `data/judgements` 資料夾一鍵全自動串流入庫與實質爭點分析
 系統直接鎖定本機/雲端硬碟專用收件匣，無需開啟終端機或手動上傳！只要將下載的裁判壓縮檔（`.rar`、`.7z`、`.zip`、`.json`）放入 `data/judgements`，點選下方按鈕即可全自動低記憶體串流解壓、完成法學實質爭點分析與 IRAC 萃取，並在入庫後自動刪除原始壓縮包以釋放雲端硬碟空間！
 """)
-        from config import JUDGEMENTS_DIR, OPENDATA_INBOX_DIR, DATA_DIR
-        target_ingest_dirs = [JUDGEMENTS_DIR]
-        if OPENDATA_INBOX_DIR.exists() and OPENDATA_INBOX_DIR != JUDGEMENTS_DIR:
-            target_ingest_dirs.append(OPENDATA_INBOX_DIR)
+        from config import JUDGEMENTS_DIR, OPENDATA_INBOX_DIR, DATA_DIR, DEFAULT_WINDOWS_JUDGEMENTS_DIR
+
+        # 監控目錄路徑（支援自訂覆寫，預設直接鎖定 G:\我的雲端硬碟\LawExamData\data\judgements）
+        custom_input_path = st.session_state.get("custom_judgements_path", "")
+        active_monitored_dir = Path(custom_input_path) if custom_input_path else JUDGEMENTS_DIR
+
+        # 彙整所有可行的實體磁碟掃描候選目錄
+        candidate_scan_dirs = [active_monitored_dir]
+        for extra_p in [
+            JUDGEMENTS_DIR,
+            DEFAULT_WINDOWS_JUDGEMENTS_DIR,
+            Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements"),
+            Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements",
+            DATA_DIR / "data" / "judgements",
+            DATA_DIR / "judgements",
+            OPENDATA_INBOX_DIR
+        ]:
+            if extra_p not in candidate_scan_dirs:
+                candidate_scan_dirs.append(extra_p)
+
+        target_ingest_dirs = [d for d in candidate_scan_dirs if d.exists()]
 
         # 彙整待處理之壓縮檔案
         queued_files = []
         for t_dir in target_ingest_dirs:
-            if t_dir.exists():
-                for pattern in ("*.rar", "*.7z", "*.zip", "*.json", "*.jsonl"):
-                    for f in t_dir.glob(pattern):
-                        if not f.name.startswith((".", "~")):
-                            queued_files.append(f)
+            for pattern in ("*.rar", "*.7z", "*.zip", "*.json", "*.jsonl"):
+                for f in t_dir.glob(pattern):
+                    if not f.name.startswith((".", "~")):
+                        queued_files.append(f)
 
         # 去除重複檔案
         seen_queued = set()
@@ -1204,7 +1220,7 @@ def render_judgements_ingest_view():
                 unique_queued.append(qf)
 
         if unique_queued:
-            st.info(f"📁 **當前鎖定目錄**：`{JUDGEMENTS_DIR}`（偵測到 **{len(unique_queued)} 個** 待處理裁判打包檔）")
+            st.info(f"📁 **當前鎖定目錄**：`{active_monitored_dir}`（偵測到 **{len(unique_queued)} 個** 待處理裁判打包檔）")
             tot_mb = sum([f.stat().st_size for f in unique_queued if f.exists()]) / (1024 * 1024)
             st.caption(f"📦 待入庫總容量：`{tot_mb:.2f} MB` ｜ 格式支援：.rar, .7z, .zip, .json")
 
@@ -1268,11 +1284,36 @@ def render_judgements_ingest_view():
                     time.sleep(2)
                     st.rerun()
         else:
-            st.info(f"📁 **當前監控目錄**：`{JUDGEMENTS_DIR}`")
-            st.success("✅ 目前該資料夾內尚無待處理的裁判壓縮包。")
-            st.caption("💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接上傳或複製到雲端硬碟 `data/judgements` 資料夾中。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
-            if st.button("🔄 重新掃描 `data/judgements` 資料夾", key="btn_rescan_judgements_empty"):
+            st.info(f"📁 **當前監控目錄**：`{active_monitored_dir}`")
+
+            # 若處於遠端 Linux 雲端伺服器 (Streamlit Cloud)，提醒雲端伺服器無法直接穿透存取本地 Windows G 槽
+            is_remote_cloud_host = (sys.platform != "win32" and not active_monitored_dir.exists() and (str(active_monitored_dir).startswith(("G:", "g:", "C:", "c:", "D:", "d:")) or ":" in str(active_monitored_dir)[:3]))
+            if is_remote_cloud_host:
+                st.warning("⚠️ **遠端雲端主機連線提示**：當前應用程式正在 Streamlit Cloud 遠端雲端伺服器（Linux）上運行，遠端主機無法直接跨網際網路存取您個人電腦上的 Windows `G:\\` 本地磁碟機。")
+                st.markdown("""
+> [!TIP]
+> 💡 **如何立即處理您 `G:\\我的雲端硬碟\\LawExamData\\data\\judgements` 內的裁判壓縮包？**
+>
+> 1. 📤 **免安裝在線即刻入庫（最推薦）**：請切換至上方 **【📤 方式二：手動上傳裁判檔案】** 標籤頁，點選檔案上傳並選取您電腦 `G:\\我的雲端硬碟\\LawExamData\\data\\judgements` 內的 `.rar` 或 `.zip` 檔案，系統即可直接在瀏覽器端串流解析入庫！
+> 2. 💻 **本機自動排程即時監控**：若您希望系統全自動偵測本機 `G:\\` 磁碟資料夾中的新增檔案，只要在您的 Windows 電腦開啟終端機（cmd / PowerShell），切換至專案資料夾執行 `streamlit run app.py`。本機端將直接連通 `G:\\我的雲端硬碟\\LawExamData\\data\\judgements`，每次下載新壓縮檔放入即可一鍵解壓入庫並自動刪除原始壓縮包！
+""")
+            else:
+                st.success("✅ 目前該資料夾內尚無待處理的裁判壓縮包。")
+                st.caption(f"💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接上傳或複製到雲端硬碟 `{active_monitored_dir}` 資料夾中。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
+
+            if st.button("🔄 重新掃描裁判資料夾", key="btn_rescan_judgements_empty"):
                 st.rerun()
+
+        with st.expander("⚙️ 自訂或切換監控目錄路徑", expanded=False):
+            col_p1, col_p2 = st.columns([4, 1])
+            with col_p1:
+                new_input_dir = st.text_input("自訂監控資料夾路徑：", value=str(active_monitored_dir), key="inp_monitored_judgements_dir")
+            with col_p2:
+                st.write("")
+                st.write("")
+                if st.button("套用路徑", key="btn_apply_monitored_dir"):
+                    st.session_state["custom_judgements_path"] = new_input_dir.strip()
+                    st.rerun()
 
     with op_tab_zip:
         st.markdown("""

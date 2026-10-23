@@ -99,7 +99,35 @@ SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
 MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
 JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db" if (DATA_DIR / "judicial_1m_db").exists() else (DATA_DIR / "data" / "judicial_1m_db" if (DATA_DIR / "data" / "judicial_1m_db").exists() else DATA_DIR / "judicial_1m_db")
 OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox" if (DATA_DIR / "opendata_inbox").exists() else (DATA_DIR / "data" / "opendata_inbox" if (DATA_DIR / "data" / "opendata_inbox").exists() else DATA_DIR / "opendata_inbox")
-JUDGEMENTS_DIR = DATA_DIR / "data" / "judgements" if (DATA_DIR / "data" / "judgements").exists() else (DATA_DIR / "judgements" if (DATA_DIR / "judgements").exists() else DATA_DIR / "data" / "judgements")
+DEFAULT_WINDOWS_JUDGEMENTS_DIR = Path(r"G:\我的雲端硬碟\LawExamData\data\judgements")
+
+def get_judgements_dir() -> Path:
+    """獲取裁判壓縮包 (.rar, .7z, .zip) 監控目錄，優先採用使用者指定之 G:\\我的雲端硬碟\\LawExamData\\data\\judgements"""
+    # 0. 環境變數或 Streamlit secrets 顯式設定
+    custom_j = os.getenv("JUDGEMENTS_DIR")
+    if not custom_j:
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets") and "JUDGEMENTS_DIR" in st.secrets:
+                custom_j = str(st.secrets["JUDGEMENTS_DIR"]).strip()
+        except Exception:
+            pass
+    if custom_j:
+        return Path(custom_j)
+
+    # 1. 若本機是 Windows 且 G 槽路徑存在
+    for w_path in [
+        Path(r"G:\我的雲端硬碟\LawExamData\data\judgements"),
+        Path(r"G:\My Drive\LawExamData\data\judgements"),
+        Path("G:/我的雲端硬碟/LawExamData/data/judgements")
+    ]:
+        if w_path.exists():
+            return w_path
+
+    # 2. 預設標準監控目錄（固定為使用者指定之 Windows 雲端硬碟路徑，避免出現雲端 Linux 伺服器掛載路徑）
+    return DEFAULT_WINDOWS_JUDGEMENTS_DIR
+
+JUDGEMENTS_DIR = get_judgements_dir()
 
 def init_directories():
     """Ensure data directories exist"""
@@ -109,6 +137,10 @@ def init_directories():
         SAMSUNG_NOTES_DIR, JUDICIAL_1M_DIR, OPENDATA_INBOX_DIR, JUDGEMENTS_DIR
     ]:
         try:
+            # 避免在 Linux/macOS 環境下對 Windows 磁碟槽路徑（如 G:\...）進行無效 mkdir
+            folder_str = str(folder)
+            if sys.platform != "win32" and (folder_str.startswith(("G:", "g:", "C:", "c:", "D:", "d:")) or ":" in folder_str[:3]):
+                continue
             folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             print(f"[DIR ERROR] Failed creating {folder}: {e}")
