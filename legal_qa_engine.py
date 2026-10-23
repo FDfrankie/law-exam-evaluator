@@ -24,12 +24,12 @@ try:
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
     HAS_GENAI = True
-except ImportError:
+except Exception:
     try:
         import google.generativeai as legacy_genai
         USE_MODERN_GENAI = False
         HAS_GENAI = True
-    except ImportError:
+    except Exception:
         HAS_GENAI = False
         USE_MODERN_GENAI = False
 

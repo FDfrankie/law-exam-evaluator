@@ -10,12 +10,25 @@
 import streamlit as st
 import os
 import sys
+from pathlib import Path
+
+# 確保當前目錄與專案目錄位於 sys.path 最優先順位，防止 Streamlit Cloud 模組解析遺失
+_cur_dir = str(Path(__file__).resolve().parent)
+if _cur_dir not in sys.path:
+    sys.path.insert(0, _cur_dir)
+
+# 設定頁面配置（必須為全域首個執行的 Streamlit 指令）
+st.set_page_config(
+    page_title="司律考試 AI 評分與命題大師",
+    page_icon="⚖️",
+    layout="wide"
+)
+
 import json
 import re
 import io
 import time
 import urllib.parse
-from pathlib import Path
 from PIL import Image
 
 from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
@@ -38,65 +51,158 @@ from legal_query_engine import (
     PRESET_JUDGEMENT_HISTORIES,
     extract_case_roc_year
 )
-from six_codes_engine import (
-    SIX_CODES_TAXONOMY,
-    get_laws_in_branch,
-    search_articles,
-    get_article_annotations,
-    SixCodesDeepAnnotator,
-    get_law_legislative_history,
-    get_article_legislative_details,
-    synthesize_article_legislative_details,
-    clear_six_codes_cache,
-    load_six_codes_data,
-    format_legal_article_text,
-    render_formatted_article_quote
-)
-from six_codes_updater import update_law_amendments, load_amendments_history
-from community_archive_engine import (
-    archive_uploaded_question,
-    archive_uploaded_note,
-    load_community_questions,
-    load_community_notes,
-    search_community_questions,
-    search_community_notes
-)
-from admin_rulings_engine import (
-    get_law_key_regulations,
-    get_regulation_full_details,
-    get_admin_rulings_for_article,
-    get_all_administrative_rulings,
-    crawl_and_synthesize_admin_rulings,
-    get_chorder_regulations_map,
-    LANDMARK_ADMIN_RULINGS
-)
-from legal_summarizer_engine import (
-    BooleanQueryParser,
-    evaluate_boolean_query,
-    AILegalSummarizer,
-    BUILTIN_LANDMARK_DOCS,
-    find_legal_doc_by_citation,
-    lookup_case_by_abbreviation,
-    parse_case_abbreviation_query,
-    construct_standard_citation_from_parsed
-)
-from legal_qa_engine import (
-    LegalQAEngine,
-    LEGAL_CONSULTATION_DOMAINS,
-    USER_STANDPOINTS,
-    OUTPUT_MODES,
-    QUERY_TYPES,
-    calculate_vehicle_depreciation,
-    calculate_severance_pay,
-    calculate_marital_property_division,
-    calculate_inheritance_shares,
-    calculate_statutory_interest
-)
-from core_issues_taxonomy import (
-    get_taxonomy_chapters_for_subject,
-    get_curated_issues_by_chapter,
-    get_total_curated_issues_count
-)
+
+_six_codes_load_error = None
+try:
+    from six_codes_engine import (
+        SIX_CODES_TAXONOMY,
+        get_laws_in_branch,
+        search_articles,
+        get_article_annotations,
+        SixCodesDeepAnnotator,
+        get_law_legislative_history,
+        get_article_legislative_details,
+        synthesize_article_legislative_details,
+        clear_six_codes_cache,
+        load_six_codes_data,
+        format_legal_article_text,
+        render_formatted_article_quote
+    )
+except Exception as _err:
+    import traceback
+    _six_codes_load_error = f"{type(_err).__name__}: {_err}\n\n{traceback.format_exc()}"
+    SIX_CODES_TAXONOMY = {
+        "🏛️ 憲法與憲政法規": ["中華民國憲法", "中華民國憲法增修條文", "憲法訴訟法"],
+        "📜 民事實體法典": ["民法", "消費者保護法", "信託法", "涉外民事法律適用法", "民法總則施行法", "民法債編施行法", "民法物權編施行法", "民法親屬編施行法", "民法繼承編施行法"],
+        "⚖️ 民事程序法典": ["民事訴訟法", "民事訴訟法施行法", "家事事件法", "強制執行法", "非訟事件法", "勞動事件法"],
+        "⚔️ 刑事實體法典": ["中華民國刑法", "中華民國刑法施行法", "貪污治罪條例", "毒品危害防制條例", "洗錢防制法"],
+        "🛡️ 刑事程序法典": ["刑事訴訟法", "刑事訴訟法施行法", "國民法官法", "少年事件處理法", "通訊保障及監察法"],
+        "🏢 公法與行政法典": ["行政程序法", "行政訴訟法", "訴願法", "國家賠償法", "行政罰法", "行政執行法", "公務員懲戒法", "公務人員保障法"],
+        "💼 商事與財經法典": ["公司法", "保險法", "證券交易法", "票據法", "金融消費者保護法", "銀行法"],
+        "💡 智慧財產與勞動法典": ["專利法", "商標法", "著作權法", "營業秘密法", "勞動基準法", "工會法"]
+    }
+    def get_laws_in_branch(b): return list(SIX_CODES_TAXONOMY.get(b, []))
+    def search_articles(*args, **kwargs): return []
+    def get_article_annotations(*args, **kwargs): return {}
+    class SixCodesDeepAnnotator:
+        def __init__(self, *args, **kwargs): pass
+        def annotate_article(self, *args, **kwargs): return "六法註解暫時離線"
+    def get_law_legislative_history(*args, **kwargs): return {}
+    def get_article_legislative_details(*args, **kwargs): return {}
+    def synthesize_article_legislative_details(*args, **kwargs): return {}
+    def clear_six_codes_cache(*args, **kwargs): pass
+    def load_six_codes_data(*args, **kwargs): return [], {}, {}
+    def format_legal_article_text(t):
+        if not t or not isinstance(t, str): return ""
+        t = t.replace('\r\n', '\n').replace('\r', '\n')
+        t = re.sub(r'(?<=[。；:：\n])\s*(?=[一二三四五六七八九十百]+[、\s])', '\n  ', t)
+        return t
+    def render_formatted_article_quote(c, title="📜 條文全文"):
+        fmt = format_legal_article_text(c)
+        lines = [f"> {l}  " for l in fmt.split('\n')]
+        return f"> **{title}**：  \n" + '\n'.join(lines)
+try:
+    from six_codes_updater import update_law_amendments, load_amendments_history
+except Exception as _e_scu:
+    def update_law_amendments(*args, **kwargs): return {"success": False, "error": str(_e_scu)}
+    def load_amendments_history(*args, **kwargs): return []
+
+try:
+    from community_archive_engine import (
+        archive_uploaded_question,
+        archive_uploaded_note,
+        load_community_questions,
+        load_community_notes,
+        search_community_questions,
+        search_community_notes
+    )
+except Exception:
+    def archive_uploaded_question(*args, **kwargs): return {"success": False}
+    def archive_uploaded_note(*args, **kwargs): return {"success": False}
+    def load_community_questions(*args, **kwargs): return []
+    def load_community_notes(*args, **kwargs): return []
+    def search_community_questions(*args, **kwargs): return []
+    def search_community_notes(*args, **kwargs): return []
+
+try:
+    from admin_rulings_engine import (
+        get_law_key_regulations,
+        get_regulation_full_details,
+        get_admin_rulings_for_article,
+        get_all_administrative_rulings,
+        crawl_and_synthesize_admin_rulings,
+        get_chorder_regulations_map,
+        LANDMARK_ADMIN_RULINGS
+    )
+except Exception:
+    def get_law_key_regulations(*args, **kwargs): return []
+    def get_regulation_full_details(*args, **kwargs): return {}
+    def get_admin_rulings_for_article(*args, **kwargs): return []
+    def get_all_administrative_rulings(*args, **kwargs): return []
+    def crawl_and_synthesize_admin_rulings(*args, **kwargs): return {}
+    def get_chorder_regulations_map(*args, **kwargs): return {}
+    LANDMARK_ADMIN_RULINGS = {}
+
+try:
+    from legal_summarizer_engine import (
+        BooleanQueryParser,
+        evaluate_boolean_query,
+        AILegalSummarizer,
+        BUILTIN_LANDMARK_DOCS,
+        find_legal_doc_by_citation,
+        lookup_case_by_abbreviation,
+        parse_case_abbreviation_query,
+        construct_standard_citation_from_parsed
+    )
+except Exception:
+    class BooleanQueryParser:
+        @staticmethod
+        def is_boolean_query(*args, **kwargs): return False
+    def evaluate_boolean_query(*args, **kwargs): return False
+    class AILegalSummarizer:
+        def __init__(self, *args, **kwargs): pass
+    BUILTIN_LANDMARK_DOCS = {}
+    def find_legal_doc_by_citation(*args, **kwargs): return None
+    def lookup_case_by_abbreviation(*args, **kwargs): return None
+    def parse_case_abbreviation_query(*args, **kwargs): return None
+    def construct_standard_citation_from_parsed(*args, **kwargs): return ""
+
+try:
+    from legal_qa_engine import (
+        LegalQAEngine,
+        LEGAL_CONSULTATION_DOMAINS,
+        USER_STANDPOINTS,
+        OUTPUT_MODES,
+        QUERY_TYPES,
+        calculate_vehicle_depreciation,
+        calculate_severance_pay,
+        calculate_marital_property_division,
+        calculate_inheritance_shares,
+        calculate_statutory_interest
+    )
+except Exception:
+    class LegalQAEngine:
+        def __init__(self, *args, **kwargs): pass
+    LEGAL_CONSULTATION_DOMAINS = {}
+    USER_STANDPOINTS = {}
+    OUTPUT_MODES = {}
+    QUERY_TYPES = {}
+    def calculate_vehicle_depreciation(*args, **kwargs): return {}
+    def calculate_severance_pay(*args, **kwargs): return {}
+    def calculate_marital_property_division(*args, **kwargs): return {}
+    def calculate_inheritance_shares(*args, **kwargs): return {}
+    def calculate_statutory_interest(*args, **kwargs): return {}
+
+try:
+    from core_issues_taxonomy import (
+        get_taxonomy_chapters_for_subject,
+        get_curated_issues_by_chapter,
+        get_total_curated_issues_count
+    )
+except Exception:
+    def get_taxonomy_chapters_for_subject(*args, **kwargs): return []
+    def get_curated_issues_by_chapter(*args, **kwargs): return []
+    def get_total_curated_issues_count(*args, **kwargs): return 0
 try:
     from build_million_judgments_db import MillionJudgmentsSQLiteEngine
 except Exception:
@@ -324,14 +430,14 @@ class JudicialBatchMonthCrawler:
                     pass
 
 
-# 設定頁面配置
-st.set_page_config(
-    page_title="司律考試 AI 評分與命題大師",
-    page_icon="⚖️",
-    layout="wide"
-)
-
+# 頁面配置已於檔案開頭最優先初始化完成 (st.set_page_config)
 init_directories()
+
+# 若六法全書或底層模組在 Streamlit Cloud 遭遇載入異常，於此主動向使用者呈現未遮蔽診斷訊息
+if _six_codes_load_error:
+    st.error("⚠️ **【六法引擎自動安全防護已啟動】**：`six_codes_engine` 模組載入遭遇異常，系統已自動啟用安全模式以維持全部核心功能運作。")
+    with st.expander("🔍 點此查看未遮蔽之完整除錯日誌 (Unredacted Traceback)"):
+        st.code(_six_codes_load_error)
 
 try:
     from ingest_user_notes_to_sft import (

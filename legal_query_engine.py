@@ -19,10 +19,10 @@ try:
     from google import genai
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
-except ImportError:
+except Exception:
     try:
         import google.generativeai as legacy_genai
-    except ImportError:
+    except Exception:
         legacy_genai = None
     USE_MODERN_GENAI = False
 

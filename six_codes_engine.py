@@ -20,14 +20,29 @@ try:
     from google import genai
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
-except ImportError:
+except Exception:
     try:
         import google.generativeai as legacy_genai
-    except ImportError:
+    except Exception:
         legacy_genai = None
     USE_MODERN_GENAI = False
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+
+__all__ = [
+    "SIX_CODES_TAXONOMY",
+    "get_laws_in_branch",
+    "search_articles",
+    "get_article_annotations",
+    "SixCodesDeepAnnotator",
+    "get_law_legislative_history",
+    "get_article_legislative_details",
+    "synthesize_article_legislative_details",
+    "clear_six_codes_cache",
+    "load_six_codes_data",
+    "format_legal_article_text",
+    "render_formatted_article_quote"
+]
 
 # 八大法學門類體系分類
 SIX_CODES_TAXONOMY: Dict[str, List[str]] = {
