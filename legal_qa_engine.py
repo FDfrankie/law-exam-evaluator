@@ -15,21 +15,16 @@ import re
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
-    from six_codes_engine import format_legal_article_text
-except Exception:
-    def format_legal_article_text(t): return t
-
-try:
     from google import genai
     from google.genai import types as genai_types
     USE_MODERN_GENAI = True
     HAS_GENAI = True
-except Exception:
+except ImportError:
     try:
         import google.generativeai as legacy_genai
         USE_MODERN_GENAI = False
         HAS_GENAI = True
-    except Exception:
+    except ImportError:
         HAS_GENAI = False
         USE_MODERN_GENAI = False
 
@@ -425,7 +420,7 @@ class LegalQAEngine:
         if any(k in t for k in ["哪一條", "何條", "條文是", "法條是", "第幾條", "法條依據是哪", "條文為何", "適用何條", "這是哪條", "條文代號", "法條名稱"]):
             return "📜 條文歸屬速查 (這是哪一條・構成要件・相鄰法條辨析)"
         # 2. 爭點深析
-        if any(k in t for k in ["爭點", "學說", "實務見解", "通說", "有力說", "大法庭", "決議", "判例", "憲判", "爭鳴", "見解歧異", "折衷說", "有權處分", "無權處分", "保證人地位", "不作為犯", "利益衡量", "irac", "擬答"]):
+        if any(k in t for k in ["爭點", "學說", "實務見解", "通說", "有力說", "大法庭", "決議", "判例", "憲判", "爭鳴", "見解歧異", "折衷說", "有權處分", "無權處分", "保證人地位", "不作為犯", "利益衡量", "irac", "擬答", "僅適用於", "目的性限縮", "限縮", "擴張解釋", "類推適用", "得否", "是否適用", "能否", "如何涵攝", "設立中公司", "嘗試", "意圖", "公司法第19條", "第19條"]):
             return "⚖️ 法學爭點深析 (實務通說 vs 學說爭鳴・大法庭裁定・作答架構)"
         # 3. 金錢與損害賠償精算
         if any(k in t for k in ["計算", "算式", "試算", "多少錢", "折舊", "定率遞減", "直線法", "資遣費", "預告工資", "特留分", "應繼分", "剩餘財產", "年資", "月薪", "利息", "遲延利息", "本利和", "賠償多少", "幾成", "比例", "工資折舊", "扣抵"]):
@@ -433,18 +428,13 @@ class LegalQAEngine:
         # 4. 預設生活與實務法扶諮詢
         return "💬 生活與實務法律諮詢 (六大維度・證據清單・救濟行動指南)"
 
-    def _call_model(self, prompt: str, temperature: float = 0.2, max_tokens: int = 8192) -> str:
+    def _call_model(self, prompt: str, temperature: float = 0.2) -> str:
         if not HAS_GENAI:
             return self._generate_offline_legal_fallback(prompt)
 
         models_to_try = get_gemini_models_to_try()
         last_error = None
 
-        full_output = ""
-        finish_reason = None
-        used_model = None
-
-        # 1. 核心首輪調用 (突破長度限制：token 上限提升至 8192)
         if USE_MODERN_GENAI:
             client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
             for model_name in models_to_try:
@@ -454,15 +444,11 @@ class LegalQAEngine:
                         contents=prompt,
                         config=genai_types.GenerateContentConfig(
                             temperature=temperature,
-                            max_output_tokens=max_tokens
+                            max_output_tokens=4096
                         ) if hasattr(genai_types, 'GenerateContentConfig') else None
                     )
                     if resp and resp.text:
-                        full_output = resp.text
-                        used_model = model_name
-                        if resp.candidates and len(resp.candidates) > 0:
-                            finish_reason = getattr(resp.candidates[0], "finish_reason", None)
-                        break
+                        return resp.text
                 except Exception as e:
                     last_error = e
                     continue
@@ -474,286 +460,336 @@ class LegalQAEngine:
                     m = legacy_genai.GenerativeModel(model_name)
                     resp = m.generate_content(
                         prompt,
-                        generation_config={"temperature": temperature, "max_output_tokens": max_tokens}
+                        generation_config={"temperature": temperature, "max_output_tokens": 4096}
                     )
                     if resp and resp.text:
-                        full_output = resp.text
-                        used_model = model_name
-                        if resp.candidates and len(resp.candidates) > 0:
-                            finish_reason = getattr(resp.candidates[0], "finish_reason", None)
-                        break
+                        return resp.text
                 except Exception as e:
                     last_error = e
                     continue
 
-        if not full_output:
-            return self._generate_offline_legal_fallback(prompt)
+        return self._generate_offline_legal_fallback(prompt)
 
-        # 2. 自動接續機制 (Auto-Continuation：徹底解決輸出長度被截斷中斷之問題)
-        def _is_truncated(text: str, reason: Any) -> bool:
-            r_str = str(reason).upper()
-            if "MAX_TOKENS" in r_str or "LENGTH" in r_str or r_str == "2":
-                return True
-            clean_t = text.strip()
-            if not clean_t:
-                return False
-            last_char = clean_t[-1]
-            # 若結尾不是正常的標點符號且字數偏多，判定為中途截斷
-            if len(clean_t) > 1200 and last_char not in ("。", "！", "!", "？", "?", "」", "』", "）", ")", "\n", "`", "*"):
-                return True
-            return False
-
-        continuation_count = 0
-        while continuation_count < 2 and _is_truncated(full_output, finish_reason) and used_model:
-            continuation_count += 1
-            last_snippet = full_output.strip()[-100:]
-            continuation_prompt = (
-                f"{prompt}\n\n"
-                f"【系統自動接續指令】：前次輸出因達到長度上限而於此處中途截斷：「...{last_snippet}」。\n"
-                f"請緊接著該句最後一個字無縫往下接續書寫，絕對不要重複前文已輸出的任何字句，直接完成後續未完之章節、實體法理分析與最終結論："
-            )
-            try:
-                next_text = ""
-                if USE_MODERN_GENAI:
-                    c_resp = client.models.generate_content(
-                        model=used_model,
-                        contents=continuation_prompt,
-                        config=genai_types.GenerateContentConfig(
-                            temperature=temperature,
-                            max_output_tokens=max_tokens
-                        ) if hasattr(genai_types, 'GenerateContentConfig') else None
-                    )
-                    if c_resp and c_resp.text:
-                        next_text = c_resp.text
-                        if c_resp.candidates and len(c_resp.candidates) > 0:
-                            finish_reason = getattr(c_resp.candidates[0], "finish_reason", None)
-                else:
-                    m = legacy_genai.GenerativeModel(used_model)
-                    c_resp = m.generate_content(
-                        continuation_prompt,
-                        generation_config={"temperature": temperature, "max_output_tokens": max_tokens}
-                    )
-                    if c_resp and c_resp.text:
-                        next_text = c_resp.text
-                        if c_resp.candidates and len(c_resp.candidates) > 0:
-                            finish_reason = getattr(c_resp.candidates[0], "finish_reason", None)
-
-                if next_text:
-                    trimmed_next = next_text.strip()
-                    if trimmed_next.startswith(last_snippet[-20:]):
-                        trimmed_next = trimmed_next[len(last_snippet[-20:]):].strip()
-                    full_output = full_output.rstrip() + "\n" + trimmed_next
-                else:
-                    break
-            except Exception:
-                break
-
-        return full_output
-
-    def retrieve_grounding_context(
+    def answer_legal_question(
         self,
         question: str,
-        domain: str = "",
-        top_k_statutes: int = 4,
-        top_k_cases: int = 4
+        domain: str = "🌟 自動偵測 (全領域綜合剖析)",
+        standpoint: str = "⚖️ 客觀中立立場 (全面衡平評估法理與雙方勝算)",
+        output_mode: str = "📑 完整專業法律諮詢意見書 (定性・條文・權利・證據・流程・時效)",
+        query_type: str = "🌟 智慧綜合判斷 (全自動意圖辨識)",
+        history: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """
-        【事前提問大庫錨定 (Pre-Retrieval Grounding)】：
-        依據使用者提問內容，向本機真實資料庫（SQLite 4,900+ 權威裁判庫、BUILTIN_LANDMARK_DOCS、全國法規庫）
-        檢索高相關之真實裁判與法規條文，形成 Ground-Truth 參考依據以注入 Prompt，徹底消除數字與字號幻覺！
+        解答一般及進階法律問題，根據 query_type 自動切換至最合適之法學架構輸出。
         """
-        from build_million_judgments_db import get_million_db_engine
-        from six_codes_engine import search_articles
-        from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
+        if not question or not question.strip():
+            return {
+                "success": False,
+                "error": "請輸入欲查詢或諮詢之法律問題、條文疑義、爭點或案件事實！",
+                "content": ""
+            }
 
         q_clean = question.strip()
+        detected_domain = self.detect_question_domain(q_clean) if "自動偵測" in domain else domain
         
-        # 0. 常用法學概念與高頻爭端聯想同義詞庫 (Concept Expansion)
-        LEGAL_CONCEPT_SYNONYMS = {
-            "油漆": ["附合", "動產附合", "添附", "812", "816"],
-            "借名": ["借名登記", "出名人", "借名人", "無權處分", "有權處分", "118", "758", "108台上大1719"],
-            "車損": ["零件折舊", "定率遞減", "196", "77年度第九次民事庭會議"],
-            "折舊": ["定率遞減", "零件", "殘值", "196"],
-            "押金": ["租賃", "租屋", "返還押金", "押租金", "定金", "421", "423"],
-            "資遣": ["勞退新制", "資遣費", "預告工資", "勞動基準法", "勞退條例12"],
-            "特留分": ["應繼分", "遺產", "1138", "1144", "1223"],
-            "剩餘財產": ["婚後財產", "夫妻剩餘財產", "1030-1"],
-            "遲延利息": ["法定利率", "年息5%", "203", "229", "233"]
-        }
+        # 決定實際檢索意圖
+        actual_intent = self.detect_query_intent(q_clean) if "智慧綜合" in query_type or "全自動" in query_type else query_type
 
-        # 1. 提取顯式提及之法規條號（例如 811, 812, 184, 1030-1, 1144 等）
-        explicit_art_numbers = re.findall(r'(?:第\s*)?([0-9]{1,4}(?:之[0-9]+)?)(?:\s*條)?', q_clean)
-        
-        # 2. 概念同義詞擴展
-        expanded_concepts = []
-        for ck, cv_list in LEGAL_CONCEPT_SYNONYMS.items():
-            if ck in q_clean:
-                for cv in cv_list:
-                    if re.match(r'^[0-9]+', cv):
-                        if cv not in explicit_art_numbers:
-                            explicit_art_numbers.append(cv)
-                    else:
-                        expanded_concepts.append(cv)
+        history_context = ""
+        if history and len(history) > 0:
+            history_context = "【先前對話紀錄與追問脈絡】：\n"
+            for h in history[-4:]:
+                history_context += f"- 提問者: {h.get('question', '')}\n- 顧問回答重點: {h.get('answer', '')[:200]}...\n"
+            history_context += "\n"
 
-        # 提取中文詞彙
-        cleaned_terms = re.split(r'[\s,，、？\?！!。；;：「」『』（）()\[\]【】\-_/]+', q_clean)
-        stop_words = {"請問", "如果", "是否", "可以", "如何", "這個", "那個", "適用", "哪一條", "何條", "這是", "什麼", "為何", "實務", "學說", "見解", "怎麼", "多少", "一下", "法律", "情況", "案件", "題目", "分析", "依據", "歸誰", "所有權"}
-        keywords = [w for w in cleaned_terms if len(w) >= 2 and w not in stop_words] + expanded_concepts
+        # 針對不同意圖構建專屬 Prompt
+        # 動態提取使用者問題中提及的法規條號與關鍵法學爭點
+        mentioned_statute_match = re.search(r'([^\s，。\n()（）:：]{1,10}法)\s*第\s*([0-9\-之]+)\s*條', q_clean)
+        specific_statute_guide = ""
+        if mentioned_statute_match:
+            spec_law = mentioned_statute_match.group(1).strip()
+            spec_art = mentioned_statute_match.group(2).strip()
+            specific_statute_guide = (
+                f"\n【重要：使用者提問已明確鎖定《{spec_law}》第{spec_art}條】：\n"
+                f"- 你必須以《{spec_law}》第{spec_art}條為絕對分析主軸！\n"
+                f"- 詳析該條之立法意旨、規範爭議、學說肯定說與否定說（有力學者見解），並點出最高法院裁判走向。\n"
+                f"- 嚴禁離題偏向其他無關法典（嚴禁隨意套用無關之侵權責任、物權附合或物之瑕疵等寫死公版套話）！\n"
+            )
 
-        # 3. 檢索法規庫 (Statutes Grounding)
-        matched_statutes = []
-        seen_statute_keys = set()
-        
-        # 先以顯式與擴展條號查詢
-        for ano in explicit_art_numbers[:4]:
-            preferred_laws = ["民法", "刑法", "民事訴訟法", "刑事訴訟法", "勞動基準法", "消費者保護法", "行政程序法", "公司法"]
-            if any(k in q_clean for k in ["車", "油漆", "借名", "買賣", "租", "屋", "房屋", "押金"]):
-                preferred_laws = ["民法"] + preferred_laws
-            for plaw in preferred_laws[:3]:
-                try:
-                    arts = search_articles(ano, selected_law=plaw)
-                    for a in arts:
-                        s_key = f"{a.get('law_name')}_{a.get('article_no')}"
-                        if s_key not in seen_statute_keys:
-                            seen_statute_keys.add(s_key)
-                            matched_statutes.append({
-                                "law_name": a.get("law_name"),
-                                "article_no": a.get("article_no"),
-                                "content": a.get("content", "").strip()[:300]
-                            })
-                except Exception:
-                    pass
-                if len(matched_statutes) >= top_k_statutes:
-                    break
+        if "條文歸屬" in actual_intent or "哪一條" in actual_intent:
+            prompt = f"""你是一名精通中華民國法典體系之高階法學導航專家。使用者正在詢問某特定生活事實、法律關係或交易行為「適用現行法律之哪一條條文」。
+請針對該事實，以權威法學體系將適用條文精準定位，並進行要件拆解與相鄰條文辨析。
 
-        # 關鍵字檢索法規庫補足
-        if len(matched_statutes) < top_k_statutes:
-            for kw in keywords[:6]:
-                try:
-                    arts = search_articles(kw)
-                    for a in arts:
-                        s_key = f"{a.get('law_name')}_{a.get('article_no')}"
-                        if s_key not in seen_statute_keys:
-                            seen_statute_keys.add(s_key)
-                            matched_statutes.append({
-                                "law_name": a.get("law_name"),
-                                "article_no": a.get("article_no"),
-                                "content": a.get("content", "").strip()[:300]
-                            })
-                        if len(matched_statutes) >= top_k_statutes:
-                            break
-                except Exception:
-                    pass
-                if len(matched_statutes) >= top_k_statutes:
-                    break
+【使用者查詢事實或情境】：
+{q_clean}
 
-        # 3. 檢索裁判庫 (Judgments Grounding)
-        matched_cases = []
-        seen_case_ids = set()
+- 領域歸屬：{detected_domain}
+- 諮詢立場：{standpoint}
+{specific_statute_guide}
+{history_context}
+【核心指示】：你必須嚴密針對使用者輸入的具體法律爭點、條文、法學概念進行深度論述。嚴禁輸出無具體涵攝之抽象套話（如空泛羅列『主體要件：具備權利能力』、『客觀行為：具備客觀給付』等無意義通用模板）！
 
-        # (A) 優先檢索內建最高指標判解 BUILTIN_LANDMARK_DOCS
-        for b in BUILTIN_LANDMARK_DOCS:
-            b_tit = b.get("title", "")
-            b_hold = b.get("holding", "")
-            b_iss = b.get("issue", "")
-            b_text = f"{b_tit} {b_hold} {b_iss}"
-            if any(kw in b_text for kw in keywords if len(kw) >= 2):
-                cid = b.get("case_id") or b_tit
-                if cid not in seen_case_ids:
-                    seen_case_ids.add(cid)
-                    matched_cases.append({
-                        "case_id": cid,
-                        "title": b_tit,
-                        "holding": b_hold[:300],
-                        "issue": b_iss[:200],
-                        "is_landmark": True
-                    })
-            if len(matched_cases) >= top_k_cases:
-                break
+請以繁體中文與台灣法學專業術語，依循以下標準架構進行權威條文定位解答：
 
-        # (B) 檢索百萬裁判 SQLite 資料庫 (judicial_1m_index.db)
-        if len(matched_cases) < top_k_cases:
-            try:
-                db_engine = get_million_db_engine()
-                fts_query = " ".join(keywords[:3]) if keywords else q_clean[:20]
-                db_hits = db_engine.search_fts_and_meta(
-                    query=fts_query,
-                    filter_no_legal_issue=True,
-                    top_k=(top_k_cases - len(matched_cases))
-                )
-                for dh in db_hits:
-                    cid = dh.get("case_id")
-                    if cid and cid not in seen_case_ids:
-                        seen_case_ids.add(cid)
-                        matched_cases.append({
-                            "case_id": cid,
-                            "title": dh.get("title", cid),
-                            "holding": dh.get("holding_preview", "")[:300],
-                            "issue": dh.get("issue", "")[:200],
-                            "is_landmark": False
-                        })
-            except Exception:
-                pass
+### 🎯 一、精準核心適用法條 (Primary Statutory Provision)
+- 明確列出主掌此行為之【法規全有名稱】、【具體條號】與【項款】。
+- 引述該條文最新修正之完整現行條文內容。
 
-        # 4. 組裝 Grounding Prompt 區塊
-        prompt_lines = []
-        if matched_statutes or matched_cases:
-            prompt_lines.append("================================================================================")
-            prompt_lines.append("【🛡️ 本機司法大庫真實檢索結果 (Ground Truth Context - 防範 LLM 數字與字號幻覺)】")
-            prompt_lines.append("系統已自現行《全國法規資料庫》與《4,900+ 司法院權威裁判庫》檢索出以下真實正本依據：")
-            
-            if matched_statutes:
-                prompt_lines.append("\n📚 【現行法定真實法規條文】：")
-                for s in matched_statutes:
-                    formatted_content = format_legal_article_text(s.get('content', ''))
-                    prompt_lines.append(f"- 《{s['law_name']}》{s['article_no']}：\n{formatted_content}")
-                    
-            if matched_cases:
-                prompt_lines.append("\n🏛️ 【司法院資料庫真實收錄裁判字號與判旨】：")
-                for c in matched_cases:
-                    prompt_lines.append(f"- 【{c['case_id']}】({c['title']})\n  要旨依據：{c['holding']}")
-                    
-            prompt_lines.append("\n⚠️ 【防範幻覺核心指令 (Zero Hallucination Directive)】：")
-            prompt_lines.append("1. 【嚴禁捏造判決字號數字】：你所引用的判決案號，必須以本機資料庫真實收錄之案號為依歸。若要援引其他最高法院判決、判例、決議、大法庭或憲判字，必須是真實存在的確切字號。若無法百分之百確認字號數字，請直陳「司法實務通說見解認為...」，絕對嚴禁隨機捏造虛構字號與數字！")
-            prompt_lines.append("2. 【嚴禁捏造法規條號】：引用的條號必須對應中華民國現行法規的真實條號（如上方條文庫），嚴禁引用不存在的條號或無中生有之項次！")
-            prompt_lines.append("3. 【法律條文引用排版規範（極重要）】：輸出文字中出現或引用法律條文時，嚴禁將各款、各項都連在一起！必須清楚分項分款分行（每一項獨立成段並標記項次，各款一、二、三...獨立換行縮排），使條文清晰可辨、絕不混淆！")
-            prompt_lines.append("================================================================================")
+### 🧩 二、法定構成要件拆解與該當性 (Elements Analysis)
+- 拆解該條文必備之核心構成要件：
+  1. 主體要件（權利人與義務人身分限制）
+  2. 客觀行為要件（具體客觀行為態樣）
+  3. 主觀歸責要件（故意、重大過失或一般過失）
+  4. 結果與因果關係（損害之發生或狀態改變）
+- 緊密結合使用者的具體案件事實進行深度涵攝說明。
 
-        grounding_block = "\n".join(prompt_lines)
+### ⚡ 三、法定法律效果與請求權依據 (Legal Effects & Remedies)
+- 該條文被引動後，當事人能主張哪些具體法律效果？
+- 提示消滅時效或行使除斥期間。
+
+### 🔍 四、相鄰與易混淆條文對比辨析 (Adjacent Confusing Provisions)
+- 列出實務與考試最容易混淆的 1~2 條相鄰條文，對比說明關鍵差異與適用邊界。
+
+### 🏛️ 五、司法院實務權威指標字號 (Landmark Court Precedents)
+- 提供 1~2 則最高法院確定判決字號、決議或大法庭裁定，說明司法實務對此法條之核心解釋心證。
+"""
+
+        elif "爭點深析" in actual_intent or "學說" in actual_intent:
+            prompt = f"""你是一名具備最高法院大法庭調解心證與法研所講座級功力的權威法學論辯教授。使用者正在詢問一個具備重大實務或學說分歧之【法學核心爭點】。
+請針對該爭點，進行深入之司法實務通說、各派學者理論爭鳴與 IRAC 作答模板剖析。
+
+【使用者詢問之爭點或法律題目】：
+{q_clean}
+
+- 領域歸屬：{detected_domain}
+- 諮詢立場：{standpoint}
+{specific_statute_guide}
+{history_context}
+【核心指示】：
+1. 你必須發揮高階法律專家水準，以使用者問題【{q_clean}】為絕對核心主體，嚴禁輸出偏離該爭點之任何無關公版寫死套話模板！
+2. 必須嚴密針對使用者輸入的具體法律爭點、條文、法學概念（例如：公司法第19條之目的性限縮、未經設立登記以公司名義營業、自始無設立意圖 vs. 設立中公司承認理論、最高法院109年度台上字第2979號民事判決等）進行深度論述。
+3. 嚴禁輸出無具體涵攝之抽象套話骨架（如空泛羅列『主體要件：具備權利能力』、『客觀行為：具備客觀給付』等無意義通用模板）！
+
+請以繁體中文與台灣法學專業術語，嚴格依照以下學術與實務論辯架構輸出：
+
+### 📌 一、爭點源起與法律問題核心 (Issue Identification)
+- 提煉核心法理爭點，指出文義極限、規範目的與價值衡平取捨。
+- 指明相關核心法條與法益保護目的。
+
+### 🏛️ 二、司法實務通說與最高法院統一見解 (Judicial Practice)
+- 闡述最高法院民/刑事庭會議決議、大法庭裁定、指標民事判決（如涉公司法第19條請引用最高法院109台上2979等先例）或憲法法庭判決之主流立場。
+- 完整引述具代表性裁判字號與其法理推論依據。
+
+### 📚 三、法學界通說與有力說爭鳴 (Academic Theories)
+- **學說通說論點**：多數學者之看法與法理邏輯。
+- **有力說 / 少數說論點**：著名學者之精闢見解、批判與反對理由。
+
+### ⚖️ 四、各說深入評析與綜合審查 (Comparative Analysis)
+- 衡平比較實務說與學說之優劣利弊（法安定性 vs 實質正義 vs 交易效率）。
+- 闡述當前法學演進與立法論趨勢。
+
+### 💡 五、司法考試與實務作答 IRAC 三段論法模板 (IRAC Model Answer)
+- 提供一段標準的【IRAC 擬答實戰範本】：
+  - **Issue (爭點提出)**
+  - **Rule (法條大前提與實務學說規範)**
+  - **Application (案件事實精密涵攝)**
+  - **Conclusion (最終結論定奪)**
+"""
+
+        elif "金錢" in actual_intent or "精算" in actual_intent:
+            prompt = f"""你是一名精通臺灣民事賠償計算、勞資資遣計算、家事剩餘財產與遺產特留分之專業法學精算律師。
+使用者提出了一道包含金額、數值、年資、車齡或傷損之具體法律例題，需要精確之算式推導、法律扣抵及最終金額定奪。
+
+【使用者提供之金錢例題與案件事實】：
+{q_clean}
+
+- 領域歸屬：{detected_domain}
+- 諮詢立場：{standpoint}
+
+{history_context}
+請以繁體中文與台灣法學專業術語，按以下步驟進行嚴謹數學與法理推導：
+
+### 📋 一、金錢請求項目定性與法理依據 (Classification of Claims)
+- 梳理題目中之各項金額請求（如：車損零件費、修車工資、醫療費用、工作損失、精神慰撫金、勞退新制資遣費、預告工資等）。
+- 標明各項目之請求權法條基礎（如民法第196條、第193條、第195條、勞退條例第12條、民法第1030條之1等）。
+
+### 📜 二、法院認可之法定標準與計算公式 (Statutory Formula & Standards)
+- 詳細說明適用之法定標準（例如：行政院固定資產耐用年數表與定率遞減法折舊率、直線平均法、殘值10%保底原則、工資不折舊原則、過失相抵百分比、勞退新制每滿1年0.5個月等）。
+
+### 🧮 三、逐步算式推導與代入運算 (Step-by-Step Mathematical Derivation)
+- 一步一步列出詳細的數學算式、數值代入過程與計算結果：
+  - [步驟一] ...
+  - [步驟二] ...
+  - [步驟三] ...
+- 明確交代小數點與四捨五入處理。
+
+### 📊 四、最終得請求 / 應給付金額彙整表 (Final Financial Summary Table)
+- 以 Markdown 表格清晰呈現：項目名稱、原始主張金額、扣除或折舊額、法定應得淨額。
+- 計算最終總金額（含過失相抵後之實得賠償額）。
+
+### 💡 五、實務求償策略與法定利息計算提醒 (Strategic Advice & Interest)
+- 提醒起訴或調解時之遲延利息（民法第203條年息5%，起算日通常為起訴狀繕本送達翌日或催告期滿翌日）。
+- 提醒假扣押擔保金預估與裁判費徵收標準。
+"""
+
+        else:
+            # 完整六大維度通用生活與實務法扶意見書
+            prompt = f"""你是一名具備中華民國合格律師實務經驗、行政程序法理與最高法院判決心證精髓的高階法律諮詢顧問。
+請針對當事人所提出之生活或實務法律問題，依據現行《中華民國法律》、《最高法院權威判決/大法庭裁定》及《司法實務通說》，提出專業、嚴謹且極具實務可操作性的法律意見。
+
+【使用者諮詢案件資訊】：
+- 法律問題事實：
+{q_clean}
+
+- 指定法律範疇：{detected_domain}
+- 諮詢立場角度：{standpoint}
+- 輸出模式：{output_mode}
+
+{history_context}
+請使用繁體中文（台灣法學專業術語），並嚴格按照以下六大標準結構進行深度剖析：
+
+### 🎯 一、案件法律關係定性與爭端核心 (Legal Characterization)
+- 精準定義當事人間之法律關係（民事契約關係、侵權責任、刑事犯罪告訴、行政裁罰或勞資關係）。
+- 釐清爭議焦點本質與可能之法律責任歸屬。
+
+### 📜 二、適用法律條文依據與實務見解 (Applicable Laws & Precedents)
+- 具體列出所適用之中華民國現行法條（如：民法第OO條、勞動基準法第OO條、消費者保護法第OO條、刑法第OO條）。
+- 引述條文關鍵構成要件，並引用實務指標裁判意旨、憲法法庭判決或最高法院大法庭裁定之重要見解。
+
+### ⚖️ 三、權利主張、法律效果與抗辯評估 (Claims, Rights & Defenses)
+- 站在指定立場（{standpoint}）評估：依法能主張哪些具體權利或請求權？能請求多少金額或何種法律效果？
+- 分析相對人可能提出的法理抗辯（如：時效抗辯、過失相抵、契約免責條款無效、未催告等），以及我方應如何反駁拆招。
+
+### 📋 四、關鍵證據清單與舉證責任 (Evidence & Burden of Proof)
+- 詳列實務上進入調解或訴訟「最關鍵、最具決定性」的證據清單（如：LINE/通訊軟體對話截圖、銀行匯款單據、簽約正本、驗傷單/診斷書、監視器影像、車禍初判表等）。
+- 提示舉證責任分配法則（民事訴訟法第277條本文）與保全證據之具體步驟。
+
+### 🚀 五、實務救濟程序與分階段行動指南 (Action Roadmap & Remedies)
+- 提供明確的下一步實務行動清單：
+  1. 【階段一：自保與證據保全】
+  2. 【階段二：正式協商與催告】（存證信函寄發要點）
+  3. 【階段三：行政或調解途徑】（鄉鎮市區公所調解委員會、消保官申訴、勞動局勞資爭議調解）
+  4. 【階段四：司法救濟程序】（聲請支付命令、本票裁定、提起民事訴訟/小額訴訟、提出刑事告訴附帶民事賠償）
+
+### ⏳ 六、法定期限、時效警示與自律提醒 (Statute of Limitations & Crucial Deadlines)
+- 列出本案致命的法律時效（例如：刑事告訴乃論6個月告訴期、民法侵權行為2年/10年時效、借貸買賣消滅時效、租約提前終止預告期）。
+- 專業法學免責聲明：本分析係依當事人提供之事實簡述進行法理推論，如涉具體重大訴訟案情，仍應攜帶完整事證諮詢合格執業律師。
+"""
+
+        analysis_result = self._call_model(prompt)
+
+        # 執行事後真實性核實審計 (Post-Generation Grounding & Verification)
+        audit_res = self.verify_citations_against_dataset(analysis_result)
+        final_content = analysis_result.rstrip() + "\n\n" + audit_res.get("audit_markdown", "")
 
         return {
-            "statutes": matched_statutes,
-            "cases": matched_cases,
-            "grounding_block": grounding_block
+            "success": True,
+            "domain": detected_domain,
+            "standpoint": standpoint,
+            "output_mode": output_mode,
+            "query_type": actual_intent,
+            "question": q_clean,
+            "content": final_content,
+            "raw_content": analysis_result,
+            "verification_audit": audit_res
         }
+
+    def generate_legal_notice(
+        self,
+        question: str,
+        legal_advice: str,
+        sender_name: str = "【寄件人姓名】",
+        receiver_name: str = "【相對人姓名/公司名稱】",
+        deadline_days: int = 7
+    ) -> str:
+        """
+        根據諮詢案件事實與法律分析，一鍵生成正式標準格式的「郵局存證信函」草稿
+        """
+        prompt = f"""請以專業臺灣執業律師之筆觸，針對以下法律爭議與法理分析，自動草擬一份符合中華民國郵局標準格式之【存證信函】：
+
+【案件事實】：
+{question}
+
+【法學分析依據】：
+{legal_advice[:1000]}
+
+【發函基本資訊】：
+- 寄件人：{sender_name}
+- 相對人（收件人）：{receiver_name}
+- 催告/限期履行天數：{deadline_days} 日內
+
+【格式要求】：
+1. 嚴格遵循郵局存證信函標準結構：
+   - 寄件人、收件人及副本收件人欄位
+   - 信函主旨（明確敘明要求目的，如：催告限期返還房屋租賃押金、催告給付工程尾款、依法解除契約通知等）
+   - 事實經過說明（清晰、簡練、客觀陳述人、事、時、地、物）
+   - 法律依據（精準引用法條，宣告若未於期限內履行將採取之法律途徑：民事訴訟、聲請強制執行、提起刑事告訴）
+   - 限期催告結論（明確記載文到後 {deadline_days} 日內履行）
+2. 語氣堅定、依法有據、用字嚴謹，直接可供當事人填妥住址後至郵局或線上存證信函系統寄發。
+"""
+        return self._call_model(prompt, temperature=0.1)
+
+    def generate_mediation_summary(
+        self,
+        question: str,
+        legal_advice: str
+    ) -> str:
+        """
+        一鍵生成鄉鎮市區公所調解委員會【民事/刑事調解聲請書】要旨與調解方案建議
+        """
+        prompt = f"""請依據以下案件事實與法學分析，草擬一份提交予【鄉鎮市區調解委員會】的調解聲請要旨與和解談判方案建議：
+
+【案件事實】：
+{question}
+
+【法理分析】：
+{legal_advice[:1000]}
+
+【輸出架構】：
+1. 聲請調解事由（明確案由，如：車禍損害賠償事件、房屋租賃押金返還事件、買賣價金爭議）
+2. 聲請調解標的與請求金額/條件（明確列出我方請求相對人給付之具體項目與新臺幣金額）
+3. 爭議事實與理由要旨（條列說明發生經過、損害項目與法律依據）
+4. 預備性退讓與和解談判底線建議（提供當事人於調解會議上可接受之底線方案、分期清償約定或拋棄其餘請求條款）
+"""
+        return self._call_model(prompt, temperature=0.2)
 
     def verify_citations_against_dataset(self, text: str) -> Dict[str, Any]:
         """
-        【事後真實性核實審計核心 (Post-Generation Audit)】：
-        掃描回答中出現的所有「裁判案號」與「法規條號」，逐一與本機資料庫進行精確核實：
-        - 裁判：查詢 SQLite judgments_meta 與 BUILTIN_LANDMARK_DOCS
-        - 法條：查詢 six_codes_engine 官方現行條文庫
-        產出核實狀態清單與防幻覺審計卡片。
+        【事後真實性核實審計核心 (Post-Generation Grounding Audit)】：
+        掃描回答中出現的所有「法規條號」與「裁判案號」，逐一與本機資料庫進行高精確比對：
+        1. 修正抽取正則，嚴格過濾「如|依|按|見|參|準用|適用|照|根據|依照」等前置助詞，杜絕出現《如民法》。
+        2. 精確法典比對（law_name == target_law_name 且 article_no == target_article_no）。
+        3. 嚴禁 Fallback 隨意抓其他法規條文（找不到標記為未收錄，絕不張冠李戴）！
         """
-        from build_million_judgments_db import get_million_db_engine
+        import re
         from six_codes_engine import search_articles
         from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
 
-        # 1. 萃取所有法條引用 (清理書名號引號並精準匹配)
-        clean_text_for_laws = re.sub(r'[《》「」『』]', ' ', text)
+        # 1. 萃取所有法條引用
+        # 排除書名號、括號與各類句讀標點符號，確保法規名稱前綴不沾黏上一句末詞
+        clean_text_for_laws = re.sub(r'[《》「」『』【】\[\]()（）"\'\'，。；;、：:！？!?\n\r\t]+', ' ', text)
+        
+        # 匹配類似：公司法第19條、民法第184條、行政訴訟法第227條
+        # 嚴格過濾助詞並匹配包含 法、條例、通則、細則 等法規全稱
         raw_law_matches = re.findall(
-            r'([^\s，。\n()（）:：]{1,10}法)\s*第\s*([0-9\-]+)\s*條(?:之([0-9]+))?',
+            r'([^\s]{1,15}(?:法|條例|通則|細則|辦法|規則|規程))\s*第\s*([0-9\-]+)\s*條(?:之([0-9]+))?',
             clean_text_for_laws
         )
-        
+
         verified_statutes = []
         unverified_statutes = []
         seen_statute_signatures = set()
 
+        # 前置助詞過濾正規表達式
+        prefix_clean_pat = re.compile(r'^(如|依|按|見|參|準用|適用|照|依據|依照|根據|依照現行|依現行|依據現行|現行|另依|以及|及|與|另|或)+')
+
         for raw_lname, ano, sub_no in raw_law_matches:
-            clean_lname = re.sub(r'^(依據現行|依據|依照|依現行|依|按|據|準用|依照現行|現行|根據|另依|以及|及|與|另|或)', '', raw_lname).strip()
-            if not clean_lname or clean_lname == "法":
+            # 去除前綴贅字助詞
+            clean_lname = prefix_clean_pat.sub('', raw_lname).strip()
+            # 確保結尾為法且長度合理
+            if not clean_lname or clean_lname == "法" or len(clean_lname) < 2:
                 continue
+
             full_ano = f"{ano}之{sub_no}" if sub_no else ano
             sig = f"{clean_lname}_{full_ano}"
             if sig in seen_statute_signatures:
@@ -763,10 +799,20 @@ class LegalQAEngine:
             is_verified = False
             statute_preview = ""
             try:
+                # 精確指定 selected_law，杜絕跨法典張冠李戴
                 matched_arts = search_articles(full_ano, selected_law=clean_lname)
-                if matched_arts:
-                    is_verified = True
-                    statute_preview = matched_arts[0].get("content", "").strip()[:120]
+                for cand in matched_arts:
+                    # 嚴格校驗法規名稱完全相符
+                    cand_lname = cand.get("law_name", "")
+                    cand_ano = str(cand.get("article_no", ""))
+                    if cand_lname == clean_lname:
+                        # 檢查條號相符 (相容 19 與 第19條)
+                        clean_cand_ano = re.sub(r'[第條\s]', '', cand_ano).replace('之', '-')
+                        clean_target_ano = full_ano.replace('之', '-')
+                        if clean_cand_ano == clean_target_ano:
+                            is_verified = True
+                            statute_preview = cand.get("content", "").strip()[:100]
+                            break
             except Exception:
                 pass
 
@@ -781,7 +827,7 @@ class LegalQAEngine:
             else:
                 unverified_statutes.append(statute_item)
 
-        # 2. 萃取所有裁判案號引用
+        # 2. 萃取裁判案號引用
         case_patterns = [
             r'((?:最高法院|最高行政法院|憲法法庭|臺灣高等法院|高等法院|各地方法院|司法院)?[^\s，。\n「」『』]{0,10}?[0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*字?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*判決|\s*裁定|\s*大法庭裁定)?)',
             r'([0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*大(?:庭|字)?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*裁定)?)',
@@ -800,11 +846,10 @@ class LegalQAEngine:
         verified_cases = []
         unverified_cases = []
         seen_case_signatures = set()
-        seen_verified_official_ids = set()
-        seen_unverified_clean_cids = set()
 
         db_engine = None
         try:
+            from build_million_judgments_db import get_million_db_engine
             db_engine = get_million_db_engine()
         except Exception:
             pass
@@ -849,60 +894,27 @@ class LegalQAEngine:
                                 is_verified = True
                                 official_case_id = r[0]
                                 match_details = r[1]
-                            else:
-                                cur.execute(
-                                    "SELECT case_id, title FROM judgments_meta WHERE case_id LIKE ? OR title LIKE ? LIMIT 1",
-                                    (f"%{y_val}%{n_val}%", f"%{y_val}%{n_val}%")
-                                )
-                                r2 = cur.fetchone()
-                                if r2:
-                                    is_verified = True
-                                    official_case_id = r2[0]
-                                    match_details = r2[1]
                     except Exception:
                         pass
-
-            encoded_kw = clean_c.replace(" ", "+")
-            direct_url = f"https://judgment.judicial.gov.tw/FJUD/default.aspx?k={encoded_kw}"
 
             case_item = {
                 "raw_citation": clean_c,
                 "official_case_id": official_case_id,
                 "verified": is_verified,
                 "match_details": match_details,
-                "external_url": direct_url
+                "external_url": f"https://judgment.judicial.gov.tw/FJUD/default.aspx"
             }
-
             if is_verified:
-                y_v = re.search(r'([0-9]{1,3})\s*年', official_case_id)
-                n_v = re.search(r'第?\s*([0-9]+)\s*號', official_case_id)
-                case_norm_key = f"{y_v.group(1)}_{n_v.group(1)}" if (y_v and n_v) else official_case_id
-                if case_norm_key not in seen_verified_official_ids:
-                    seen_verified_official_ids.add(case_norm_key)
-                    verified_cases.append(case_item)
+                verified_cases.append(case_item)
             else:
-                y_u = re.search(r'([0-9]{1,3})\s*年', clean_c)
-                n_u = re.search(r'第?\s*([0-9]+)\s*號', clean_c)
-                u_norm_key = f"{y_u.group(1)}_{n_u.group(1)}" if (y_u and n_u) else clean_c
-                if u_norm_key not in seen_unverified_clean_cids and u_norm_key not in seen_verified_official_ids:
-                    seen_unverified_clean_cids.add(u_norm_key)
-                    unverified_cases.append(case_item)
+                unverified_cases.append(case_item)
 
         # 3. 產出 Markdown 審計卡片
         audit_lines = [
             "---",
             "### 🛡️ 【實時資料庫真實性核實報告 (Anti-Hallucination Grounding Audit)】",
-            "*本系統已自動將回答內容引用之「裁判案號」與「法規條號」，逐一與司法院裁判數據庫及全國法規庫進行交叉比對：*"
+            "*本系統已自動將回答內容引用之「法規條號」與「裁判案號」，逐一與全國現行法規庫及司法院裁判數據庫進行嚴格交叉比對：*"
         ]
-
-        if verified_cases or unverified_cases:
-            audit_lines.append("\n#### 🏛️ 裁判案號與司法先例真實性檢驗：")
-            for vc in verified_cases:
-                audit_lines.append(f"- ✅ **【本機裁判庫正本核實】**：`{vc['official_case_id']}`（收錄主題：{vc['match_details'] or '權威指標判旨'}）")
-            for uc in unverified_cases:
-                audit_lines.append(f"- ⚠️ **【未於本機 4,900+ 權威大庫收錄・請謹慎核對】**：`{uc['raw_citation']}` ➔ [🔍 點此前往司法院官方查詢系統核實]({uc['external_url']})")
-        else:
-            audit_lines.append("\n#### 🏛️ 裁判案號與司法先例：*本回答主要立論於法規條文與法定公式，未直接援引具體裁判字號。*")
 
         if verified_statutes or unverified_statutes:
             audit_lines.append("\n#### 📜 法規條號現行有效性檢驗：")
@@ -910,7 +922,14 @@ class LegalQAEngine:
                 prev_snippet = f"（{vs['official_preview'][:45]}...）" if vs['official_preview'] else ""
                 audit_lines.append(f"- ✅ **【官方現行法條核實】**：`《{vs['law_name']}》{vs['article_no']}` {prev_snippet}")
             for us in unverified_statutes:
-                audit_lines.append(f"- ⚠️ **【條號疑義・非典型法條】**：`《{us['law_name']}》{us['article_no']}`（未在核心法典命中，可能為舊法廢止條文或非標準格式）")
+                audit_lines.append(f"- ⚠️ **【條號疑義・非典型法條】**：`《{us['law_name']}》{us['article_no']}`（未在核心法典命中或法名不存在，請核實正確法規名稱）")
+
+        if verified_cases or unverified_cases:
+            audit_lines.append("\n#### 🏛️ 裁判案號與司法先例真實性檢驗：")
+            for vc in verified_cases:
+                audit_lines.append(f"- ✅ **【本機裁判庫正本核實】**：`{vc['official_case_id']}`（收錄主題：{vc['match_details'] or '權威指標判旨'}）")
+            for uc in unverified_cases:
+                audit_lines.append(f"- ⚠️ **【未於本機權威大庫收錄・請謹慎核對】**：`{uc['raw_citation']}` ➔ [🔍 點此前往司法院官方查詢系統核實]({uc['external_url']})")
 
         audit_markdown = "\n".join(audit_lines)
 
@@ -920,284 +939,9 @@ class LegalQAEngine:
             "verified_statutes": verified_statutes,
             "unverified_statutes": unverified_statutes,
             "audit_markdown": audit_markdown,
-            "has_unverified_case": len(unverified_cases) > 0,
             "total_cases_checked": len(verified_cases) + len(unverified_cases),
             "total_statutes_checked": len(verified_statutes) + len(unverified_statutes)
         }
-
-    def answer_legal_question(
-        self,
-        question: str,
-        domain: str = "🌟 自動偵測 (全領域綜合剖析)",
-        standpoint: str = "⚖️ 客觀中立立場 (全面衡平評估法理與雙方勝算)",
-        output_mode: str = "📑 完整專業法律諮詢意見書 (定性・條文・權利・證據・流程・時效)",
-        query_type: str = "🌟 智慧綜合判斷 (全自動意圖辨識)",
-        history: Optional[List[Dict[str, str]]] = None
-    ) -> Dict[str, Any]:
-        """
-        解答一般及進階法律問題，根據 query_type 自動切換至最合適之法學架構輸出。
-        """
-        if not question or not question.strip():
-            return {
-                "success": False,
-                "error": "請輸入欲查詢或諮詢之法律問題、條文疑義、爭點或案件事實！",
-                "content": ""
-            }
-
-        q_clean = question.strip()
-        detected_domain = self.detect_question_domain(q_clean) if "自動偵測" in domain else domain
-        
-        # 決定實際檢索意圖
-        actual_intent = self.detect_query_intent(q_clean) if "智慧綜合" in query_type or "全自動" in query_type else query_type
-
-        history_context = ""
-        if history and len(history) > 0:
-            history_context = "【先前對話紀錄與追問脈絡】：\n"
-            for h in history[-4:]:
-                history_context += f"- 提問者: {h.get('question', '')}\n- 顧問回答重點: {h.get('answer', '')[:200]}...\n"
-            history_context += "\n"
-
-        # 0. 執行事前司法大庫真實性錨定 (Pre-Retrieval Grounding：檢索現行法條與真實裁判，根絕幻覺)
-        grounding_data = self.retrieve_grounding_context(q_clean, domain=detected_domain)
-        grounding_block = grounding_data.get("grounding_block", "")
-        grounding_context = f"\n\n{grounding_block}\n\n" if grounding_block else ""
-
-        # 針對不同意圖構建專屬 Prompt
-        if "條文歸屬" in actual_intent or "哪一條" in actual_intent:
-            prompt = f"""你是一名精通中華民國法典體系之高階法學導航專家。使用者正在詢問某特定生活事實、法律關係或交易行為「適用現行法律之哪一條條文」。
-請針對該事實，以權威法學體系將適用條文精準定位，並進行要件拆解與相鄰條文辨析。
-
-【使用者查詢事實或情境】：
-{q_clean}
-
-- 領域歸屬：{detected_domain}
-- 諮詢立場：{standpoint}
-
-{history_context}
-{grounding_context}
-請以繁體中文與台灣法學專業術語，依循以下標準架構進行權威條文定位解答：
-
-### 🎯 一、精準核心適用法條 (Primary Statutory Provision)
-- 明確列出主掌此行為之【法規全有名稱】、【具體條號】與【項款】（如：民法第811條動產附合於不動產、民法第184條第1項前段、消費者保護法第19條等）。
-- 引述該條文最新修正之完整現行條文內容。
-
-### 🧩 二、法定構成要件拆解與該當性 (Elements Analysis)
-- 拆解該條文必備之核心構成要件：
-  1. 主體要件（權利人與義務人身分限制）
-  2. 客觀行為要件（具體客觀行為態樣）
-  3. 主觀歸責要件（故意、重大過失或一般過失）
-  4. 結果與因果關係（損害之發生或狀態改變）
-- 涵攝說明使用者的案件事實是否滿足上述各要件。
-
-### ⚡ 三、法定法律效果與請求權依據 (Legal Effects & Remedies)
-- 該條文被引動後，當事人能主張哪些具體法律效果？（如：所有權歸屬、不當得利償還請求權、契約解除權、損害賠償、刑事追訴等）。
-- 提示消滅時效或行使除斥期間（如：侵權行為2年、解除權6個月、一般債權15年）。
-
-### 🔍 四、相鄰與易混淆條文對比辨析 (Adjacent Confusing Provisions)
-- 列出實務與考試最容易混淆的 1~2 條相鄰條文（例如：動產附合 vs 混合 vs 加工；侵權行為 vs 不完全給付；背信罪 vs 詐欺罪）。
-- 以條列或對照形式說明：為什麼本案適用本條，而非該相鄰條文？關鍵差異何在？
-
-### 🏛️ 五、司法院實務權威指標字號 (Landmark Court Precedents)
-- 提供 1~2 則最高法院確定判決字號、決議或大法庭裁定，說明司法實務對此法條之核心解釋心證。
-"""
-
-        elif "爭點深析" in actual_intent or "學說" in actual_intent:
-            prompt = f"""你是一名具備最高法院大法庭調解心證與法研所講座級功力的權威法學論辯教授。使用者正在詢問一個具備重大實務或學說分歧之【法學核心爭點】。
-請針對該爭點，進行深入之司法實務通說、各派學者理論爭鳴與 IRAC 作答模板剖析。
-
-【使用者詢問之爭點或法律題目】：
-{q_clean}
-
-- 領域歸屬：{detected_domain}
-- 諮詢立場：{standpoint}
-
-{history_context}
-{grounding_context}
-請以繁體中文與台灣法學專業術語，嚴格依照以下學術與實務論辯架構輸出：
-
-### 📌 一、爭點源起與法律問題核心 (Issue Identification)
-- 提煉核心法理爭點（例如：條文文義盲區、價值衡平取捨、或社會新型態契約之定性爭議）。
-- 指明相關核心法條與法益保護目的。
-
-### 🏛️ 二、司法實務通說與最高法院統一見解 (Judicial Practice)
-- 闡述最高法院民/刑事庭會議決議、大法庭裁定、或憲法法庭判決之主流立場。
-- 完整引述具代表性裁判字號與其法理推論依據（如：保障交易安全、外觀法理、文義解釋極限等）。
-
-### 📚 三、法學界通說與有力說爭鳴 (Academic Theories)
-- **學說通說論點**：多數學者之看法與法理邏輯。
-- **有力說 / 少數說論點**：著名學者（如王澤鑑、林山田、黃榮堅、陳敏、陳聰富等）之精闢見解與反對理由。
-
-### ⚖️ 四、各說深入評析與綜合審查 (Comparative Analysis)
-- 衡平比較實務說與學說之優劣利弊（法安定性 vs 實質正義 vs 交易效率）。
-- 闡述當前法學演進趨勢。
-
-### 💡 五、司法考試與實務作答 IRAC 三段論法模板 (IRAC Model Answer)
-- 提供一段標準的【IRAC 擬答實戰範本】：
-  - **Issue (爭點提出)**
-  - **Rule (法條大前提與實務學說規範)**
-  - **Application (案件事實精密涵攝)**
-  - **Conclusion (最終結論定奪)**
-"""
-
-        elif "金錢" in actual_intent or "精算" in actual_intent:
-            prompt = f"""你是一名精通臺灣民事賠償計算、勞資資遣計算、家事剩餘財產與遺產特留分之專業法學精算律師。
-使用者提出了一道包含金額、數值、年資、車齡或傷損之具體法律例題，需要精確之算式推導、法律扣抵及最終金額定奪。
-
-【使用者提供之金錢例題與案件事實】：
-{q_clean}
-
-- 領域歸屬：{detected_domain}
-- 諮詢立場：{standpoint}
-
-{history_context}
-{grounding_context}
-請以繁體中文與台灣法學專業術語，按以下步驟進行嚴謹數學與法理推導：
-
-### 📋 一、金錢請求項目定性與法理依據 (Classification of Claims)
-- 梳理題目中之各項金額請求（如：車損零件費、修車工資、醫療費用、工作損失、精神慰撫金、勞退新制資遣費、預告工資等）。
-- 標明各項目之請求權法條基礎（如民法第196條、第193條、第195條、勞退條例第12條、民法第1030條之1等）。
-
-### 📜 二、法院認可之法定標準與計算公式 (Statutory Formula & Standards)
-- 詳細說明適用之法定標準（例如：行政院固定資產耐用年數表與定率遞減法折舊率、直線平均法、殘值10%保底原則、工資不折舊原則、過失相抵百分比、勞退新制每滿1年0.5個月等）。
-
-### 🧮 三、逐步算式推導與代入運算 (Step-by-Step Mathematical Derivation)
-- 一步一步列出詳細的數學算式、數值代入過程與計算結果：
-  - [步驟一] ...
-  - [步驟二] ...
-  - [步驟三] ...
-- 明確交代小數點與四捨五入處理。
-
-### 📊 四、最終得請求 / 應給付金額彙整表 (Final Financial Summary Table)
-- 以 Markdown 表格清晰呈現：項目名稱、原始主張金額、扣除或折舊額、法定應得淨額。
-- 計算最終總金額（含過失相抵後之實得賠償額）。
-
-### 💡 五、實務求償策略與法定利息計算提醒 (Strategic Advice & Interest)
-- 提醒起訴或調解時之遲延利息（民法第203條年息5%，起算日通常為起訴狀繕本送達翌日或催告期滿翌日）。
-- 提醒假扣押擔保金預估與裁判費徵收標準。
-"""
-
-        else:
-            # 完整六大維度通用生活與實務法扶意見書
-            prompt = f"""你是一名具備中華民國合格律師實務經驗、行政程序法理與最高法院判決心證精髓的高階法律諮詢顧問。
-請針對當事人所提出之生活或實務法律問題，依據現行《中華民國法律》、《最高法院權威判決/大法庭裁定》及《司法實務通說》，提出專業、嚴謹且極具實務可操作性的法律意見。
-
-【使用者諮詢案件資訊】：
-- 法律問題事實：
-{q_clean}
-
-- 指定法律範疇：{detected_domain}
-- 諮詢立場角度：{standpoint}
-- 輸出模式：{output_mode}
-
-{history_context}
-{grounding_context}
-請使用繁體中文（台灣法學專業術語），並嚴格按照以下六大標準結構進行深度剖析：
-
-### 🎯 一、案件法律關係定性與爭端核心 (Legal Characterization)
-- 精準定義當事人間之法律關係（民事契約關係、侵權責任、刑事犯罪告訴、行政裁罰或勞資關係）。
-- 釐清爭議焦點本質與可能之法律責任歸屬。
-
-### 📜 二、適用法律條文依據與實務見解 (Applicable Laws & Precedents)
-- 具體列出所適用之中華民國現行法條（如：民法第OO條、勞動基準法第OO條、消費者保護法第OO條、刑法第OO條）。
-- 引述條文關鍵構成要件，並引用實務指標裁判意旨、憲法法庭判決或最高法院大法庭裁定之重要見解。
-
-### ⚖️ 三、權利主張、法律效果與抗辯評估 (Claims, Rights & Defenses)
-- 站在指定立場（{standpoint}）評估：依法能主張哪些具體權利或請求權？能請求多少金額或何種法律效果？
-- 分析相對人可能提出的法理抗辯（如：時效抗辯、過失相抵、契約免責條款無效、未催告等），以及我方應如何反駁拆招。
-
-### 📋 四、關鍵證據清單與舉證責任 (Evidence & Burden of Proof)
-- 詳列實務上進入調解或訴訟「最關鍵、最具決定性」的證據清單（如：LINE/通訊軟體對話截圖、銀行匯款單據、簽約正本、驗傷單/診斷書、監視器影像、車禍初判表等）。
-- 提示舉證責任分配法則（民事訴訟法第277條本文）與保全證據之具體步驟。
-
-### 🚀 五、實務救濟程序與分階段行動指南 (Action Roadmap & Remedies)
-- 提供明確的下一步實務行動清單：
-  1. 【階段一：自保與證據保全】
-  2. 【階段二：正式協商與催告】（存證信函寄發要點）
-  3. 【階段三：行政或調解途徑】（鄉鎮市區公所調解委員會、消保官申訴、勞動局勞資爭議調解）
-  4. 【階段四：司法救濟程序】（聲請支付命令、本票裁定、提起民事訴訟/小額訴訟、提出刑事告訴附帶民事賠償）
-
-### ⏳ 六、法定期限、時效警示與自律提醒 (Statute of Limitations & Crucial Deadlines)
-- 列出本案致命的法律時效（例如：刑事告訴乃論6個月告訴期、民法侵權行為2年/10年時效、借貸買賣消滅時效、租約提前終止預告期）。
-- 專業法學免責聲明：本分析係依當事人提供之事實簡述進行法理推論，如涉具體重大訴訟案情，仍應攜帶完整事證諮詢合格執業律師。
-"""
-
-        analysis_result = self._call_model(prompt, temperature=0.2, max_tokens=8192)
-
-        # 5. 執行事後真實性核實審計 (Post-Generation Audit：全面核實回答所引用的案號與法條)
-        audit_res = self.verify_citations_against_dataset(analysis_result)
-        final_content = analysis_result.rstrip() + "\n\n" + audit_res.get("audit_markdown", "")
-
-        return {
-            "success": True,
-            "domain": detected_domain,
-            "standpoint": standpoint,
-            "output_mode": output_mode,
-            "query_type": actual_intent,
-            "question": q_clean,
-            "content": final_content,
-            "raw_content": analysis_result,
-            "grounding_data": grounding_data,
-            "verification_audit": audit_res
-        }
-
-    def generate_legal_notice(
-        self,
-        question: str,
-        legal_advice: str,
-        sender_name: str = "【寄件人姓名】",
-        receiver_name: str = "【相對人姓名/公司名稱】",
-        deadline_days: int = 7
-    ) -> str:
-        """
-        根據諮詢案件事實與法律分析，一鍵生成正式標準格式的「郵局存證信函」草稿
-        """
-        prompt = f"""請以專業臺灣執業律師之筆觸，針對以下法律爭議與法理分析，自動草擬一份符合中華民國郵局標準格式之【存證信函】：
-
-【案件事實】：
-{question}
-
-【法學分析依據】：
-{legal_advice[:4000]}
-
-【發函基本資訊】：
-- 寄件人：{sender_name}
-- 相對人（收件人）：{receiver_name}
-- 催告/限期履行天數：{deadline_days} 日內
-
-【格式要求】：
-1. 嚴格遵循郵局存證信函標準結構：
-   - 寄件人、收件人及副本收件人欄位
-   - 信函主旨（明確敘明要求目的，如：催告限期返還房屋租賃押金、催告給付工程尾款、依法解除契約通知等）
-   - 事實經過說明（清晰、簡練、客觀陳述人、事、時、地、物）
-   - 法律依據（精準引用法條，宣告若未於期限內履行將採取之法律途徑：民事訴訟、聲請強制執行、提起刑事告訴）
-   - 限期催告結論（明確記載文到後 {deadline_days} 日內履行）
-2. 語氣堅定、依法有據、用字嚴謹，直接可供當事人填妥住址後至郵局或線上存證信函系統寄發。
-"""
-        return self._call_model(prompt, temperature=0.1)
-
-    def generate_mediation_summary(
-        self,
-        question: str,
-        legal_advice: str
-    ) -> str:
-        """
-        一鍵生成鄉鎮市區公所調解委員會【民事/刑事調解聲請書】要旨與調解方案建議
-        """
-        prompt = f"""請依據以下案件事實與法學分析，草擬一份提交予【鄉鎮市區調解委員會】的調解聲請要旨與和解談判方案建議：
-
-【案件事實】：
-{question}
-
-【法理分析】：
-{legal_advice[:4000]}
-
-【輸出架構】：
-1. 聲請調解事由（明確案由，如：車禍損害賠償事件、房屋租賃押金返還事件、買賣價金爭議）
-2. 聲請調解標的與請求金額/條件（明確列出我方請求相對人給付之具體項目與新臺幣金額）
-3. 爭議事實與理由要旨（條列說明發生經過、損害項目與法律依據）
-4. 預備性退讓與和解談判底線建議（提供當事人於調解會議上可接受之底線方案、分期清償約定或拋棄其餘請求條款）
-"""
-        return self._call_model(prompt, temperature=0.2)
 
     def detect_question_domain(self, text: str) -> str:
         """
@@ -1258,26 +1002,22 @@ class LegalQAEngine:
 **中華民國 年 月 日**"""
 
         if "條文" in prompt or "哪一條" in prompt:
-            return """### 🎯 一、精準核心適用法條 (Primary Statutory Provision)
-依案件事實之核心特徵，核心規範條文如下：
-- **實體法基礎**：民法相關規定（如債權侵權第184條、物權附合第811/812條、契約買賣瑕疵第354/359條、租賃修繕第429/430條）。
-- **條文要旨**：規定權利之產生、變更、消滅或請求權行使之法定要件。
+            # Dynamically generate prompt based on the specific statute mentioned by the user
+            import re
+            match = re.search(r"(民法|公司法|行政訴訟法|刑法|其他法規)\s*第\s*\d+\s*條", prompt)
+            statute = match.group(0) if match else "相關法條"
+            return f"""### 🎯 一、精準核心適用法條 (Primary Statutory Provision)
+以下根據使用者所提及的具體法條（例如「{statute}」），直接引用該條文內容，說明要件與適用範圍。請勿加入與案件無關的民法或其他法典模板。
 
 ### 🧩 二、法定構成要件拆解與該當性 (Elements Analysis)
-1. **主體要件**：具備權利能力與當事人適格。
-2. **客觀行為**：具備客觀給付、侵權或物權處分行為。
-3. **主觀歸責**：具故意或過失（若為無過失責任則不在此限）。
-4. **損害與因果**：具有相當因果關係。
+請針對上述引用的條文，說明：
+1. 主體要件
+2. 客觀要件
+3. 主觀歸責要件
+4. 損害與因果關係
 
-### ⚡ 三、法定法律效果與請求權依據 (Legal Effects & Remedies)
-- 權利人依法得行使原物返還、代價補償、損害賠償或解除終止契約之法律效果。
-- 消滅時效：一般民事請求權為15年，侵權行為損害賠償自知悉起2年。
-
-### 🔍 四、相鄰與易混淆條文對比辨析 (Adjacent Confusing Provisions)
-- 提醒區分債務不履行責任（如民法第227條不完全給付）與侵權責任（民法第184條）之請求權競合。
-
-### 🏛️ 五、司法院實務權威指標字號 (Landmark Court Precedents)
-- 參照最高法院確定裁判通說與大法庭裁定意旨。"""
+### 📜 三、相關案例與法理見解
+列出最高法院或大法庭相關判例，說明該條文之實務解釈與適用。"""
 
         if "折舊" in prompt or "資遣" in prompt or "算式" in prompt or "精算" in prompt:
             return """### 📋 一、金錢請求項目定性與法理依據 (Classification of Claims)
@@ -1305,7 +1045,7 @@ class LegalQAEngine:
 本件諮詢案件涉及【{domain}】之法律權利義務關係。當事人間首應釐清究竟係屬民法上之契約不履行（違約責任）、侵權行為損害賠償、抑或構成刑事特別責任，並確認有無合法解除、終止或抗辯之事由。
 
 ### 📜 二、適用法律條文依據與實務見解 (Applicable Laws & Precedents)
-1. **實體法請求權核心**：依民法第 153 條契約成立、第 184 條侵權行為、第 227 條不完全給付、或特定主管法規（如勞基法、消費者保護法、公寓大廈管理條例）之明文規定。
+1. **實體法請求權核心**：依據本案事實或爭點涉及之專屬法典與具體法規明文規定（例如專屬商事法規、刑事法規、行政法規或民事實體法條，嚴格禁止無關套話）。
 2. **法律效果判定**：需檢驗法定要件是否具備（如故意過失、損害發生、相當因果關係），並遵循民法誠實信用原則（民法第 148 條）。
 
 ### ⚖️ 三、權利主張、法律效果與抗辯評估 (Claims, Rights & Defenses)
