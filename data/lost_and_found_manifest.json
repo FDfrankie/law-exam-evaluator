@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-10-22T14:49:25.450892",
+  "source_directory": "/Users/liuguanfu/Library/Application Support/Google/DriveFS/lost_and_found",
+  "total_files_scanned": 0,
+  "mapping_records_found": 0,
+  "pdf_notes_total_instances": 0,
+  "pdf_notes_unique_count": 0,
+  "unique_pdf_list": [],
+  "python_snapshots_count": 0,
+  "meta_other_files_count": 0,
+  "dry_run": false,
+  "details": {
+    "unique_pdfs": {},
+    "code_snapshots_summary": {}
+  }
+}

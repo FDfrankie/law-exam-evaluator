@@ -108,8 +108,28 @@ class JudicialAuthorityEngine:
                     extra_meta TEXT
                 )
             """)
+            # 動態補齊可能缺失之欄位 (兼容 crawl_all_precedents.py 與權威引擎架構)
+            cur = conn.cursor()
+            cur.execute("PRAGMA table_info(precedents);")
+            existing_cols = {row[1] for row in cur.fetchall()}
+            for col_name in ["id", "precedent_id", "case_no", "year", "court", "title", "reasoning", "full_text", "subject", "sub_category", "extra_meta", "abolition_note", "source_url"]:
+                if col_name not in existing_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE precedents ADD COLUMN {col_name} TEXT;")
+                        existing_cols.add(col_name)
+                    except Exception:
+                        pass
+
+            try:
+                conn.execute("UPDATE precedents SET case_no = precedent_id WHERE (case_no IS NULL OR case_no = '') AND precedent_id IS NOT NULL;")
+                conn.execute("UPDATE precedents SET id = precedent_id WHERE (id IS NULL OR id = '') AND precedent_id IS NOT NULL;")
+                conn.execute("UPDATE precedents SET reasoning = full_text WHERE (reasoning IS NULL OR reasoning = '') AND full_text IS NOT NULL;")
+            except Exception:
+                pass
+
             conn.execute("CREATE INDEX IF NOT EXISTS idx_prec_sys ON precedents(sys_type);")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_prec_caseno ON precedents(case_no);")
+            if "case_no" in existing_cols:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_prec_caseno ON precedents(case_no);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_prec_status ON precedents(status);")
 
             # 判例 FTS5 全文檢索
