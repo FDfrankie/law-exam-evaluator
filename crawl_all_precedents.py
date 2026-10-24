@@ -176,7 +176,8 @@ class PrecedentCrawlerPipeline:
     # =========================================================================
     def populate_crawl_queue(self, force_refresh: bool = False) -> int:
         """
-        遍歷 FINT 系統所有判例分頁清單，採集 data.aspx 連結並裝入 precedent_crawl_queue。
+        遍歷司法院 FINT 系統之全量判例清單（包含停止適用判例、未停止適用之歷史判例池及大法庭裁定），
+        自動穿透單一查詢 500 筆上限，採集 data.aspx 連結並裝入 precedent_crawl_queue。
         """
         with self._get_conn() as conn:
             cur = conn.cursor()
@@ -208,7 +209,6 @@ class PrecedentCrawlerPipeline:
                 break
 
         if not q_hash:
-            # 備用：直接從現有 hash 模式嘗試
             m_q = re.search(r'q=([a-f0-9]{32})', entry_html)
             if m_q:
                 q_hash = m_q.group(1)
@@ -218,59 +218,106 @@ class PrecedentCrawlerPipeline:
 
         print(f"[+] 成功獲取查詢會話識別碼 (q): {q_hash}")
 
-        # 依司法院 FINT 系統類別 (CODE) 精確分流遍歷（繞開單一查詢 500 筆上限截斷）
-        # A: 停止適用之民事判例 (1,076筆)
-        # UA: 停止適用之民事判例(家事類) (267筆)
-        # B: 停止適用之刑事判例 (1,341筆)
-        # E: 停止適用之行政判例 (186筆)
-        categories = [
-            ("民事", "A"),
-            ("民事(家事類)", "UA"),
-            ("刑事", "B"),
-            ("行政", "E")
+        # =========================================================================
+        # 構建全量判例掃描任務矩陣（突破單一查詢 500 筆/25 頁上限）
+        # (說明, ty 查詢類型, gc 分類代碼, sort 排序方式, 是否僅過濾「判例」字樣)
+        # =========================================================================
+        scan_matrix = [
+            # --- 1. 停止適用之全量判例池（ty=J1，官方標定停止適用或不再援用，雙向DS/DB穿透500筆上限） ---
+            ("停止適用判例-全量不限類別(DS降冪)", "J1", None, "DS", False),
+            ("停止適用判例-全量不限類別(DB升冪)", "J1", None, "DB", False),
+            ("停止適用判例-民事A編號(DS降冪)", "J1", "A", "DS", False),
+            ("停止適用判例-民事A編號(DB升冪)", "J1", "A", "DB", False),
+            ("停止適用判例-刑事B編號(DS降冪)", "J1", "B", "DS", False),
+            ("停止適用判例-刑事B編號(DB升冪)", "J1", "B", "DB", False),
+            ("停止適用判例-家事UA編號(DS降冪)", "J1", "UA", "DS", False),
+            ("停止適用判例-家事UA編號(DB升冪)", "J1", "UA", "DB", False),
+            ("停止適用判例-行政E編號(DS降冪)", "J1", "E", "DS", False),
+            ("停止適用判例-行政E編號(DB升冪)", "J1", "E", "DB", False),
+
+            # --- 2. 未停止適用（現行有效）之歷史判例池（ty=J，民國16年起最高法院及行政法院各庭） ---
+            ("未停止適用-最高法院民事判例池(C升冪-早年判例優先)", "J", "C", "DB", True),
+            ("未停止適用-最高法院民事判例池(C降冪-近年判例優先)", "J", "C", "DS", True),
+            ("未停止適用-最高法院刑事判例池(D升冪-早年判例優先)", "J", "D", "DB", True),
+            ("未停止適用-最高法院刑事判例池(D降冪-近年判例優先)", "J", "D", "DS", True),
+            ("未停止適用-最高行政法院判例池(F升冪-早年判例優先)", "J", "F", "DB", True),
+            ("未停止適用-最高行政法院判例池(F降冪-近年判例優先)", "J", "F", "DS", True),
+            ("未停止適用-最高法院家事判例池(UC升冪-早年判例優先)", "J", "UC", "DB", True),
+            ("未停止適用-最高法院家事判例池(UC降冪-近年判例優先)", "J", "UC", "DS", True),
+
+            # --- 3. 司法院大法庭專區（ty=J2，具備統一法見解最高效力裁定） ---
+            ("司法院大法庭專區裁定(J2全量)", "J2", None, "DS", False),
         ]
 
         total_added = 0
         batch_queue = []
 
-        for cat_name, gc in categories:
-            first_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty=J1&q={q_hash}&sort=DS&gy=code&gc={gc}&page=1"
+        for task_idx, (task_name, ty, gc, sort_order, filter_prec) in enumerate(scan_matrix, 1):
+            if gc:
+                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort={sort_order}&gy=code&gc={gc}"
+            else:
+                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort={sort_order}"
+
+            first_page_url = f"{base_query_url}&page=1"
             try:
-                first_html = self._http_get(first_url, referer=QRY_ENTRY_URL)
+                first_html = self._http_get(first_page_url, referer=QRY_ENTRY_URL)
                 first_soup = BeautifulSoup(first_html, "html.parser")
-                
+
+                # 解析最末頁
                 cat_pages = 1
                 for a in first_soup.find_all("a", href=True):
                     if "最末頁" in a.text or "last" in a.text.lower():
-                        m_p = re.search(r'page=([0-9]+)', a["href"])
+                        m_p = re.search(r'page=([0-9]+)', a["href"], re.I)
                         if m_p:
                             cat_pages = int(m_p.group(1))
                             break
 
-                print(f"[+] 正在掃描【{cat_name}】判例清單 (代碼 gc={gc}): 共 {cat_pages} 頁 ...")
+                # FINT 系統單一檢索上限為 25 頁 (500 筆)
+                scan_pages = min(cat_pages, 25)
+                task_precedents_count = 0
 
-                for p in range(1, cat_pages + 1):
-                    p_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty=J1&q={q_hash}&sort=DS&gy=code&gc={gc}&page={p}"
-                    p_html = self._http_get(p_url, referer=first_url)
-                    p_soup = BeautifulSoup(p_html, "html.parser")
+                print(f"[{task_idx}/{len(scan_matrix)}] 正在掃描【{task_name}】: 檢測到 {cat_pages} 頁，排程掃描 {scan_pages} 頁 ...")
+
+                for p in range(1, scan_pages + 1):
+                    if p == 1:
+                        p_soup = first_soup
+                    else:
+                        p_url = f"{base_query_url}&page={p}"
+                        p_html = self._http_get(p_url, referer=first_page_url)
+                        p_soup = BeautifulSoup(p_html, "html.parser")
+
                     data_links = p_soup.find_all("a", href=lambda h: h and "data.aspx" in h)
+                    if not data_links:
+                        break
 
                     for a_el in data_links:
                         rel_url = a_el["href"].strip()
                         abs_url = urllib.parse.urljoin(FINT_BASE_URL, rel_url)
                         link_txt = a_el.text.strip()
 
-                        # 判定領域 (民事 / 刑事 / 行政)
-                        if "刑事" in link_txt or gc == "B":
+                        # 若需過濾，檢查標題是否含「判例」或 URL 是否為判例編號 (A, B, E, UA)
+                        if filter_prec:
+                            is_prec = ("判例" in link_txt) or any(prefix in rel_url for prefix in [
+                                "id=A%2c", "id=B%2c", "id=E%2c", "id=UA%2c",
+                                "id=A,", "id=B,", "id=E,", "id=UA,"
+                            ])
+                            if not is_prec:
+                                continue
+
+                        # 判定領域 (民事 / 刑事 / 行政 / 家事)
+                        if "刑事" in link_txt or gc in ("B", "D"):
                             sys_type = "刑事"
-                        elif "行政" in link_txt or "判字" in link_txt or gc == "E":
+                        elif "行政" in link_txt or "判字" in link_txt or gc in ("E", "F"):
                             sys_type = "行政"
+                        elif "家事" in link_txt or gc in ("UA", "UC"):
+                            sys_type = "家事"
                         else:
                             sys_type = "民事"
 
                         batch_queue.append((abs_url, sys_type, 0))
+                        task_precedents_count += 1
 
-                    if len(batch_queue) >= 50 or p == cat_pages:
+                    if len(batch_queue) >= 50 or p == scan_pages:
                         with self._get_conn() as conn:
                             conn.executemany("""
                                 INSERT OR IGNORE INTO precedent_crawl_queue (detail_url, sys_type, is_crawled)
@@ -282,23 +329,29 @@ class PrecedentCrawlerPipeline:
 
                     self._polite_sleep()
 
-                print(f"  [✓] 【{cat_name}】清單掃描完畢 (累計已加入隊列 {total_added} 筆)")
+                print(f"  [✓] 【{task_name}】掃描完畢，提取 {task_precedents_count} 筆判例連結。")
 
             except Exception as pe:
-                print(f"  [!] 【{cat_name}】掃描略過或錯誤: {pe}")
+                print(f"  [!] 【{task_name}】掃描略過或錯誤: {pe}")
                 time.sleep(1.0)
 
         with self._get_conn() as conn:
             cur = conn.cursor()
             cur.execute("SELECT COUNT(*) FROM precedent_crawl_queue;")
             final_queue_cnt = cur.fetchone()[0]
+            cur.execute("SELECT sys_type, COUNT(*) FROM precedent_crawl_queue GROUP BY sys_type;")
+            sys_breakdown = {r[0]: r[1] for r in cur.fetchall()}
 
-        print(f"[✓] 清單裝載完成！隊列中共有 {final_queue_cnt} 筆待採集判例。")
+        print("\n" + "=" * 60)
+        print(f"🎉 全量判例清單填裝完成！隊列中共有 {final_queue_cnt} 筆待採集判例任務。")
+        print(f"📊 隊列審判系統分佈: {sys_breakdown}")
+        print("=" * 60 + "\n")
         return final_queue_cnt
 
     # =========================================================================
     # 單筆詳細內頁剖析 (Detail Parser)
     # =========================================================================
+
     def parse_precedent_detail(self, html: str, url: str, fallback_sys_type: str = "民事") -> Optional[Dict[str, Any]]:
         """從 data.aspx 解析出所有標準化欄位"""
         if not BeautifulSoup:
