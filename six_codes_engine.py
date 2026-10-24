@@ -1120,12 +1120,52 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
     }
 
 
+def clean_history_text(text: str) -> str:
+    """修復跨行斷裂的條號與數字（例如 '9 \n 85' -> '985', '102 \n 4~1030' -> '1024~1030'）"""
+    if not text:
+        return ""
+    t = re.sub(r'(\d+)\s*[\r\n]+\s*(\d+)', r'\1\2', text)
+    t = re.sub(r'([、，,～~至到\-之])\s*[\r\n]+\s*', r'\1', t)
+    t = re.sub(r'\s*[\r\n]+\s*([、，,～~至到\-之])', r'\1', t)
+    return t
+
+def parse_enactment_year_from_text(raw_text: str) -> str:
+    """從法規歷史沿革首筆紀錄解析制定公布之民國年份"""
+    if not raw_text:
+        return ""
+    cn_nums = {'零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9, '十': 10, '百': 100}
+    m = re.search(r'中華民國\s*([0-9]+)\s*年', raw_text)
+    if m:
+        return m.group(1)
+    m_cn = re.search(r'中華民國\s*([一二三四五六七八九十百零]+)\s*年', raw_text)
+    if m_cn:
+        cn_str = m_cn.group(1)
+        val = 0
+        if '百' in cn_str:
+            parts = cn_str.split('百')
+            h = cn_nums.get(parts[0], 1) if parts[0] else 1
+            val += h * 100
+            rem = parts[1]
+        else:
+            rem = cn_str
+        if '十' in rem:
+            parts = rem.split('十')
+            t = cn_nums.get(parts[0], 1) if parts[0] else 1
+            val += t * 10
+            u = cn_nums.get(parts[1], 0) if parts[1] else 0
+            val += u
+        elif rem:
+            val += cn_nums.get(rem, 0)
+        if val > 0:
+            return str(val)
+    return ""
+
 def parse_law_history_entries(raw_text: str) -> List[Dict[str, Any]]:
     """將法規沿革文字（1. 中華民國... 2. 中華民國...）解析為結構化時間軸"""
     if not raw_text:
         return []
-    lines = raw_text.strip()
-    raw_entries = re.split(r'\n(?=\d+\.)', lines)
+    cleaned_raw = clean_history_text(raw_text.strip())
+    raw_entries = re.split(r'\n(?=\d+\.)', cleaned_raw)
     parsed = []
     for entry in raw_entries:
         clean = ' '.join(entry.split())
@@ -1155,23 +1195,43 @@ def parse_law_history_entries(raw_text: str) -> List[Dict[str, Any]]:
     return parsed
 
 def is_article_in_history_entry(art_no: str, entry_text: str) -> bool:
-    """精準檢驗某條號是否受該次立法/修法公報影響（支援連號範圍如 204～206 及枝條如 759-1）"""
+    """精準檢驗某條號是否受該次立法/修法公報影響（杜絕模糊比對，精準支援範圍與枝條）"""
     clean_no = normalize_article_no(art_no)
     if not clean_no:
         return False
-    # 邊界完全匹配
-    pattern = r'(?:第\s*)?' + re.escape(clean_no) + r'(?:\s*條|[、，,\s]|$)'
-    if re.search(pattern, entry_text):
+        
+    # 1. 獨立條號直接邊界匹配：例如「修正第10條條文」或「修正第 10 條」，前後嚴禁有數字、之、連字號
+    direct_pat = rf'(?<![之\d\-])第\s*{re.escape(clean_no)}\s*條(?![之\d\-])'
+    if re.search(direct_pat, entry_text):
         return True
-    
-    # 範圍匹配，例如 204～206, 200～210, 197-205
+
+    # 2. 匹配條號列舉區塊：例如「修正第 1007、1008...條」
+    article_blocks = re.findall(r'第\s*([^條]+?)\s*條', entry_text)
+    for block in article_blocks:
+        tokens = re.split(r'[、，,\s及與]+', block)
+        for token in tokens:
+            t = normalize_article_no(token)
+            if t == clean_no:
+                return True
+            # 範圍比對：5 至 15, 5～15, 5~15, 5到15 (嚴格排除連字號 -，因那是枝條如 1055-1)
+            m_range = re.match(r'^(\d+)\s*(?:至|～|~|到)\s*(\d+)$', token.strip())
+            if m_range and '-' not in clean_no and clean_no.isdigit():
+                start, end = int(m_range.group(1)), int(m_range.group(2))
+                if min(start, end) <= int(clean_no) <= max(start, end):
+                    return True
+
+    # 3. 跨條區間：第 5 條至第 15 條 或 第 5 條到第 15 條
+    cross_range = re.findall(r'第\s*(\d+)\s*條\s*(?:至|～|~|到)\s*第\s*(\d+)\s*條', entry_text)
     if '-' not in clean_no and clean_no.isdigit():
         target_int = int(clean_no)
-        ranges = re.findall(r'(\d+)\s*[～~至到-]\s*(\d+)', entry_text)
-        for r_start, r_end in ranges:
-            if int(r_start) <= target_int <= int(r_end):
+        for r_start, r_end in cross_range:
+            if min(int(r_start), int(r_end)) <= target_int <= max(int(r_start), int(r_end)):
                 return True
+
     return False
+
+# 設置別名以支援多模組呼叫
+is_article_targeted_in_decree = is_article_in_history_entry
 
 def get_law_legislative_history(law_name: str) -> Dict[str, Any]:
     """獲取指定法規（法律、法規命令、施行細則）之完整官方立法沿革與歷次修正公報"""
@@ -1281,42 +1341,60 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
                 "exam_impact": a.get("exam_impact", "")
             })
     elif timeline_hits:
-        # Step C: 若無專屬理由但有公報紀錄，自動無縫合成歷次沿革卡片，確保前端絕非空白
+        # Step C: 若無專屬理由但有公報紀錄，自動無縫合成歷次沿革卡片，確保前端絕非空白且絕無罐頭廢話
         for idx_t, h in enumerate(reversed(timeline_hits)):
             is_cur = (idx_t == 0)
             seq_str = f"第 {h.get('seq', '')} 次修正" if h.get('seq', 0) > 1 else "制定公布"
             v_tag = f"民國 {h.get('date', '')} {seq_str}（現行有效條文）" if is_cur else f"民國 {h.get('date', '')} {seq_str}"
+            decree_title = h.get('decree', '') or f"{law_name}公布令"
             formatted_amends.append({
                 "date": h.get("date", ""),
-                "gazette": h.get("decree", ""),
+                "gazette": decree_title,
                 "is_current": is_cur,
                 "version_tag": v_tag,
-                "previous_text": "（歷次修正對照請參閱該次總統令/院令公報全文）",
+                "previous_text": f"（修正前歷史條文，發布字號：{decree_title}）",
                 "current_text": content if is_cur else "（修正條文文字如公報記載）",
                 "key_changes": h.get("action", f"{seq_str}條文"),
-                "reason": f"一、依總統令及行政院公報發布紀錄：{h.get('content', '')}。\n二、本條為{law_name}實務運作重要基礎規範，歷次修正均遵循立法程序三讀通過施行。",
-                "exam_impact": "實務與國考適用原則：除法律別有規定施行日期外，自公布或發布之日起算至第三日起發生效力。"
+                "reason": f"立法院三讀及總統令公布紀錄：{h.get('content', '')}",
+                "exam_impact": f"生效施行原則：除法律別有規定施行日期外，自{h.get('date', '')}公布或發布日起算至第三日起發生效力。"
             })
     else:
-        # Step D: 若皆未收錄，自動生成基礎有效條文卡片，絕不呈現「空泛請點按鈕」
+        # Step D: 若皆未修法（0次修法，自制定公布施行迄今未曾修正），自動呈現真實制定沿革卡片
+        enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
+        enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
+        first_entry = law_hist.get("timeline", [{}])[0] if law_hist.get("timeline") else {}
+        first_decree = first_entry.get("decree", f"{law_name}制定公布令")
         formatted_amends.append({
-            "date": "現行公布",
-            "gazette": f"{law_name}現行有效公布令",
+            "date": f"{enact_str}制定公布",
+            "gazette": first_decree,
             "is_current": True,
-            "version_tag": f"{law_name} 現行有效條文",
-            "previous_text": "（初次制定施行）",
+            "version_tag": f"{law_name} 現行有效條文（制定公布迄今未曾修改）",
+            "previous_text": f"（{enact_str}制定公布全文，施行迄今未曾修正）",
             "current_text": content,
-            "key_changes": "本條為現行有效實體規範",
-            "reason": f"一、按{law_name}之規範體系與立法目的，本條旨在健全法律秩序並維護人民之合法權益。\n二、司法審判與國考實務適用上，應嚴格遵循三段論法，由大前提法規要件精確涵攝具體案例事實。",
-            "exam_impact": "適用要點：注意相鄰條文與相關司法判解（大法庭裁定/憲判字）之最新發展。"
+            "key_changes": "制定公布全文（歷久彌新未曾修正）",
+            "reason": f"一、本條自{enact_str}制定公布施行迄今未曾修改，文字歷久彌新，為我國法秩序之基石規範。\n二、司法審判與國考實務適用上，以現行完整法條文字為準，並參酌歷年司法判解與大法庭裁定之實務見解。",
+            "exam_impact": "本條施行迄今未曾修正，無新舊法過渡適用問題，直接適用現行有效條文。"
         })
+
+    default_intent = ""
+    default_summary = ""
+    if timeline_hits:
+        latest_date = timeline_hits[-1].get('date', '')
+        latest_decree = timeline_hits[-1].get('decree', '')
+        default_intent = f"🎯 立法意旨：本條歷經立法院修法三讀程序修正通過，最新修正發布於民國 {latest_date}。"
+        default_summary = f"本條於立法院沿革中查有 {len(timeline_hits)} 次官方公布/修正紀錄，最新發布令號為：{latest_decree}。"
+    else:
+        enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
+        enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
+        default_intent = f"🎯 立法意旨：本條於{enact_str}制定公布，文字歷久彌新未曾修改。"
+        default_summary = f"本條自{enact_str}制定公布施行迄今未曾修正，維持原制定條文內容完整適用。"
 
     return {
         "law_name": law_name,
         "article_no": clean_no,
-        "has_curated_data": True,
-        "legislative_intent": curated_data.get("legislative_intent", f"本條旨在規範{law_name}第{clean_no}條之法律關係，確保法益保護與法秩序安定。") if curated_data else f"本條旨在規範{law_name}第{clean_no}條之法律關係，確保法益保護與法秩序安定。",
-        "summary_reasons": curated_data.get("summary_reasons", "依立法院立法三讀紀錄與歷次總統公布令，本條歷次修正均貫徹實體保障與程序正義。") if curated_data else "依立法院立法三讀紀錄與歷次總統公布令，本條歷次修正均貫徹實體保障與程序正義。",
+        "has_curated_data": bool(curated_data),
+        "legislative_intent": curated_data.get("legislative_intent", default_intent) if curated_data else default_intent,
+        "summary_reasons": curated_data.get("summary_reasons", default_summary) if curated_data else default_summary,
         "curated_amendments": formatted_amends,
         "timeline_hits": timeline_hits,
         "total_official_hits": len(timeline_hits)

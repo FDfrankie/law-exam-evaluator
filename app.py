@@ -208,6 +208,36 @@ except Exception:
     def calculate_statutory_interest(*args, **kwargs): return {}
 
 try:
+    from comprehensive_issues_taxonomy import (
+        get_available_domains,
+        get_statutes_by_domain,
+        get_chapters,
+        get_sections,
+        get_issues,
+        get_massive_taxonomy_chapters,
+        get_massive_issues_by_section,
+        get_all_issues_flat_for_subject
+    )
+except Exception:
+    def get_available_domains():
+        return [
+            "民事財產與身分法",
+            "刑事實體法",
+            "公法專題",
+            "民事程序法",
+            "刑事程序法",
+            "商事法專題",
+            "智慧財產權法專題"
+        ]
+    def get_statutes_by_domain(d): return []
+    def get_chapters(d, s): return []
+    def get_sections(d, s, c): return []
+    def get_issues(d, s, c, sec=""): return []
+    def get_massive_taxonomy_chapters(d, s): return []
+    def get_massive_issues_by_section(d, s, c, sec=""): return {}
+    def get_all_issues_flat_for_subject(s): return {}
+
+try:
     from core_issues_taxonomy import (
         get_taxonomy_chapters_for_subject,
         get_curated_issues_by_chapter,
@@ -1926,30 +1956,75 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
     col_sub1, col_sub2 = st.columns([1, 1])
     with col_sub1:
-        st.markdown("##### 🏛️ 第一步：選擇考試學門與科目")
+        st.markdown("##### 🏛️ 第一步：選擇考試學門與法典科目")
+        avail_domains = get_available_domains()
+        if not avail_domains:
+            avail_domains = [
+                "民事財產與身分法",
+                "刑事實體法",
+                "公法專題",
+                "民事程序法",
+                "刑事程序法",
+                "商事法專題",
+                "智慧財產權法專題"
+            ]
         domain_choice = st.selectbox(
-            "考科學門體系分類篩選：",
-            list(LAW_DOMAIN_TAXONOMY.keys()),
+            "考科學門體系分類（七大學門）：",
+            avail_domains,
             key="sel_exam_domain_filter"
         )
-        subjects_list = LAW_DOMAIN_TAXONOMY[domain_choice]
-        subject_choice = st.selectbox("考試科目：", subjects_list, key="sel_exam_subject_choice")
-        if subject_choice == "其他自訂學門":
-            subject = st.text_input("請輸入自訂科目名稱：", value="民事法學")
+        
+        statutes_in_domain = get_statutes_by_domain(domain_choice)
+        if not statutes_in_domain:
+            statutes_in_domain = ["民法", "刑法", "行政法", "民事訴訟法", "刑事訴訟法", "公司法", "智慧財產權法"]
+        statute_options = statutes_in_domain + ["其他自訂科目"]
+        subject_choice = st.selectbox("核心法典/考科：", statute_options, key=f"sel_statute_{domain_choice}")
+        if subject_choice == "其他自訂科目":
+            subject = st.text_input("請輸入自訂科目名稱：", value="民事法學", key="txt_custom_subject")
         else:
             subject = subject_choice.split(" ")[0]
 
     with col_sub2:
-        st.markdown("##### 🎯 第二步：設定核心考點爭點與客製化出題範圍")
-        available_topics_map = get_subject_topics_taxonomy(subject)
+        st.markdown("##### 🎯 第二步：設定編章節與核心考點爭點")
+        raw_chapters = get_chapters(domain_choice, subject)
+        if not raw_chapters:
+            raw_chapters = get_taxonomy_chapters_for_subject(subject)
         
-        # 1. 支援多選高頻核心考點爭點 (multiselect)
+        chapter_options = ["🌟 全編章通用 / 跨章節綜合考點"] + raw_chapters if raw_chapters else ["🌟 全編章通用 / 跨章節綜合考點"]
+        chapter_choice = st.selectbox("體系編章/專題：", chapter_options, key=f"sel_chapter_{domain_choice}_{subject}")
+        
+        is_all_ch = "全編章" in chapter_choice
+        raw_sections = []
+        if not is_all_ch:
+            raw_sections = get_sections(domain_choice, subject, chapter_choice)
+        
+        if raw_sections and len(raw_sections) > 1:
+            sec_options = ["🌟 本單元全部節次/條文"] + raw_sections
+            section_choice = st.selectbox("節次/條文專案：", sec_options, key=f"sel_sec_{domain_choice}_{subject}_{chapter_choice}")
+        else:
+            section_choice = raw_sections[0] if raw_sections else ""
+
+        # 抓取該節/章之具體千級考點爭點清單
+        if is_all_ch:
+            cur_issues = get_issues(domain_choice, subject, "")
+            if not cur_issues and raw_chapters:
+                for ch in raw_chapters[:3]:
+                    cur_issues.extend(get_issues(domain_choice, subject, ch))
+        else:
+            sec_param = "" if "全部" in section_choice else section_choice
+            cur_issues = get_issues(domain_choice, subject, chapter_choice, sec_param)
+
+        if not cur_issues:
+            fallback_map = get_subject_topics_taxonomy(subject)
+            cur_issues = list(fallback_map.keys())
+
+        # 支援多選高頻核心考點爭點 (multiselect)
         sel_preset_topics = st.multiselect(
-            f"依【{subject}】勾選核心考點爭點（支援多選複合命題）：",
-            options=list(available_topics_map.keys()),
+            f"依【{subject}・{chapter_choice}】勾選核心考點爭點（千級題庫支援多選複合命題）：",
+            options=cur_issues,
             default=[],
-            placeholder="💡 點此可多選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
-            key=f"msel_topics_{subject}"
+            placeholder="💡 點此勾選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
+            key=f"msel_topics_{domain_choice}_{subject}_{chapter_choice}_{section_choice}"
         )
 
         # 2. 加入客製化出題範圍與新增自訂爭點工具區
@@ -2008,20 +2083,28 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                     st.session_state[f"adhoc_topics_list_{subject}"] = []
                     st.rerun()
 
-        # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics)
+        # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics + selected drive notes)
         assembled_parts = []
         
         # (1) 勾選的高頻爭點
         if sel_preset_topics:
-            topic_descriptions = [f"{t}（{available_topics_map.get(t, t)}）" for t in sel_preset_topics]
-            assembled_parts.append("【核心考點爭點】：\n" + "\n".join([f"{i+1}. {d}" for i, d in enumerate(topic_descriptions)]))
+            assembled_parts.append(f"【核心考點爭點（{subject}）】：\n" + "\n".join([f"{i+1}. {t}" for i, t in enumerate(sel_preset_topics)]))
+        elif not is_all_ch:
+            assembled_parts.append(f"【命題體系編章】：{subject} - {chapter_choice}" + (f" ({section_choice})" if section_choice and "全部" not in section_choice else ""))
         
         # (2) 自訂新增考點
         adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
         if adhoc_list:
             assembled_parts.append("【額外自訂考點】：\n" + "\n".join([f"- {a}" for a in adhoc_list]))
 
-        # (3) 客製化範圍
+        # (3) 勾選個人筆記核心範圍（出題案例素材）
+        sel_drive_notes_in_session = st.session_state.get("msel_drive_notes_scope", [])
+        if sel_drive_notes_in_session:
+            note_titles = [f"《{n.get('filename', '')}》（{n.get('subject', '')}）" for n in sel_drive_notes_in_session if isinstance(n, dict)]
+            if note_titles:
+                assembled_parts.append("【勾選個人筆記核心範圍（出題案例素材）】：\n" + "\n".join([f"- {name}" for name in note_titles]))
+
+        # (4) 客製化範圍
         custom_scope_val = st.session_state.get(f"txt_custom_scope_{subject}", "").strip()
         if custom_scope_val:
             assembled_parts.append(f"【指定客製化命題範圍】：{custom_scope_val}")
@@ -2042,7 +2125,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
         # 顯示整合後的出題核心考點文字區
         topic = st.text_area(
-            "出題核心主題/考點（自動彙整所選考點與範圍，亦可直接自由修改）：",
+            "出題核心主題/考點（自動彙整所選考點、編章範圍與勾選筆記，亦可自由修改）：",
             value=current_topic_val,
             height=110,
             placeholder="例如：借名登記出名人無權處分、侵權行為純經濟損失、原因自由行為...（若有上傳筆記亦可留空或輸入重點關鍵字）"
@@ -2050,9 +2133,15 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
         st.session_state[topic_content_key] = topic
 
         total_selected_count = len(sel_preset_topics) + len(adhoc_list)
-        if total_selected_count > 0 or custom_scope_val:
-            scope_badge = f" ｜ 客製化範圍：`{custom_scope_val}`" if custom_scope_val else ""
-            st.caption(f"💡 目前已設定 **{total_selected_count}** 項核心考點{scope_badge}，AI 將依此精準命題！")
+        if total_selected_count > 0 or custom_scope_val or sel_drive_notes_in_session:
+            badges = []
+            if total_selected_count > 0:
+                badges.append(f"**{total_selected_count}** 項核心考點")
+            if custom_scope_val:
+                badges.append(f"客製化範圍 `{custom_scope_val}`")
+            if sel_drive_notes_in_session:
+                badges.append(f"**{len(sel_drive_notes_in_session)}** 份筆記範圍")
+            st.caption(f"💡 目前已設定 {' ｜ '.join(badges)}，AI 將依此精準命題！")
 
 
     st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
@@ -2126,7 +2215,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                         elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
                             default_cat_idx = 5
     
-                    col_sel1, col_sel_nat, col_sel2 = st.columns([1.1, 1.1, 1.8])
+                    col_sel1, col_sel_nat = st.columns([1.1, 1.1])
                     with col_sel1:
                         sel_note_category = st.selectbox(
                             "考科分類篩選：",
@@ -2141,7 +2230,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                             index=0,
                             key="sel_note_nature_filter"
                         )
-    
+
                     # 依分類篩選筆記
                     if "全部科目" in sel_note_category:
                         base_notes = drive_notes
@@ -2165,7 +2254,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                         target_sub = sel_note_category.split("【")[1].split("】")[0]
                         base_notes = [n for n in drive_notes if n["subject"] == target_sub]
                         cat_display = target_sub
-    
+
                     # 依性質二次過濾，徹底排除題目混入筆記
                     if "個人讀書筆記" in sel_doc_nature:
                         filtered_notes = [n for n in base_notes if n.get("doc_nature") == "note"]
@@ -2175,95 +2264,98 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                         filtered_notes = [n for n in base_notes if n.get("doc_nature") == "question"]
                     else:
                         filtered_notes = base_notes
-    
-                    with col_sel2:
-                        if not filtered_notes:
-                            all_notes_label = f"此條件下暫無檔案 (共 0 份)"
-                            note_labels = [all_notes_label]
-                        else:
-                            all_notes_label = f"🌟 【全部分析】載入此分類全部文檔 (共 {len(filtered_notes)} 份，自動文字提取/OCR 彙整)"
-                            note_labels = [all_notes_label] + [
-                                f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n['is_cached'] else "")
-                                for n in filtered_notes
-                            ]
-                        sel_note_label = st.selectbox(
-                            "選擇 Google Drive 檔案：",
-                            note_labels,
-                            key="sel_drive_note_file"
-                        )
-    
-                    if sel_note_label == all_notes_label:
-                        st.info(f"💡 已選擇【全部分析】！系統將遍歷【{cat_display}】全部 **{len(filtered_notes)} 份** 雲端筆記，優先調用高速數位文字與本機快取；手寫或掃描 PDF 自動調用 Gemini Flash 進行多模態辨識，彙編成完整法學爭點大典以供客製命題。")
-                        c_btn1, c_btn2 = st.columns([2, 1])
-                        with c_btn1:
-                            load_all_btn = st.button(f"🚀 一鍵分析並載入全部筆記 (共 {len(filtered_notes)} 份)", type="primary", key="btn_load_all_drive_notes")
-                        with c_btn2:
-                            sync_btn = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes")
-                            if sync_btn:
-                                with st.spinner("正在掃描雲端硬碟各科筆記..."):
-                                    c = sync_all_drive_notes_to_samsung_notes()
-                                    load_all_drive_notes.clear()
-                                    st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
-                                    st.rerun()
-    
-                        session_all_key = f"cached_all_notes_text_{cat_display}_{len(filtered_notes)}"
-                        if load_all_btn or (session_all_key in st.session_state):
-                            if load_all_btn:
-                                prog_bar = st.progress(0.0)
-                                status_txt = st.empty()
-                                all_texts = []
-                                for idx_n, n_item in enumerate(filtered_notes, 1):
-                                    status_txt.text(f"正在分析筆記 [{idx_n}/{len(filtered_notes)}]: 《{n_item['filename'][:25]}...》")
-                                    prog_bar.progress(idx_n / len(filtered_notes))
-                                    try:
-                                        t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
-                                        if t_part and not t_part.startswith("["):
-                                            all_texts.append(f"### 《{n_item['filename']}》（科目：{n_item['subject']}）\n{t_part}")
-                                    except Exception as n_err:
-                                        pass
-                                combined_all = "\n\n---\n\n".join(all_texts)
-                                st.session_state[session_all_key] = combined_all
-                                prog_bar.progress(1.0)
-                                status_txt.text("✅ 全部分析與文字提取完成！")
-                                st.balloons()
-    
-                            combined_all = st.session_state.get(session_all_key, "")
-                            if combined_all:
-                                notes_from_drive = combined_all
-                                st.success(f"🎉 成功全部分析【{cat_display}】共 {len(filtered_notes)} 份筆記，累計取得 {len(combined_all):,} 字元！已自動帶入下方命題引擎。")
-                                with st.expander("🔍 檢視已解析之全部分類筆記重點與爭點摘要", expanded=False):
-                                    st.text_area("全部分析筆記內容彙整（已用於客製命題）：", value=combined_all, height=220, key="preview_drive_all_notes")
-                    elif sel_note_label:
-                        sel_idx = note_labels.index(sel_note_label) - 1
-                        chosen_note = filtered_notes[sel_idx]
-    
-                        c_btn1, c_btn2 = st.columns([2, 1])
-                        with c_btn1:
-                            load_btn = st.button("🚀 載入此份雲端筆記 (自動進行文字提取 / 手寫多模態 OCR)", type="primary", key="btn_load_drive_note")
-                        with c_btn2:
-                            sync_btn_single = st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_single")
-                            if sync_btn_single:
-                                with st.spinner("正在掃描雲端硬碟各科筆記..."):
-                                    c = sync_all_drive_notes_to_samsung_notes()
-                                    load_all_drive_notes.clear()
-                                    st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
-                                    st.rerun()
-    
-                        session_key = f"cached_note_text_{chosen_note['filename']}"
-                        if load_btn or (session_key in st.session_state):
-                            if load_btn:
-                                with st.spinner(f"正在讀取《{chosen_note['filename']}》；手寫或掃描檔案自動調用 Gemini 多模態神經網路辨識..."):
-                                    text_content = read_note_text(chosen_note["path"], max_pages=15, auto_ocr=True)
-                                    st.session_state[session_key] = text_content
-    
-                            text_content = st.session_state.get(session_key, "")
-                            if text_content and not text_content.startswith("["):
-                                notes_from_drive = text_content
-                                st.success(f"🎉 成功讀取筆記《{chosen_note['filename']}》，共取得 {len(text_content):,} 字元！")
-                                with st.expander("🔍 檢視已解析之筆記重點與爭點摘要", expanded=True):
-                                    st.text_area("筆記內容預覽（可用於客製命題）：", value=text_content, height=180, key="preview_drive_note")
-                            elif text_content:
-                                st.warning(text_content)
+
+                    st.markdown("##### 📑 勾選欲作為本次命題核心範圍的個人筆記（勾選之筆記即為本次爭點與案例素材）：")
+                    st.caption(f"💡 目前【{cat_display}】共篩選出 **{len(filtered_notes)} 份** 雲端筆記。支援多選，勾選後系統自動擷取其內容彙整為命題材料，並將標題注入出題提示詞！")
+
+                    c_act1, c_act2, c_act3 = st.columns([1.2, 1.2, 2.6])
+                    with c_act1:
+                        if st.button("✅ 全選當前分類筆記", key="btn_select_all_drive_notes"):
+                            st.session_state["msel_drive_notes_scope"] = filtered_notes
+                            st.rerun()
+                    with c_act2:
+                        if st.button("🗑️ 清空筆記勾選", key="btn_clear_drive_notes_sel"):
+                            st.session_state["msel_drive_notes_scope"] = []
+                            st.rerun()
+                    with c_act3:
+                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_multi"):
+                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
+                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
+                                st.rerun()
+
+                    selected_drive_notes = st.multiselect(
+                        "挑選筆記檔案（可複選一至多份）：",
+                        options=filtered_notes,
+                        default=st.session_state.get("msel_drive_notes_scope", []),
+                        format_func=lambda n: f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n.get('is_cached') else ""),
+                        key="msel_drive_notes_scope"
+                    )
+
+                    if selected_drive_notes:
+                        uncached_count = sum(1 for n in selected_drive_notes if not st.session_state.get(f"cached_note_text_{n['filename']}"))
+                        
+                        col_load1, col_load2 = st.columns([2, 1])
+                        with col_load1:
+                            if uncached_count > 0:
+                                load_sel_btn = st.button(
+                                    f"🚀 立即載入並提取勾選筆記文字 (尚有 {uncached_count} 份需多模態解析/OCR)",
+                                    type="primary",
+                                    key="btn_load_selected_notes"
+                                )
+                            else:
+                                load_sel_btn = st.button(
+                                    f"⚡ 已就緒！重新提取已勾選的 {len(selected_drive_notes)} 份筆記",
+                                    key="btn_refresh_selected_notes"
+                                )
+
+                        if load_sel_btn:
+                            prog_bar = st.progress(0.0)
+                            status_txt = st.empty()
+                            for idx_n, n_item in enumerate(selected_drive_notes, 1):
+                                fn = n_item["filename"]
+                                s_key = f"cached_note_text_{fn}"
+                                status_txt.text(f"正在提取 [{idx_n}/{len(selected_drive_notes)}]: 《{fn[:25]}...》")
+                                try:
+                                    t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
+                                    if t_part and not t_part.startswith("["):
+                                        st.session_state[s_key] = t_part
+                                except Exception:
+                                    pass
+                                prog_bar.progress(idx_n / len(selected_drive_notes))
+                            prog_bar.progress(1.0)
+                            status_txt.text("✅ 所選筆記提取完成！")
+                            st.rerun()
+
+                        # 彙整所有已讀取之筆記文字
+                        all_selected_texts = []
+                        valid_selected_notes = []
+                        for n in selected_drive_notes:
+                            fn = n["filename"]
+                            c_txt = st.session_state.get(f"cached_note_text_{fn}", "")
+                            if c_txt and not c_txt.startswith("["):
+                                all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{c_txt}")
+                                valid_selected_notes.append(n)
+                            else:
+                                # 嘗試直接快速讀取文字
+                                try:
+                                    t_part = read_note_text(n["path"], max_pages=15, auto_ocr=False)
+                                    if t_part and not t_part.startswith("["):
+                                        st.session_state[f"cached_note_text_{fn}"] = t_part
+                                        all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{t_part}")
+                                        valid_selected_notes.append(n)
+                                except Exception:
+                                    pass
+
+                        if all_selected_texts:
+                            notes_from_drive = "\n\n---\n\n".join(all_selected_texts)
+                            st.success(f"🎉 成功鎖定 **{len(valid_selected_notes)} / {len(selected_drive_notes)} 份** 雲端筆記，累計取得 **{len(notes_from_drive):,}** 字元！已自動帶入命題引擎。")
+                            
+                            with st.expander(f"🔍 檢視已鎖定之 {len(valid_selected_notes)} 份筆記全文重點與考點爭點", expanded=False):
+                                st.text_area("勾選筆記內容彙整（已鎖定為命題材料）：", value=notes_from_drive, height=200, key="preview_selected_drive_notes")
+                        elif uncached_count > 0:
+                            st.info(f"💡 您勾選了 {len(selected_drive_notes)} 份筆記，請點擊上方【🚀 立即載入並提取勾選筆記文字】以啟動文字提取/手寫 OCR。")
                 else:
                     st.info("💡 目前 Google Drive SamsungNotes 尚未收錄筆記檔案，請點擊下方按鈕自動同步。")
                     if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
@@ -5332,8 +5424,9 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             curated_amends = legis_data.get("curated_amendments", [])
             timeline_hits = legis_data.get("timeline_hits", [])
             total_amends_display = max(len(curated_amends), len(timeline_hits))
-            is_initial_enactment = (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
-            badge_legis_text = "1 次立法制定對照" if is_initial_enactment else f"{total_amends_display} 次修法對照"
+            is_initial_enactment = (len(timeline_hits) == 0) or (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
+            badge_legis_text = "1 次立法制定對照（制定迄今未曾修法）" if is_initial_enactment else f"{total_amends_display} 次修法對照"
+            legis_tag = "制定未修" if is_initial_enactment else f"{total_amends_display}修"
 
             questions = anno.get("questions", [])
             handouts = anno.get("handouts", [])
@@ -5343,7 +5436,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             badge_amend = " ｜ 🆕修法" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️判解({len(precedents)})" if precedents else ""
             badge_orders_rulings = f" ｜ 📋法規({len(key_regulations)})·函釋({len(admin_rulings)})" if (key_regulations or admin_rulings) else ""
-            badge_legis = f" ｜ 🕰️沿革({total_amends_display})" if total_amends_display > 0 else ""
+            badge_legis = f" ｜ 🕰️沿革({legis_tag})" if total_amends_display > 0 else ""
             badge_materials = f" ｜ 📘筆記({len(combined_materials)})" if combined_materials else ""
 
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
@@ -5358,7 +5451,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                 tab_prec, tab_orders_rulings, tab_legis, tab_materials, tab_ai = st.tabs([
                     f"🏛️ 司法判解 ({len(precedents)})",
                     f"📋 法規與函釋 ({len(key_regulations)}規·{len(admin_rulings)}函)",
-                    f"🕰️ 立法理由 ({total_amends_display}修)",
+                    f"🕰️ 立法理由 ({legis_tag})",
                     f"📘 講義筆記 ({len(combined_materials)})",
                     "🤖 AI 釋析"
                 ])
@@ -5613,7 +5706,8 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         st.info(f"**💡 歷次修正總綱與規範演革重心：**\n\n{summary_reasons}")
 
                     if curated_amends:
-                        st.markdown(f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)")
+                        header_legis = "##### 🕰️ 制定立法意旨與條文全文（初次制定至今未曾修法）" if is_initial_enactment else f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)"
+                        st.markdown(header_legis)
                         for a_idx, amend in enumerate(curated_amends):
                             with st.expander(f"📅 【{amend.get('date')}】{amend.get('gazette', '')} ｜ 🌟 {amend.get('key_changes', '條文修正')}", expanded=(a_idx == 0)):
                                 p_text = amend.get("previous_text", "")
@@ -5649,6 +5743,10 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 if is_single_enact:
                                     st.info("💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為私法核心法規準據！")
                                 st.markdown("---")
+                    elif is_initial_enactment:
+                        st.markdown(f"##### 🏛️ 本條於全法沿革中之制定公布發布令")
+                        first_amend = curated_amends[0] if curated_amends else {}
+                        st.info(f"💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為核心法規準據！（發布字號：{first_amend.get('gazette', '現行有效公布令')}）")
 
                     # AI 智慧萃取/擴充按鈕
                     leg_ai_key = f"ai_legis_{lname}_{ano}"
