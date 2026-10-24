@@ -59,17 +59,22 @@ class MillionJudgmentsSQLiteEngine:
         if base_dir:
             self.base_dir = Path(base_dir)
         else:
-            windows_candidates = [
+            candidates = [
                 Path("G:/我的雲端硬碟/LawExamData/data/judicial_1m_db"),
                 Path("G:/My Drive/LawExamData/data/judicial_1m_db"),
                 Path("G:/我的雲端硬碟/LawExamData/judicial_1m_db"),
-                Path("G:/My Drive/LawExamData/judicial_1m_db")
+                Path("G:/My Drive/LawExamData/judicial_1m_db"),
+                Path(JUDICIAL_1M_DIR),
+                Path(DATA_DIR) / "data" / "judicial_1m_db",
+                Path(DATA_DIR) / "judicial_1m_db",
+                Path(__file__).resolve().parent / "data" / "judicial_1m_db",
+                Path(__file__).resolve().parent.parent / "data" / "judicial_1m_db"
             ]
-            matched_win = next((p for p in windows_candidates if p.exists() or p.parent.exists()), None)
-            if matched_win:
-                self.base_dir = matched_win
-            else:
-                self.base_dir = Path(JUDICIAL_1M_DIR)
+            matched = next((p for p in candidates if p.exists() or p.parent.exists()), None)
+            self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
+            ]
+            matched = next((p for p in candidates if p.exists() or p.parent.exists()), None)
+            self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
 
         self.shards_dir = self.base_dir / "shards"
         self.index_db_path = self.base_dir / "judicial_1m_index.db"
@@ -77,15 +82,14 @@ class MillionJudgmentsSQLiteEngine:
         if inbox_dir:
             self.inbox_dir = Path(inbox_dir)
         else:
-            win_inbox_cands = [
-                Path("G:/我的雲端硬碟/LawExamData/opendata_inbox"),
-                Path("G:/My Drive/LawExamData/opendata_inbox")
+            inbox_cands = [
+                Path(OPENDATA_INBOX_DIR),
+                Path(DATA_DIR) / "opendata_inbox",
+                Path(__file__).resolve().parent / "opendata_inbox",
+                Path(__file__).resolve().parent.parent / "opendata_inbox"
             ]
-            matched_inbox = next((p for p in win_inbox_cands if p.exists() or p.parent.exists()), None)
-            if matched_inbox:
-                self.inbox_dir = matched_inbox
-            else:
-                self.inbox_dir = Path(OPENDATA_INBOX_DIR)
+            matched_inbox = next((p for p in inbox_cands if p.exists() or p.parent.exists()), None)
+            self.inbox_dir = matched_inbox if matched_inbox else Path(OPENDATA_INBOX_DIR)
 
         try:
             self.base_dir.mkdir(parents=True, exist_ok=True)
@@ -158,6 +162,16 @@ class MillionJudgmentsSQLiteEngine:
                     tokenize='unicode61'
                 )
             """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS judgment_redirects (
+                    dismissed_case_id TEXT PRIMARY KEY,
+                    substantive_prior_id TEXT,
+                    discard_reason TEXT,
+                    court TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_redirect_dismissed ON judgment_redirects(dismissed_case_id);")
 
     def _init_shard_db(self, shard_key: str) -> Path:
         clean_key = re.sub(r"[^0-9a-zA-Z_]", "_", shard_key) or "general"
@@ -486,6 +500,80 @@ class MillionJudgmentsSQLiteEngine:
             pass
         return None
 
+    def record_redirect(self, dismissed_case_id: str, substantive_prior_id: str, discard_reason: str = "", court: str = "") -> bool:
+        """
+        記錄程序駁回裁定之實體前審轉址對照 (Redirect Mapping)
+        """
+        if not dismissed_case_id or not substantive_prior_id:
+            return False
+        self._init_index_db()
+        try:
+            with self._get_conn(self.index_db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO judgment_redirects (dismissed_case_id, substantive_prior_id, discard_reason, court)
+                    VALUES (?, ?, ?, ?)
+                """, (dismissed_case_id.strip(), substantive_prior_id.strip(), (discard_reason or "").strip(), (court or "").strip()))
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"[record_redirect error] {e}")
+            return False
+
+    def get_redirect_target(self, case_id: str) -> Optional[Dict[str, Any]]:
+        """
+        依程序駁回案號查詢實體原審轉址目標，支援案號模糊與標準化匹配
+        """
+        if not case_id or not self.index_db_path.exists():
+            return None
+        self._init_index_db()
+        q_raw = case_id.strip()
+        q_clean = re.sub(r"\s+", "", q_raw)
+        try:
+            with self._get_conn(self.index_db_path) as conn:
+                # 1. 精準比對
+                row = conn.execute(
+                    "SELECT * FROM judgment_redirects WHERE dismissed_case_id = ? LIMIT 1",
+                    (q_raw,)
+                ).fetchone()
+
+                # 2. 去空白比對
+                if not row:
+                    row = conn.execute(
+                        "SELECT * FROM judgment_redirects WHERE REPLACE(dismissed_case_id, ' ', '') = ? LIMIT 1",
+                        (q_clean,)
+                    ).fetchone()
+
+                # 3. 年度、字別、字號正則比對
+                if not row:
+                    m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s]{1,6}?)(?:字)?(?:第)?(\d+)", q_clean)
+                    if m:
+                        y, w, n = m.group(1), m.group(2), m.group(3)
+                        row = conn.execute(
+                            "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? LIMIT 1",
+                            (f"%{y}%", f"%{w}%", f"%{n}%")
+                        ).fetchone()
+
+                # 4. 包含比對
+                if not row:
+                    row = conn.execute(
+                        "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? OR ? LIKE ('%' || dismissed_case_id || '%') LIMIT 1",
+                        (f"%{q_clean}%", q_clean)
+                    ).fetchone()
+
+                if row:
+                    return {
+                        "is_redirect": True,
+                        "dismissed_case_id": row["dismissed_case_id"],
+                        "substantive_prior_id": row["substantive_prior_id"],
+                        "discard_reason": row["discard_reason"],
+                        "court": row["court"],
+                        "created_at": row["created_at"]
+                    }
+        except Exception as e:
+            print(f"[get_redirect_target error] {e}")
+        return None
+
+    # 
     def ingest_inbox_folder(self, folder_path: Path = None, batch_size: int = 5000,
                             max_records: int = 1000000, progress_cb=None) -> Dict[str, Any]:
         try:

@@ -1,6 +1,6 @@
 """
 司律手寫試卷自動評分核心引擎
-使用官方 Google GenAI SDK (支援 Gemini 3.8 Flash / Flash Latest)：
+使用官方 Google GenAI SDK (支援 Gemini 2.0 Flash / Flash Latest)：
 1. 繁體手寫辨識與專有名詞校正 (支援圖片、PDF 或 Word 文字)
 2. 司律閱卷級距評分（爭點識別、法學論述/三段論法、學說實務見解、事實涵攝）
 3. 輸出結構化診斷報告與建議

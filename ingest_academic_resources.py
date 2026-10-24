@@ -32,12 +32,17 @@ except ImportError:
 
 from config import DATA_DIR
 
-RESOURCES_DIR = Path(os.getenv("LEGAL_RESOURCES_DIR", r"G:\我的雲端硬碟\資源"))
-if not RESOURCES_DIR.exists():
-    for fallback_candidate in [DATA_DIR.parent / "資源", Path(r"G:\My Drive\資源"), Path(r"G:\我的雲端硬碟\資源")]:
-        if fallback_candidate.exists():
-            RESOURCES_DIR = fallback_candidate
-            break
+env_res = os.getenv("LEGAL_RESOURCES_DIR")
+if env_res:
+    RESOURCES_DIR = Path(env_res)
+else:
+    candidates = [
+        DATA_DIR.parent / "資源",
+        DATA_DIR / "資源",
+        Path(__file__).resolve().parent.parent / "資源",
+        Path(__file__).resolve().parent / "資源"
+    ]
+    RESOURCES_DIR = next((c for c in candidates if c.exists()), DATA_DIR.parent / "資源")
 
 TRAINING_DIR = Path(DATA_DIR) / "training_data"
 RAW_EXAMS_DIR = Path(DATA_DIR) / "raw_exams"

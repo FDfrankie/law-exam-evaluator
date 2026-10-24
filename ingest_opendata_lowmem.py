@@ -174,7 +174,7 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
 
     hist_list = parsed.get("extracted_history_instances") or []
     if isinstance(hist_list, list):
-        parsed["history_cases_str"] = "、".join([x.get("case_id", "") if isinstance(x, dict) else str(x) for x in hist_list if x])
+        parsed["history_cases_str"] = "、".join([x.get("case_id", "") if isinstance(x, dict) else str(x) for x in hist_list if str(x).strip()])
     else:
         parsed["history_cases_str"] = str(hist_list)
 
@@ -184,8 +184,19 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
         or parsed.get("has_legal_issue") is False
         or parsed.get("is_pure_factual_dispute") is True
     ):
+        prior_instance = parsed.get("substantive_prior")
+        if prior_instance and str(prior_instance).strip():
+            try:
+                engine = get_million_db_engine()
+                engine.record_redirect(
+                    dismissed_case_id=str(parsed.get("case_id", "")).strip(),
+                    substantive_prior_id=str(prior_instance).strip(),
+                    discard_reason=str(parsed.get("discard_reason", "程序駁回")).strip(),
+                    court=str(parsed.get("court", "")).strip()
+                )
+            except Exception:
+                pass
         return None
-
     return parsed
 
 

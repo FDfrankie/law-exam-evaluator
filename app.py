@@ -31,6 +31,20 @@ import time
 import urllib.parse
 from PIL import Image
 
+# 全域導航模式常數（精簡俐落・完全消除側邊欄折行，杜絕 Streamlit Cloud 載入之 NameError）
+MODE_HOME = "🏠 系統首頁"
+MODE_EVAL = "📝 試卷批改"
+MODE_GEN = "🎯 模擬命題"
+MODE_BANK = "📚 歷年真題"
+MODE_ANS = "📖 擬答生成"
+MODE_SEARCH = "🔍 法學檢索"
+MODE_QA = "💬 法律問答"
+MODE_SUMMARIZER = "📑 裁判精鍊"
+MODE_SIX_CODES = "⚖️ 智慧六法"
+MODE_SFT = "📥 筆記蒸餾"
+MODE_INGEST = "📦 裁判入庫"
+MODE_DEV_MANAGER = "🛠️ 檔案總管"
+
 from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
 from doc_parser import parse_document, ocr_handwritten_images
 from evaluator import LawExamEvaluator
@@ -1023,6 +1037,7 @@ MODE_QA = "💬 法律問答"
 MODE_SUMMARIZER = "📑 裁判精鍊"
 MODE_SIX_CODES = "⚖️ 智慧六法"
 MODE_SFT = "📥 筆記蒸餾"
+MODE_INGEST = "📦 裁判入庫"
 MODE_DEV_MANAGER = "🛠️ 檔案總管"
 
 mode_options = [
@@ -1038,6 +1053,7 @@ mode_options = [
     MODE_SFT
 ]
 if is_developer():
+    mode_options.append(MODE_INGEST)
     mode_options.append(MODE_DEV_MANAGER)
 
 # 側邊欄
@@ -1065,8 +1081,10 @@ with st.sidebar:
             st.session_state["app_mode"] = MODE_SEARCH
         elif any(k in old_val for k in ["問答", "法律問題", "法律諮詢"]):
             st.session_state["app_mode"] = MODE_QA
-        elif any(k in old_val for k in ["精鍊", "裁判", "摘要", "大庫", "入庫", "judgements", "judgments"]):
+        elif any(k in old_val for k in ["精鍊", "裁判", "摘要"]):
             st.session_state["app_mode"] = MODE_SUMMARIZER
+        elif any(k in old_val for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
+            st.session_state["app_mode"] = MODE_INGEST
         elif "六法" in old_val:
             st.session_state["app_mode"] = MODE_SIX_CODES
         elif any(k in old_val for k in ["筆記", "蒸餾", "微調", "SFT"]):
@@ -1125,6 +1143,13 @@ with st.sidebar:
         st.session_state["home_default_tab_privacy"] = True
         st.rerun()
 
+    with st.expander("⚙️ 資料庫維護與同步", expanded=False):
+        if st.button("🔄 重新載入最新資料庫", use_container_width=True, key="btn_reload_latest_dbs"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.success("✅ 快取已清除，已重新掛載最新資料庫！")
+            st.rerun()
+
     with st.expander("🔒 開發者專區", expanded=False):
         dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
         st.caption("提示：boshiamy name")
@@ -1136,6 +1161,10 @@ with st.sidebar:
             if st.button("🛠️ 開啟檔案總管", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
                 st.session_state["app_mode"] = MODE_DEV_MANAGER
                 st.session_state["nav_sidebar_radio_mode"] = MODE_DEV_MANAGER
+                st.rerun()
+            if st.button("📦 裁判大庫串流入庫", key="btn_open_ingest_sidebar", use_container_width=True):
+                st.session_state["app_mode"] = MODE_INGEST
+                st.session_state["nav_sidebar_radio_mode"] = MODE_INGEST
                 st.rerun()
             if st.button("🔄 整合 DriveFS", key="btn_sync_laf", use_container_width=True):
                 with st.spinner("正在掃描 Google DriveFS..."):
@@ -6193,7 +6222,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
             """)
 
 # ----------------- 模式: 裁判大庫擴充 (入庫/刪原檔) -----------------
-elif app_mode == MODE_INGEST or any(k in str(app_mode) for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
+elif (globals().get("MODE_INGEST") and app_mode == globals().get("MODE_INGEST")) or any(k in str(app_mode) for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
     render_judgements_ingest_view()
 
 # ----------------- 模式 10: 檔案總管 -----------------

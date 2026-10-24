@@ -243,8 +243,8 @@ def classify_resource_file(full_path: Path, resources_dir: Path):
 def get_resources_dir() -> Optional[Path]:
     """偵測 Google Drive「資源」資料夾路徑"""
     for candidate in [
-        Path(r"G:\我的雲端硬碟\資源"),
-        Path(r"G:\My Drive\資源"),
+        Path(__file__).resolve().parent.parent / "資源",
+        Path(__file__).resolve().parent / "資源",
         Path(DATA_DIR).parent / "資源",
         Path(DATA_DIR) / "資源"
     ]:

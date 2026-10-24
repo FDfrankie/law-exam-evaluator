@@ -351,7 +351,11 @@ def build_precedents_catalog():
 
 def expand_from_notes():
     """從考生讀書筆記與名師講義快取庫中提取引述之法院裁判並擴充至判解庫"""
-    cache_dir = Path("G:/我的雲端硬碟/LawExamData/SamsungNotes/_cache")
+    try:
+        from config import SAMSUNG_NOTES_DIR
+        cache_dir = Path(SAMSUNG_NOTES_DIR) / "_cache"
+    except Exception:
+        cache_dir = Path(__file__).resolve().parent.parent / "SamsungNotes" / "_cache"
     if not cache_dir.exists():
         print("  [提示] 筆記文字快取目錄不存在，略過筆記裁判擴充。")
         return 0
