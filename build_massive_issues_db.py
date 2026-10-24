@@ -537,3 +537,4 @@ def build_massive_taxonomy() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     build_massive_taxonomy()
+
