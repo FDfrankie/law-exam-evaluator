@@ -179,10 +179,26 @@ def is_raw_uninformative_name(filename: str) -> bool:
 def get_all_managed_files() -> List[Dict[str, Any]]:
     """
     掃描本機與雲端硬碟所有法學筆記與講義檔案，彙整完整元數據清單。
+    若在雲端環境（如 Streamlit Cloud）實體資料夾無檔案，自動調用 drive_notes_manifest.json。
     """
-    samsung_dir = Path(DATA_DIR) / "SamsungNotes"
+    samsung_candidates = [
+        Path(DATA_DIR) / "SamsungNotes",
+        Path(__file__).resolve().parent / "data" / "SamsungNotes",
+        Path(r"G:\我的雲端硬碟\LawExamData\SamsungNotes"),
+        Path(r"G:\My Drive\LawExamData\SamsungNotes"),
+        Path(__file__).resolve().parent.parent / "SamsungNotes",
+        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes")
+    ]
+    samsung_dir = next((p for p in samsung_candidates if p.exists() and any(p.iterdir())), Path(DATA_DIR) / "SamsungNotes")
+    try:
+        samsung_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     cache_dir = samsung_dir / "_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
 
     # 取得快取索引
     existing_caches = set(os.listdir(cache_dir)) if cache_dir.exists() else set()
@@ -193,24 +209,84 @@ def get_all_managed_files() -> List[Dict[str, Any]]:
     files_found = []
     seen_paths = set()
 
-    # 1. 掃描 SamsungNotes 主目錄
-    if samsung_dir.exists():
-        for f in sorted(samsung_dir.iterdir()):
-            if f.is_file() and f.suffix.lower() in valid_exts and not f.name.startswith("."):
-                if f.name == "desktop.ini":
-                    continue
-                seen_paths.add(str(f.resolve()))
-                files_found.append(_build_file_metadata(f, cache_dir, existing_caches))
+    # 1. 掃描 SamsungNotes 主目錄候選路徑
+    for s_dir in samsung_candidates:
+        if s_dir.exists():
+            for f in sorted(s_dir.iterdir()):
+                if f.is_file() and f.suffix.lower() in valid_exts and not f.name.startswith("."):
+                    if f.name == "desktop.ini":
+                        continue
+                    res_p = str(f.resolve())
+                    if res_p not in seen_paths:
+                        seen_paths.add(res_p)
+                        files_found.append(_build_file_metadata(f, cache_dir, existing_caches))
 
     # 2. 掃描 community_archives/notes/ 社群筆記庫
-    comm_dir = Path(DATA_DIR).parent / "community_archives" / "notes"
-    if comm_dir.exists():
-        for f in sorted(comm_dir.iterdir()):
-            if f.is_file() and f.suffix.lower() in valid_exts and not f.name.startswith("."):
-                res_p = str(f.resolve())
-                if res_p not in seen_paths:
-                    seen_paths.add(res_p)
-                    files_found.append(_build_file_metadata(f, cache_dir, existing_caches, is_community=True))
+    comm_candidates = [
+        Path(DATA_DIR) / "community_archives" / "notes",
+        Path(DATA_DIR).parent / "community_archives" / "notes",
+        Path(__file__).resolve().parent / "data" / "community_archives" / "notes",
+        Path(r"G:\我的雲端硬碟\LawExamData\community_archives\notes"),
+        Path(r"G:\我的雲端硬碟\LawExamData\code\data\community_archives\notes")
+    ]
+    for c_dir in comm_candidates:
+        if c_dir.exists():
+            for f in sorted(c_dir.iterdir()):
+                if f.is_file() and f.suffix.lower() in valid_exts and not f.name.startswith("."):
+                    res_p = str(f.resolve())
+                    if res_p not in seen_paths:
+                        seen_paths.add(res_p)
+                        files_found.append(_build_file_metadata(f, cache_dir, existing_caches, is_community=True))
+
+    # 3. 雲端部署回退（例如 Streamlit Cloud，若實體資料夾無檔案，由 drive_notes_manifest.json 補齊）
+    if not files_found:
+        manifest_candidates = [
+            Path(DATA_DIR) / "drive_notes_manifest.json",
+            Path(__file__).resolve().parent / "data" / "drive_notes_manifest.json",
+            Path(DATA_DIR).parent / "data" / "drive_notes_manifest.json"
+        ]
+        for mp in manifest_candidates:
+            if mp.exists():
+                try:
+                    with open(mp, "r", encoding="utf-8") as mf:
+                        m_list = json.load(mf)
+                    for item in m_list:
+                        fname = item.get("filename") or item.get("orig_filename") or ""
+                        if not fname:
+                            continue
+                        f_stem = item.get("stem") or Path(fname).stem
+                        subject = item.get("subject", "其他")
+                        size_mb = float(item.get("size_mb", 0.0) or 0.0)
+                        size_bytes = int(size_mb * 1024 * 1024)
+                        ext = Path(fname).suffix.lower()
+                        is_cached = bool(item.get("is_cached", False))
+                        is_raw = is_raw_uninformative_name(fname)
+                        local_p = samsung_dir / fname
+                        
+                        files_found.append({
+                            "id": f"{f_stem}_{size_bytes}",
+                            "filename": fname,
+                            "orig_filename": item.get("orig_filename", fname),
+                            "stem": f_stem,
+                            "ext": ext,
+                            "path": local_p,
+                            "path_str": str(local_p),
+                            "size_bytes": size_bytes,
+                            "size_mb": round(size_mb, 2),
+                            "size_str": f"{size_mb:.2f} MB" if size_mb >= 1.0 else f"{size_bytes / 1024:.1f} KB",
+                            "mtime": 0,
+                            "mtime_str": "雲端清單",
+                            "subject": subject,
+                            "is_cached": is_cached,
+                            "cached_len": 500 if is_cached else 0,
+                            "cached_preview": f"【{subject}】{fname} (雲端同步法學講義/手寫筆記)",
+                            "is_raw": is_raw,
+                            "is_community": False
+                        })
+                    if files_found:
+                        break
+                except Exception:
+                    pass
 
     return files_found
 
@@ -708,7 +784,18 @@ def render_developer_file_manager():
     all_files = get_all_managed_files()
 
     if not all_files:
-        st.warning("⚠️ 目前未偵測到任何 SamsungNotes 或社群筆記檔案，請確認 `SamsungNotes/` 資料夾位置。")
+        st.warning("⚠️ 目前未偵測到任何 SamsungNotes 或社群筆記檔案，請確認 `SamsungNotes/` 資料夾位置或於下方直接上傳。")
+        with st.container(border=True):
+            st.subheader("📤 立即上傳法學講義或手寫筆記")
+            up_files = st.file_uploader("選取欲上傳之檔案：", type=["pdf", "docx", "png", "jpg", "jpeg", "txt", "md"], accept_multiple_files=True, key="dev_empty_uploader")
+            if up_files:
+                target_s_dir = Path(DATA_DIR) / "SamsungNotes"
+                target_s_dir.mkdir(parents=True, exist_ok=True)
+                for uf in up_files:
+                    with open(target_s_dir / uf.name, "wb") as fo:
+                        fo.write(uf.getbuffer())
+                st.success(f"✅ 成功上傳 {len(up_files)} 份筆記！")
+                st.rerun()
         return
 
     # 計算統計指標
@@ -726,12 +813,13 @@ def render_developer_file_manager():
 
     st.markdown("---")
 
-    # 三大核心功能分頁
-    tab_view, tab_organize, tab_rename, tab_history = st.tabs([
+    # 四大核心功能分頁（含開發者專屬全考科合併為單一完整 PDF 大典）
+    tab_view, tab_organize, tab_merge_pdf, tab_rename, tab_history = st.tabs([
         "📂 1. 全庫檔案在線檢視與調閱 (View Files)",
         "🏷️ 2. 考科體系分類與組織清單 (Organize)",
-        "🪄 3. 依內文智慧重命名大典 (Smart Rename)",
-        "📜 4. 操作歷史審計與一鍵復原 (Undo / Audit)"
+        "📑 3. 全考科合併為單一完整 PDF (Merge PDFs)",
+        "🪄 4. 依內文智慧重命名大典 (Smart Rename)",
+        "📜 5. 操作歷史審計與一鍵復原 (Undo / Audit)"
     ])
 
     # --------------------------------------------------------------------------
@@ -878,7 +966,131 @@ def render_developer_file_manager():
                     st.write(f"{sf_idx}. {is_r_icon} **《{sf['filename']}》** ｜ `{sf['size_str']}` ｜ {c_tag}")
 
     # --------------------------------------------------------------------------
-    # 分頁 3: 依內文智慧重命名大典
+    # 分頁 3: 開發者專屬全考科合併為單一完整 PDF 大典
+    # --------------------------------------------------------------------------
+    with tab_merge_pdf:
+        st.subheader("📑 考科全卷總成：依章節法理順序拼接合併為單一完整 PDF")
+        st.caption("🔒 **【開發者特權工具】** 自動依據中文章節與法學體系順序（如親屬總論 ➔ 婚約 ➔ 婚姻...至扣減權，或刑總構成要件 ➔ 違法性 ➔ 罪責 ➔ 未遂共犯），秒速拼接該考科全部 PDF，生成一個完整可離線劃記閱讀的超大 PDF。")
+
+        try:
+            from ingest_user_notes_to_sft import (
+                get_google_drive_notes_list,
+                merge_subject_pdfs,
+                get_chapter_sort_key
+            )
+            all_drive_notes = get_google_drive_notes_list()
+        except Exception as _e_load:
+            all_drive_notes = []
+
+        sub_pdf_map = {}
+        for n in all_drive_notes:
+            if n.get("path") and Path(n["path"]).suffix.lower() == ".pdf":
+                fn = n.get("filename", "")
+                if "全科整合" not in fn and "全科體系" not in fn and not fn.endswith("_全科筆記文字總彙編.md"):
+                    sub_pdf_map.setdefault(n["subject"], []).append(n)
+
+        if not sub_pdf_map:
+            st.info("💡 目前未偵測到任何考科的 PDF 講義筆記。請確認雲端硬碟「資源」或 SamsungNotes 目錄。")
+        else:
+            CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法"]
+            CRIM_GROUP = ["刑總", "刑分", "刑法"]
+            PUB_GROUP = ["憲法", "行政法"]
+            COMM_GROUP = ["商事法", "保險法"]
+            IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+
+            crim_pdfs = [n for n in all_drive_notes if n["subject"] in CRIM_GROUP and Path(n["path"]).suffix.lower() == ".pdf" and "全科整合" not in n["filename"]]
+            civil_pdfs = [n for n in all_drive_notes if n["subject"] in CIVIL_GROUP and Path(n["path"]).suffix.lower() == ".pdf" and "全科整合" not in n["filename"]]
+            pub_pdfs = [n for n in all_drive_notes if n["subject"] in PUB_GROUP and Path(n["path"]).suffix.lower() == ".pdf" and "全科整合" not in n["filename"]]
+            comm_pdfs = [n for n in all_drive_notes if n["subject"] in COMM_GROUP and Path(n["path"]).suffix.lower() == ".pdf" and "全科整合" not in n["filename"]]
+            ip_pdfs = [n for n in all_drive_notes if n["subject"] in IP_GROUP and Path(n["path"]).suffix.lower() == ".pdf" and "全科整合" not in n["filename"]]
+
+            # 選單選項：優先將《刑總》與《刑法全輯》等重點考科列出
+            merge_sub_options = []
+            if "刑總" in sub_pdf_map:
+                merge_sub_options.append(f"⚖️ 【刑總】(收錄全科 {len(sub_pdf_map['刑總'])} 份講義與筆記)")
+            if crim_pdfs:
+                merge_sub_options.append(f"🌟 【刑法全輯】(刑總/刑分 共 {len(crim_pdfs)} 份)")
+            if "身分法" in sub_pdf_map:
+                merge_sub_options.append(f"⚖️ 【身分法】(收錄全科 {len(sub_pdf_map['身分法'])} 份講義與筆記)")
+            if civil_pdfs:
+                merge_sub_options.append(f"🌟 【民法全輯】(總則/債總/債各/物權/身分 共 {len(civil_pdfs)} 份)")
+            if pub_pdfs:
+                merge_sub_options.append(f"🌟 【公法全輯】(憲法/行政法 共 {len(pub_pdfs)} 份)")
+            if comm_pdfs:
+                merge_sub_options.append(f"🌟 【商事法全輯】(公司/證交/保險 共 {len(comm_pdfs)} 份)")
+            if ip_pdfs:
+                merge_sub_options.append(f"🌟 【智財全輯】(專利/商標/著作權 共 {len(ip_pdfs)} 份)")
+
+            # 加入其餘個別考科
+            for s, plist in sorted(sub_pdf_map.items(), key=lambda x: -len(x[1])):
+                label_candidate = f"⚖️ 【{s}】(收錄全科 {len(plist)} 份講義與筆記)"
+                if label_candidate not in merge_sub_options:
+                    merge_sub_options.append(label_candidate)
+
+            col_m1, col_m2 = st.columns([1.5, 1])
+            with col_m1:
+                sel_merge_opt = st.selectbox("🎯 選擇欲合併拼接為單一完整 PDF 之考科：", merge_sub_options, key="dev_sel_merge_sub")
+
+            # 解析目標科目
+            if "【" in sel_merge_opt and "】" in sel_merge_opt:
+                target_sub = sel_merge_opt.split("【")[1].split("】")[0]
+            else:
+                target_sub = "刑總"
+
+            # 取得對應 PDF 清單
+            if target_sub == "刑法全輯":
+                curr_target_files = crim_pdfs
+            elif target_sub == "民法全輯":
+                curr_target_files = civil_pdfs
+            elif target_sub == "公法全輯":
+                curr_target_files = pub_pdfs
+            elif target_sub == "商事法全輯":
+                curr_target_files = comm_pdfs
+            elif target_sub == "智財全輯":
+                curr_target_files = ip_pdfs
+            else:
+                curr_target_files = sub_pdf_map.get(target_sub, [])
+
+            # 依體系章節法理順序排序
+            sorted_target_files = sorted(curr_target_files, key=lambda x: (x.get("subject", ""), get_chapter_sort_key(Path(x["path"]))))
+
+            st.info(f"📂 目前【**{target_sub}**】已定位 **{len(sorted_target_files)} 份** 原始 PDF 講義/筆記，系統將依據中文章節法理順序進行高精度拼接。")
+
+            with st.expander(f"📋 點擊展開檢視【{target_sub}】拼接順序清單（共 {len(sorted_target_files)} 份）", expanded=False):
+                for p_idx, pf in enumerate(sorted_target_files, 1):
+                    st.write(f"{p_idx}. 📄 **《{pf.get('filename')}》** (`{pf.get('size_mb', 0):.2f} MB`) ｜ 考科：`{pf.get('subject')}`")
+
+            st.markdown("---")
+            st.markdown(f"### 📑 方案一：合併為《{target_sub}》單一完整 PDF")
+            st.caption(f"自動依據章節法理順序高速拼接本考科所有 **{len(sorted_target_files)} 份** PDF，生成一個完整可離線劃記閱讀的超大 PDF。")
+
+            if st.button(f"🚀 開始合併【{target_sub}】全科為單一完整 PDF", type="primary", key="dev_btn_run_merge_pdf"):
+                with st.spinner(f"正在使用高精度 C++ 引擎依法理章節順序高速拼接【{target_sub}】所有 PDF..."):
+                    try:
+                        merge_res = merge_subject_pdfs(target_sub)
+                        st.session_state[f"dev_merged_pdf_{target_sub}"] = merge_res
+                        st.balloons()
+                        st.success(f"🎉 合併成功！已生成單一完整 PDF：《{merge_res['output_path'].name}》")
+                    except Exception as me:
+                        st.error(f"合併失敗: {me}")
+
+            if f"dev_merged_pdf_{target_sub}" in st.session_state:
+                m_info = st.session_state[f"dev_merged_pdf_{target_sub}"]
+                st.success(f"✅ 【{target_sub}】單一完整 PDF 總成已就緒！")
+                st.info(f"📄 總頁數：**{m_info['total_pages']} 頁** ｜ 檔案大小：**{m_info['file_size_mb']:.2f} MB** ｜ 涵蓋講義筆記：**{m_info['file_count']} 份**")
+                
+                if m_info["output_path"].exists():
+                    with open(m_info["output_path"], "rb") as f_pdf:
+                        st.download_button(
+                            label=f"⬇️ 立即下載《{m_info['output_path'].name}》({m_info['file_size_mb']:.2f} MB)",
+                            data=f_pdf.read(),
+                            file_name=m_info["output_path"].name,
+                            mime="application/pdf",
+                            key="dev_btn_dl_merged_pdf"
+                        )
+
+    # --------------------------------------------------------------------------
+    # 分頁 4: 依內文智慧重命名大典
     # --------------------------------------------------------------------------
     with tab_rename:
         st.subheader("🪄 依據筆記內容智慧重命名大典 (Content-Based Renaming)")

@@ -27,6 +27,24 @@ except ImportError:
         legacy_genai = None
     USE_MODERN_GENAI = False
 
+__all__ = [
+    "SIX_CODES_TAXONOMY",
+    "get_laws_in_branch",
+    "search_articles",
+    "get_article_annotations",
+    "SixCodesDeepAnnotator",
+    "get_law_legislative_history",
+    "get_article_legislative_details",
+    "synthesize_article_legislative_details",
+    "clear_six_codes_cache",
+    "load_six_codes_data",
+    "format_legal_article_text",
+    "render_formatted_article_quote",
+    "get_law_articles",
+    "normalize_article_no",
+    "parse_article_query"
+]
+
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
 # 八大法學門類體系分類
@@ -1462,3 +1480,25 @@ class SixCodesDeepAnnotator:
                 last_err = e
                 continue
         raise RuntimeError(f"條文深度註釋生成失敗: {last_err}")
+
+
+def format_legal_article_text(text: str) -> str:
+    """
+    將法律條文內容進行標準法學結構化排版（段落、款項分離縮排）。
+    """
+    if not text or not isinstance(text, str):
+        return ""
+    t = text.replace('\r\n', '\n').replace('\r', '\n').strip()
+    t = re.sub(r'(?<=[。；:：\n])\s*(?=[一二三四五六七八九十百]+[、\s])', '\n  ', t)
+    t = re.sub(r'(?<=[。；:：\n])\s*(?=[（(][一二三四五六七八九十百]+[)）])', '\n    ', t)
+    return t
+
+
+def render_formatted_article_quote(content: str, title: str = "📜 條文全文") -> str:
+    """
+    將條文內容轉為美觀之 Markdown 引用區塊格式。
+    """
+    formatted = format_legal_article_text(content)
+    lines = [f"> {line}  " for line in formatted.split('\n')]
+    return f"> **{title}**：  \n" + '\n'.join(lines)
+

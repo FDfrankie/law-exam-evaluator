@@ -6028,12 +6028,32 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
             if sub_dict:
                 all_sub_count = sum(len(nlist) for nlist in sub_dict.values())
                 CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法"]
+                CRIM_GROUP = ["刑總", "刑分", "刑法"]
+                PUB_GROUP = ["憲法", "行政法"]
+                COMM_GROUP = ["商事法", "保險法"]
+                IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+
                 civil_notes = [n for n in all_notes if n["subject"] in CIVIL_GROUP]
+                crim_notes = [n for n in all_notes if n["subject"] in CRIM_GROUP]
+                pub_notes = [n for n in all_notes if n["subject"] in PUB_GROUP]
+                comm_notes = [n for n in all_notes if n["subject"] in COMM_GROUP]
+                ip_notes = [n for n in all_notes if n["subject"] in IP_GROUP]
 
                 all_choice_label = f"🌟 【全部考科】全部分析 (全庫共 {all_sub_count} 份筆記 / 講義)"
                 civil_choice_label = f"🌟 【民法全輯】(總則/債總/債各/物權/身分 共 {len(civil_notes)} 份)"
+                crim_choice_label = f"🌟 【刑法全輯】(刑總/刑分 共 {len(crim_notes)} 份)"
+                pub_choice_label = f"🌟 【公法全輯】(憲法/行政法 共 {len(pub_notes)} 份)"
+                comm_choice_label = f"🌟 【商事法全輯】(公司/證交/保險 共 {len(comm_notes)} 份)"
+                ip_choice_label = f"🌟 【智財全輯】(專利/商標/著作權 共 {len(ip_notes)} 份)"
 
-                sub_options = [all_choice_label, civil_choice_label] + [
+                sub_options = [
+                    all_choice_label,
+                    civil_choice_label,
+                    crim_choice_label,
+                    pub_choice_label,
+                    comm_choice_label,
+                    ip_choice_label
+                ] + [
                     f"【{s}】(共 {len(nlist)} 份筆記 / 講義)"
                     for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))
                 ]
@@ -6044,6 +6064,18 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                 elif sel_sub_label == civil_choice_label:
                     sel_subject = "民法全輯"
                     sub_notes = civil_notes
+                elif sel_sub_label == crim_choice_label:
+                    sel_subject = "刑法全輯"
+                    sub_notes = crim_notes
+                elif sel_sub_label == pub_choice_label:
+                    sel_subject = "公法全輯"
+                    sub_notes = pub_notes
+                elif sel_sub_label == comm_choice_label:
+                    sel_subject = "商事法全輯"
+                    sub_notes = comm_notes
+                elif sel_sub_label == ip_choice_label:
+                    sel_subject = "智財全輯"
+                    sub_notes = ip_notes
                 else:
                     sel_subject = sel_sub_label.split("【")[1].split("】")[0]
                     sub_notes = sub_dict[sel_subject]
