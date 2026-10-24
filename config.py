@@ -1,3 +1,4 @@
+import sys
 import os
 from pathlib import Path
 try:
@@ -102,7 +103,7 @@ OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox" if (DATA_DIR / "opendata_inbox"
 DEFAULT_WINDOWS_JUDGEMENTS_DIR = Path(r"G:\我的雲端硬碟\LawExamData\data\judgements")
 
 def get_judgements_dir() -> Path:
-    """獲取裁判壓縮包 (.rar, .7z, .zip) 監控目錄，優先採用使用者指定之 G:\\我的雲端硬碟\\LawExamData\\data\\judgements"""
+    """獲取裁判壓縮包 (.rar, .7z, .zip) 監控目錄，自動適配本機 Windows、macOS 與 Linux/Streamlit Cloud"""
     # 0. 環境變數或 Streamlit secrets 顯式設定
     custom_j = os.getenv("JUDGEMENTS_DIR")
     if not custom_j:
@@ -116,16 +117,34 @@ def get_judgements_dir() -> Path:
         return Path(custom_j)
 
     # 1. 若本機是 Windows 且 G 槽路徑存在
-    for w_path in [
-        Path(r"G:\我的雲端硬碟\LawExamData\data\judgements"),
-        Path(r"G:\My Drive\LawExamData\data\judgements"),
-        Path("G:/我的雲端硬碟/LawExamData/data/judgements")
-    ]:
-        if w_path.exists():
-            return w_path
+    if sys.platform == "win32":
+        for w_path in [
+            Path(r"G:\我的雲端硬碟\LawExamData\data\judgements"),
+            Path(r"G:\My Drive\LawExamData\data\judgements"),
+            Path("G:/我的雲端硬碟/LawExamData/data/judgements")
+        ]:
+            if w_path.exists():
+                return w_path
+        if DEFAULT_WINDOWS_JUDGEMENTS_DIR.parent.exists():
+            return DEFAULT_WINDOWS_JUDGEMENTS_DIR
 
-    # 2. 預設標準監控目錄（固定為使用者指定之 Windows 雲端硬碟路徑，避免出現雲端 Linux 伺服器掛載路徑）
-    return DEFAULT_WINDOWS_JUDGEMENTS_DIR
+    # 2. 若為 macOS 且 Google Drive 路徑存在
+    macos_candidates = [
+        Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements",
+        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements")
+    ]
+    for m_path in macos_candidates:
+        if m_path.exists():
+            return m_path
+
+    # 3. 專案內部相對 data/judgements 目錄（跨平台保證存在，支援 Streamlit Cloud / Linux）
+    local_j = DATA_DIR / "judgements"
+    if not local_j.exists():
+        repo_j = Path(__file__).resolve().parent / "data" / "judgements"
+        if repo_j.exists():
+            return repo_j
+
+    return local_j
 
 JUDGEMENTS_DIR = get_judgements_dir()
 

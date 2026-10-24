@@ -1143,13 +1143,6 @@ with st.sidebar:
         st.session_state["home_default_tab_privacy"] = True
         st.rerun()
 
-    with st.expander("⚙️ 資料庫維護與同步", expanded=False):
-        if st.button("🔄 重新載入最新資料庫", use_container_width=True, key="btn_reload_latest_dbs"):
-            st.cache_data.clear()
-            st.cache_resource.clear()
-            st.success("✅ 快取已清除，已重新掛載最新資料庫！")
-            st.rerun()
-
     with st.expander("🔒 開發者專區", expanded=False):
         dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
         st.caption("提示：boshiamy name")
@@ -1194,6 +1187,14 @@ with st.sidebar:
                 st.error("金鑰不正確，未獲授權")
             st.caption("🔒 訪客模式（受著作權保護，未解鎖教材與筆記）")
 
+    # 在 st.sidebar 底部明確加入資料庫維護與同步
+    with st.sidebar.expander("⚙️ 資料庫維護與同步", expanded=False):
+        if st.button("🔄 重新載入最新資料庫", use_container_width=True, key="btn_reload_latest_dbs_sidebar_bottom"):
+            st.cache_data.clear()
+            st.cache_resource.clear()
+            st.success("快取已清除，已重新掛載最新資料！")
+            st.rerun()
+
 def render_judgements_ingest_view():
     st.header("📦 司法院裁判資料夾極速入庫與實質爭點分析 (data/judgements)")
     st.write("免開終端機、免本機打指令！只要將司法院裁判壓縮檔（`.rar`、`.7z`、`.zip`、`.json`）放入 `data/judgements`，點選按鈕即可全自動低記憶體串流解壓、完成法學實質爭點分析與 IRAC 萃取，並在入庫後自動刪除原始壓縮包以釋放雲端硬碟空間！")
@@ -1215,16 +1216,23 @@ def render_judgements_ingest_view():
         custom_input_path = st.session_state.get("custom_judgements_path", "")
         active_monitored_dir = Path(custom_input_path) if custom_input_path else JUDGEMENTS_DIR
 
+        # 確保本地監控目錄實體存在（若在 Linux / Streamlit Cloud 自動於專案建立 data/judgements）
+        try:
+            active_monitored_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
         # 彙整所有可行的實體磁碟掃描候選目錄
         candidate_scan_dirs = [active_monitored_dir]
         for extra_p in [
             JUDGEMENTS_DIR,
+            DATA_DIR / "judgements",
+            Path(__file__).resolve().parent / "data" / "judgements",
+            DATA_DIR / "data" / "judgements",
+            OPENDATA_INBOX_DIR,
             DEFAULT_WINDOWS_JUDGEMENTS_DIR,
             Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements"),
-            Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements",
-            DATA_DIR / "data" / "judgements",
-            DATA_DIR / "judgements",
-            OPENDATA_INBOX_DIR
+            Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements"
         ]:
             if extra_p not in candidate_scan_dirs:
                 candidate_scan_dirs.append(extra_p)
@@ -1328,7 +1336,16 @@ def render_judgements_ingest_view():
 """)
             else:
                 st.success("✅ 目前該資料夾內尚無待處理的裁判壓縮包。")
-                st.caption(f"💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接上傳或複製到雲端硬碟 `{active_monitored_dir}` 資料夾中。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
+                st.caption(f"💡 **使用說明**：您可以在司法院資料開放平臺下載歷年月份裁判書（如 `.rar`、`.7z`、`.zip`），並直接複製到監控資料夾 `{active_monitored_dir}` 中，或利用下方上傳框直接上傳。回到本頁面點擊按鈕，系統將全自動串流解壓、完成法學實質爭點分析，並自動刪除原始壓縮包以釋放雲端硬碟空間！")
+
+                st.markdown("##### 📥 或直接在此將裁判壓縮包上傳至監控資料夾：")
+                quick_up = st.file_uploader("選取欲放入監控目錄之裁判壓縮檔 (.rar, .7z, .zip, .json, .jsonl)：", type=["rar", "7z", "zip", "json", "jsonl"], key="quick_uploader_to_judgements")
+                if quick_up is not None:
+                    save_dest = active_monitored_dir / quick_up.name
+                    with open(save_dest, "wb") as f_save:
+                        f_save.write(quick_up.getbuffer())
+                    st.success(f"✅ 檔案 `{quick_up.name}` 已成功放入 `{active_monitored_dir}`！點擊下方按鈕即可重新掃描入庫。")
+                    st.rerun()
 
             if st.button("🔄 重新掃描裁判資料夾", key="btn_rescan_judgements_empty"):
                 st.rerun()
