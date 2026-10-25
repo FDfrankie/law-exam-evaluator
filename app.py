@@ -116,6 +116,16 @@ except Exception as _err:
         fmt = format_legal_article_text(c)
         lines = [f"> {l}  " for l in fmt.split('\n')]
         return f"> **{title}**：  \n" + '\n'.join(lines)
+
+try:
+    from question_bank_engine import save_questions_to_pool, render_shared_question_pool_ui
+except ImportError:
+    try:
+        from code.question_bank_engine import save_questions_to_pool, render_shared_question_pool_ui
+    except Exception:
+        def save_questions_to_pool(*a, **k): return 0
+        def render_shared_question_pool_ui(): pass
+
 try:
     from six_codes_updater import update_law_amendments, load_amendments_history
 except Exception as _e_scu:
@@ -2357,993 +2367,1034 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
     st.header("🎯 司律考試模擬命題系統（一試選擇 / 二試申論實例題）")
     st.write("可放入個人手寫/打字讀書筆記、指定考科與考點，由法學大模型為您量身打造司律一試選擇題或二試實例申論題。")
 
-    stage = st.radio("選擇考試階段：", ["一試 (選擇題 / 單選題)", "二試 (申論實例題)"], horizontal=True)
+    tab_ai_gen, tab_shared_pool = st.tabs(["🎲 AI 即時命題", "📚 共享題庫隨選刷題"])
+    with tab_shared_pool:
+        render_shared_question_pool_ui()
 
-    col_sub1, col_sub2 = st.columns([1, 1])
-    with col_sub1:
-        st.markdown("##### 🏛️ 第一步：選擇考試學門與法典科目")
-        avail_domains = get_available_domains()
-        if not avail_domains:
-            avail_domains = [
-                "民事財產與身分法",
-                "刑事實體法",
-                "公法專題",
-                "民事程序法",
-                "刑事程序法",
-                "商事法專題",
-                "智慧財產權法專題"
-            ]
-        domain_choice = st.selectbox(
-            "考科學門體系分類（七大學門）：",
-            avail_domains,
-            key="sel_exam_domain_filter"
-        )
-        
-        statutes_in_domain = get_statutes_by_domain(domain_choice)
-        if not statutes_in_domain:
-            statutes_in_domain = ["民法", "刑法", "行政法", "民事訴訟法", "刑事訴訟法", "公司法", "智慧財產權法"]
-        statute_options = statutes_in_domain + ["其他自訂科目"]
-        subject_choice = st.selectbox("核心法典/考科：", statute_options, key=f"sel_statute_{domain_choice}")
-        if subject_choice == "其他自訂科目":
-            subject = st.text_input("請輸入自訂科目名稱：", value="民事法學", key="txt_custom_subject")
-        else:
-            subject = subject_choice.split(" ")[0]
+    with tab_ai_gen:
 
-    with col_sub2:
-        st.markdown("##### 🎯 第二步：設定編章節與核心考點爭點")
-        raw_chapters = get_chapters(domain_choice, subject)
-        if not raw_chapters:
-            raw_chapters = get_taxonomy_chapters_for_subject(subject)
-        
-        chapter_options = ["🌟 全編章通用 / 跨章節綜合考點"] + raw_chapters if raw_chapters else ["🌟 全編章通用 / 跨章節綜合考點"]
-        chapter_choice = st.selectbox("體系編章/專題：", chapter_options, key=f"sel_chapter_{domain_choice}_{subject}")
-        
-        is_all_ch = "全編章" in chapter_choice
-        raw_sections = []
-        if not is_all_ch:
-            raw_sections = get_sections(domain_choice, subject, chapter_choice)
-        
-        if raw_sections and len(raw_sections) > 1:
-            sec_options = ["🌟 本單元全部節次/條文"] + raw_sections
-            section_choice = st.selectbox("節次/條文專案：", sec_options, key=f"sel_sec_{domain_choice}_{subject}_{chapter_choice}")
-        else:
-            section_choice = raw_sections[0] if raw_sections else ""
+        stage = st.radio("選擇考試階段：", ["一試 (選擇題 / 單選題)", "二試 (申論實例題)"], horizontal=True)
 
-        # 抓取該節/章之具體千級考點爭點清單
-        if is_all_ch:
-            cur_issues = get_issues(domain_choice, subject, "")
-            if not cur_issues and raw_chapters:
-                for ch in raw_chapters[:3]:
-                    cur_issues.extend(get_issues(domain_choice, subject, ch))
-        else:
-            sec_param = "" if "全部" in section_choice else section_choice
-            cur_issues = get_issues(domain_choice, subject, chapter_choice, sec_param)
+        col_sub1, col_sub2 = st.columns([1, 1])
+        with col_sub1:
+            st.markdown("##### 🏛️ 第一步：選擇考試學門與法典科目")
+            avail_domains = get_available_domains()
+            if not avail_domains:
+                avail_domains = [
+                    "民事財產與身分法",
+                    "刑事實體法",
+                    "公法專題",
+                    "民事程序法",
+                    "刑事程序法",
+                    "商事法專題",
+                    "智慧財產權法專題"
+                ]
+            domain_choice = st.selectbox(
+                "考科學門體系分類（七大學門）：",
+                avail_domains,
+                key="sel_exam_domain_filter"
+            )
 
-        if not cur_issues:
-            fallback_map = get_subject_topics_taxonomy(subject)
-            cur_issues = list(fallback_map.keys())
+            statutes_in_domain = get_statutes_by_domain(domain_choice)
+            if not statutes_in_domain:
+                statutes_in_domain = ["民法", "刑法", "行政法", "民事訴訟法", "刑事訴訟法", "公司法", "智慧財產權法"]
+            statute_options = statutes_in_domain + ["其他自訂科目"]
+            subject_choice = st.selectbox("核心法典/考科：", statute_options, key=f"sel_statute_{domain_choice}")
+            if subject_choice == "其他自訂科目":
+                subject = st.text_input("請輸入自訂科目名稱：", value="民事法學", key="txt_custom_subject")
+            else:
+                subject = subject_choice.split(" ")[0]
 
-        # 支援多選高頻核心考點爭點 (multiselect)
-        sel_preset_topics = st.multiselect(
-            f"依【{subject}・{chapter_choice}】勾選核心考點爭點（千級題庫支援多選複合命題）：",
-            options=cur_issues,
-            default=[],
-            placeholder="💡 點此勾選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
-            key=f"msel_topics_{domain_choice}_{subject}_{chapter_choice}_{section_choice}"
-        )
+        with col_sub2:
+            st.markdown("##### 🎯 第二步：設定編章節與核心考點爭點")
+            raw_chapters = get_chapters(domain_choice, subject)
+            if not raw_chapters:
+                raw_chapters = get_taxonomy_chapters_for_subject(subject)
 
-        # 2. 加入客製化出題範圍與新增自訂爭點工具區
-        with st.expander("🛠️ 客製化命題範圍設定與自訂考點新增（章節・法條・專案主題）", expanded=False):
-            col_sc1, col_sc2 = st.columns([1.2, 1.8])
-            with col_sc1:
-                scope_mode = st.selectbox(
-                    "命題範圍類型：",
-                    [
-                        "🌟 全科目綜合範圍 (不設限)",
-                        "📜 特定法條/條文區間 (如：民法第179~198條)",
-                        "📚 特定編次/章節專題 (如：總則篇、債各、犯罪論)",
-                        "🏛️ 實務見解專題 (大法庭裁定/憲判字/判例)",
-                        "✏️ 完全自訂命題範圍"
-                    ],
-                    key=f"sel_scope_mode_{subject}"
-                )
-            with col_sc2:
-                scope_placeholder = "例如：民法第179條至第198條債總編、刑法第12條至第31條犯罪論..."
-                if "法條" in scope_mode:
-                    scope_placeholder = "例如：第184條至第198條侵權責任、或行政程序法第92條至第134條..."
-                elif "章節" in scope_mode:
-                    scope_placeholder = "例如：民法物權編占有與共有、公司法股東會決議瑕疵專題..."
-                elif "實務" in scope_mode:
-                    scope_placeholder = "例如：近五年最高法院民事大法庭裁定專題、111-113年憲判字重要判決..."
-                
-                custom_scope_input = st.text_input(
-                    "指定客製化範圍明細：",
-                    placeholder=scope_placeholder,
-                    key=f"txt_custom_scope_{subject}"
-                )
+            chapter_options = ["🌟 全編章通用 / 跨章節綜合考點"] + raw_chapters if raw_chapters else ["🌟 全編章通用 / 跨章節綜合考點"]
+            chapter_choice = st.selectbox("體系編章/專題：", chapter_options, key=f"sel_chapter_{domain_choice}_{subject}")
 
-            # 自訂新增爭點考點
-            col_add_t1, col_add_t2 = st.columns([3, 1])
-            with col_add_t1:
-                new_adhoc_topic = st.text_input(
-                    "➕ 輸入欲新增的自訂考點關鍵字：",
-                    placeholder="例如：108台上大1719、不純正不作為犯保證人地位、違約定金酌減...",
-                    key=f"txt_adhoc_topic_add_{subject}"
-                )
-            with col_add_t2:
-                st.write("")
-                if st.button("➕ 新增至考點", use_container_width=True, key=f"btn_add_adhoc_{subject}"):
-                    if new_adhoc_topic.strip():
-                        if f"adhoc_topics_list_{subject}" not in st.session_state:
-                            st.session_state[f"adhoc_topics_list_{subject}"] = []
-                        if new_adhoc_topic.strip() not in st.session_state[f"adhoc_topics_list_{subject}"]:
-                            st.session_state[f"adhoc_topics_list_{subject}"].append(new_adhoc_topic.strip())
+            is_all_ch = "全編章" in chapter_choice
+            raw_sections = []
+            if not is_all_ch:
+                raw_sections = get_sections(domain_choice, subject, chapter_choice)
+
+            if raw_sections and len(raw_sections) > 1:
+                sec_options = ["🌟 本單元全部節次/條文"] + raw_sections
+                section_choice = st.selectbox("節次/條文專案：", sec_options, key=f"sel_sec_{domain_choice}_{subject}_{chapter_choice}")
+            else:
+                section_choice = raw_sections[0] if raw_sections else ""
+
+            # 抓取該節/章之具體千級考點爭點清單
+            if is_all_ch:
+                cur_issues = get_issues(domain_choice, subject, "")
+                if not cur_issues and raw_chapters:
+                    for ch in raw_chapters[:3]:
+                        cur_issues.extend(get_issues(domain_choice, subject, ch))
+            else:
+                sec_param = "" if "全部" in section_choice else section_choice
+                cur_issues = get_issues(domain_choice, subject, chapter_choice, sec_param)
+
+            if not cur_issues:
+                fallback_map = get_subject_topics_taxonomy(subject)
+                cur_issues = list(fallback_map.keys())
+
+            # 支援多選高頻核心考點爭點 (multiselect)
+            sel_preset_topics = st.multiselect(
+                f"依【{subject}・{chapter_choice}】勾選核心考點爭點（千級題庫支援多選複合命題）：",
+                options=cur_issues,
+                default=[],
+                placeholder="💡 點此勾選一至多項核心考點，AI 將自動融合成跨爭點案例實例題...",
+                key=f"msel_topics_{domain_choice}_{subject}_{chapter_choice}_{section_choice}"
+            )
+
+            # 2. 加入客製化出題範圍與新增自訂爭點工具區
+            with st.expander("🛠️ 客製化命題範圍設定與自訂考點新增（章節・法條・專案主題）", expanded=False):
+                col_sc1, col_sc2 = st.columns([1.2, 1.8])
+                with col_sc1:
+                    scope_mode = st.selectbox(
+                        "命題範圍類型：",
+                        [
+                            "🌟 全科目綜合範圍 (不設限)",
+                            "📜 特定法條/條文區間 (如：民法第179~198條)",
+                            "📚 特定編次/章節專題 (如：總則篇、債各、犯罪論)",
+                            "🏛️ 實務見解專題 (大法庭裁定/憲判字/判例)",
+                            "✏️ 完全自訂命題範圍"
+                        ],
+                        key=f"sel_scope_mode_{subject}"
+                    )
+                with col_sc2:
+                    scope_placeholder = "例如：民法第179條至第198條債總編、刑法第12條至第31條犯罪論..."
+                    if "法條" in scope_mode:
+                        scope_placeholder = "例如：第184條至第198條侵權責任、或行政程序法第92條至第134條..."
+                    elif "章節" in scope_mode:
+                        scope_placeholder = "例如：民法物權編占有與共有、公司法股東會決議瑕疵專題..."
+                    elif "實務" in scope_mode:
+                        scope_placeholder = "例如：近五年最高法院民事大法庭裁定專題、111-113年憲判字重要判決..."
+
+                    custom_scope_input = st.text_input(
+                        "指定客製化範圍明細：",
+                        placeholder=scope_placeholder,
+                        key=f"txt_custom_scope_{subject}"
+                    )
+
+                # 自訂新增爭點考點
+                col_add_t1, col_add_t2 = st.columns([3, 1])
+                with col_add_t1:
+                    new_adhoc_topic = st.text_input(
+                        "➕ 輸入欲新增的自訂考點關鍵字：",
+                        placeholder="例如：108台上大1719、不純正不作為犯保證人地位、違約定金酌減...",
+                        key=f"txt_adhoc_topic_add_{subject}"
+                    )
+                with col_add_t2:
+                    st.write("")
+                    if st.button("➕ 新增至考點", use_container_width=True, key=f"btn_add_adhoc_{subject}"):
+                        if new_adhoc_topic.strip():
+                            if f"adhoc_topics_list_{subject}" not in st.session_state:
+                                st.session_state[f"adhoc_topics_list_{subject}"] = []
+                            if new_adhoc_topic.strip() not in st.session_state[f"adhoc_topics_list_{subject}"]:
+                                st.session_state[f"adhoc_topics_list_{subject}"].append(new_adhoc_topic.strip())
+                            st.rerun()
+
+                adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
+                if adhoc_list:
+                    st.caption("📌 目前已新增的自訂考點：")
+                    st.write("、".join([f"`{a}`" for a in adhoc_list]))
+                    if st.button("🗑️ 清空自訂新增考點", key=f"btn_clear_adhoc_{subject}"):
+                        st.session_state[f"adhoc_topics_list_{subject}"] = []
                         st.rerun()
 
+            # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics + selected drive notes)
+            assembled_parts = []
+
+            # (1) 勾選的高頻爭點
+            if sel_preset_topics:
+                assembled_parts.append(f"【核心考點爭點（{subject}）】：\n" + "\n".join([f"{i+1}. {t}" for i, t in enumerate(sel_preset_topics)]))
+            elif not is_all_ch:
+                assembled_parts.append(f"【命題體系編章】：{subject} - {chapter_choice}" + (f" ({section_choice})" if section_choice and "全部" not in section_choice else ""))
+
+            # (2) 自訂新增考點
             adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
             if adhoc_list:
-                st.caption("📌 目前已新增的自訂考點：")
-                st.write("、".join([f"`{a}`" for a in adhoc_list]))
-                if st.button("🗑️ 清空自訂新增考點", key=f"btn_clear_adhoc_{subject}"):
-                    st.session_state[f"adhoc_topics_list_{subject}"] = []
-                    st.rerun()
+                assembled_parts.append("【額外自訂考點】：\n" + "\n".join([f"- {a}" for a in adhoc_list]))
 
-        # 3. 自動合成組合提示文字 (Combines multiselect + custom scope + adhoc topics + selected drive notes)
-        assembled_parts = []
-        
-        # (1) 勾選的高頻爭點
-        if sel_preset_topics:
-            assembled_parts.append(f"【核心考點爭點（{subject}）】：\n" + "\n".join([f"{i+1}. {t}" for i, t in enumerate(sel_preset_topics)]))
-        elif not is_all_ch:
-            assembled_parts.append(f"【命題體系編章】：{subject} - {chapter_choice}" + (f" ({section_choice})" if section_choice and "全部" not in section_choice else ""))
-        
-        # (2) 自訂新增考點
-        adhoc_list = st.session_state.get(f"adhoc_topics_list_{subject}", [])
-        if adhoc_list:
-            assembled_parts.append("【額外自訂考點】：\n" + "\n".join([f"- {a}" for a in adhoc_list]))
-
-        # (3) 勾選個人筆記核心範圍（出題案例素材）
-        sel_drive_notes_in_session = st.session_state.get("msel_drive_notes_scope", [])
-        if sel_drive_notes_in_session:
-            note_titles = [f"《{n.get('filename', '')}》（{n.get('subject', '')}）" for n in sel_drive_notes_in_session if isinstance(n, dict)]
-            if note_titles:
-                assembled_parts.append("【勾選個人筆記核心範圍（出題案例素材）】：\n" + "\n".join([f"- {name}" for name in note_titles]))
-
-        # (4) 客製化範圍
-        custom_scope_val = st.session_state.get(f"txt_custom_scope_{subject}", "").strip()
-        if custom_scope_val:
-            assembled_parts.append(f"【指定客製化命題範圍】：{custom_scope_val}")
-        elif scope_mode and "全科目" not in scope_mode:
-            assembled_parts.append(f"【指定命題類型】：{scope_mode}")
-
-        auto_assembled_text = "\n\n".join(assembled_parts)
-
-        # 追蹤上一次的自動合成內容，判斷使用者是否有手動編輯
-        last_auto_key = f"last_auto_topic_text_{subject}"
-        topic_content_key = f"exam_topic_content_{subject}"
-        
-        if auto_assembled_text != st.session_state.get(last_auto_key):
-            st.session_state[topic_content_key] = auto_assembled_text
-            st.session_state[last_auto_key] = auto_assembled_text
-
-        current_topic_val = st.session_state.get(topic_content_key, auto_assembled_text)
-
-        # 顯示整合後的出題核心考點文字區
-        topic = st.text_area(
-            "出題核心主題/考點（自動彙整所選考點、編章範圍與勾選筆記，亦可自由修改）：",
-            value=current_topic_val,
-            height=110,
-            placeholder="例如：借名登記出名人無權處分、侵權行為純經濟損失、原因自由行為...（若有上傳筆記亦可留空或輸入重點關鍵字）"
-        )
-        st.session_state[topic_content_key] = topic
-
-        total_selected_count = len(sel_preset_topics) + len(adhoc_list)
-        if total_selected_count > 0 or custom_scope_val or sel_drive_notes_in_session:
-            badges = []
-            if total_selected_count > 0:
-                badges.append(f"**{total_selected_count}** 項核心考點")
-            if custom_scope_val:
-                badges.append(f"客製化範圍 `{custom_scope_val}`")
+            # (3) 勾選個人筆記核心範圍（出題案例素材）
+            sel_drive_notes_in_session = st.session_state.get("msel_drive_notes_scope", [])
             if sel_drive_notes_in_session:
-                badges.append(f"**{len(sel_drive_notes_in_session)}** 份筆記範圍")
-            st.caption(f"💡 目前已設定 {' ｜ '.join(badges)}，AI 將依此精準命題！")
+                note_titles = [f"《{n.get('filename', '')}》（{n.get('subject', '')}）" for n in sel_drive_notes_in_session if isinstance(n, dict)]
+                if note_titles:
+                    assembled_parts.append("【勾選個人筆記核心範圍（出題案例素材）】：\n" + "\n".join([f"- {name}" for name in note_titles]))
+
+            # (4) 客製化範圍
+            custom_scope_val = st.session_state.get(f"txt_custom_scope_{subject}", "").strip()
+            if custom_scope_val:
+                assembled_parts.append(f"【指定客製化命題範圍】：{custom_scope_val}")
+            elif scope_mode and "全科目" not in scope_mode:
+                assembled_parts.append(f"【指定命題類型】：{scope_mode}")
+
+            auto_assembled_text = "\n\n".join(assembled_parts)
+
+            # 追蹤上一次的自動合成內容，判斷使用者是否有手動編輯
+            last_auto_key = f"last_auto_topic_text_{subject}"
+            topic_content_key = f"exam_topic_content_{subject}"
+
+            if auto_assembled_text != st.session_state.get(last_auto_key):
+                st.session_state[topic_content_key] = auto_assembled_text
+                st.session_state[last_auto_key] = auto_assembled_text
+
+            current_topic_val = st.session_state.get(topic_content_key, auto_assembled_text)
+
+            # 顯示整合後的出題核心考點文字區
+            topic = st.text_area(
+                "出題核心主題/考點（自動彙整所選考點、編章範圍與勾選筆記，亦可自由修改）：",
+                value=current_topic_val,
+                height=110,
+                placeholder="例如：借名登記出名人無權處分、侵權行為純經濟損失、原因自由行為...（若有上傳筆記亦可留空或輸入重點關鍵字）"
+            )
+            st.session_state[topic_content_key] = topic
+
+            total_selected_count = len(sel_preset_topics) + len(adhoc_list)
+            if total_selected_count > 0 or custom_scope_val or sel_drive_notes_in_session:
+                badges = []
+                if total_selected_count > 0:
+                    badges.append(f"**{total_selected_count}** 項核心考點")
+                if custom_scope_val:
+                    badges.append(f"客製化範圍 `{custom_scope_val}`")
+                if sel_drive_notes_in_session:
+                    badges.append(f"**{len(sel_drive_notes_in_session)}** 份筆記範圍")
+                st.caption(f"💡 目前已設定 {' ｜ '.join(badges)}，AI 將依此精準命題！")
 
 
-    st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
+        st.markdown("#### 📚 放入我的個人筆記 / 爭點講義（支援手寫 PDF 與圖片）")
 
-    # 預先讀取雲端筆記清單，確保標籤與計數精確
-    try:
-        from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
-        drive_notes = get_google_drive_notes_list()
-    except Exception:
-        drive_notes = []
+        # 預先讀取雲端筆記清單，確保標籤與計數精確
+        try:
+            from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
+            drive_notes = get_google_drive_notes_list()
+        except Exception:
+            drive_notes = []
 
-    drive_tab_label = "📂 Google Drive 個人筆記庫 (🔒 開發者專用)" if not is_developer() else (
-        f"📂 從 Google Drive 個人筆記庫挑選 (免上傳，全庫收錄 {len(drive_notes)} 份筆記)" if drive_notes else "📂 從 Google Drive 個人筆記庫挑選 (免上傳)"
-    )
-
-    note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
-        drive_tab_label,
-        "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
-        "✍️ 直接貼上/編輯筆記文字",
-        "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
-    ])
-
-    notes_from_drive = ""
-    with note_tab_drive:
-        if not is_developer():
-            st.warning("🔒 【個人雲端筆記庫已受保護】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記與體系教材僅限開發者本人授權調閱與命題。一般訪客請切換至【📄 手動上傳新筆記】或【✍️ 直接貼上/編輯筆記文字】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
-        else:
-            try:
-                if drive_notes:
-                    st.caption(f"⚡ 已自您的 Google Drive「資源」與筆記庫自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
-    
-                    # 科目分類群組與統計
-                    CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
-                    CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
-                    PUB_GROUP = ["憲法", "行政法", "公法考古題"]
-                    COMM_GROUP = ["商事法", "保險法"]
-                    IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
-    
-                    civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
-                    crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
-                    pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
-                    comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
-                    ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
-    
-                    sub_counts = {}
-                    for n in drive_notes:
-                        sub_counts[n["subject"]] = sub_counts.get(n["subject"], 0) + 1
-    
-                    cat_options = [
-                        f"全部科目 (全庫共 {len(drive_notes)} 份)",
-                        f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
-                        f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
-                        f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
-                        f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
-                        f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
-                    ]
-                    for s, c in sorted(sub_counts.items(), key=lambda x: -x[1]):
-                        cat_options.append(f"【{s}】(共 {c} 份)")
-    
-                    # 智能預設選中匹配當前考科
-                    default_cat_idx = 0
-                    if subject:
-                        if any(k in subject for k in ["民法", "債", "物權", "身分", "總則"]):
-                            default_cat_idx = 1
-                        elif any(k in subject for k in ["刑法", "刑總", "刑分"]):
-                            default_cat_idx = 2
-                        elif any(k in subject for k in ["公法", "憲法", "行政"]):
-                            default_cat_idx = 3
-                        elif any(k in subject for k in ["商事", "公司", "保險", "證交"]):
-                            default_cat_idx = 4
-                        elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
-                            default_cat_idx = 5
-    
-                    col_sel1, col_sel_nat = st.columns([1.1, 1.1])
-                    with col_sel1:
-                        sel_note_category = st.selectbox(
-                            "考科分類篩選：",
-                            cat_options,
-                            index=default_cat_idx,
-                            key="sel_note_subject_filter"
-                        )
-                    with col_sel_nat:
-                        sel_doc_nature = st.selectbox(
-                            "文檔性質篩選：",
-                            ["📝 個人讀書筆記 (手寫/體系)", "📘 課輔與授課講義", "🎯 實例試題與百題演練", "全部性質 (筆記/講義/題目)"],
-                            index=0,
-                            key="sel_note_nature_filter"
-                        )
-
-                    # 依分類篩選筆記
-                    if "全部科目" in sel_note_category:
-                        base_notes = drive_notes
-                        cat_display = "全部科目"
-                    elif "民法全輯" in sel_note_category:
-                        base_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
-                        cat_display = "民法全輯（總則/債編/物權/身分）"
-                    elif "刑法全輯" in sel_note_category:
-                        base_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
-                        cat_display = "刑法全輯（刑總/刑分）"
-                    elif "公法全輯" in sel_note_category:
-                        base_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
-                        cat_display = "公法全輯（憲法/行政法）"
-                    elif "商事法全輯" in sel_note_category:
-                        base_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
-                        cat_display = "商事法全輯"
-                    elif "智財全輯" in sel_note_category:
-                        base_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
-                        cat_display = "智慧財產權法全輯"
-                    else:
-                        target_sub = sel_note_category.split("【")[1].split("】")[0]
-                        base_notes = [n for n in drive_notes if n["subject"] == target_sub]
-                        cat_display = target_sub
-
-                    # 依性質二次過濾，徹底排除題目混入筆記
-                    if "個人讀書筆記" in sel_doc_nature:
-                        filtered_notes = [n for n in base_notes if n.get("doc_nature") == "note"]
-                    elif "課輔與授課講義" in sel_doc_nature:
-                        filtered_notes = [n for n in base_notes if n.get("doc_nature") == "handout"]
-                    elif "實例試題與百題演練" in sel_doc_nature:
-                        filtered_notes = [n for n in base_notes if n.get("doc_nature") == "question"]
-                    else:
-                        filtered_notes = base_notes
-
-                    st.markdown("##### 📑 勾選欲作為本次命題核心範圍的個人筆記（勾選之筆記即為本次爭點與案例素材）：")
-                    st.caption(f"💡 目前【{cat_display}】共篩選出 **{len(filtered_notes)} 份** 雲端筆記。支援多選，勾選後系統自動擷取其內容彙整為命題材料，並將標題注入出題提示詞！")
-
-                    c_act1, c_act2, c_act3 = st.columns([1.2, 1.2, 2.6])
-                    with c_act1:
-                        if st.button("✅ 全選當前分類筆記", key="btn_select_all_drive_notes"):
-                            st.session_state["msel_drive_notes_scope"] = filtered_notes
-                            st.rerun()
-                    with c_act2:
-                        if st.button("🗑️ 清空筆記勾選", key="btn_clear_drive_notes_sel"):
-                            st.session_state["msel_drive_notes_scope"] = []
-                            st.rerun()
-                    with c_act3:
-                        if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_multi"):
-                            with st.spinner("正在掃描雲端硬碟各科筆記..."):
-                                c = sync_all_drive_notes_to_samsung_notes()
-                                load_all_drive_notes.clear()
-                                st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
-                                st.rerun()
-
-                    selected_drive_notes = st.multiselect(
-                        "挑選筆記檔案（可複選一至多份）：",
-                        options=filtered_notes,
-                        default=st.session_state.get("msel_drive_notes_scope", []),
-                        format_func=lambda n: f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n.get('is_cached') else ""),
-                        key="msel_drive_notes_scope"
-                    )
-
-                    if selected_drive_notes:
-                        uncached_count = sum(1 for n in selected_drive_notes if not st.session_state.get(f"cached_note_text_{n['filename']}"))
-                        
-                        col_load1, col_load2 = st.columns([2, 1])
-                        with col_load1:
-                            if uncached_count > 0:
-                                load_sel_btn = st.button(
-                                    f"🚀 立即載入並提取勾選筆記文字 (尚有 {uncached_count} 份需多模態解析/OCR)",
-                                    type="primary",
-                                    key="btn_load_selected_notes"
-                                )
-                            else:
-                                load_sel_btn = st.button(
-                                    f"⚡ 已就緒！重新提取已勾選的 {len(selected_drive_notes)} 份筆記",
-                                    key="btn_refresh_selected_notes"
-                                )
-
-                        if load_sel_btn:
-                            prog_bar = st.progress(0.0)
-                            status_txt = st.empty()
-                            for idx_n, n_item in enumerate(selected_drive_notes, 1):
-                                fn = n_item["filename"]
-                                s_key = f"cached_note_text_{fn}"
-                                status_txt.text(f"正在提取 [{idx_n}/{len(selected_drive_notes)}]: 《{fn[:25]}...》")
-                                try:
-                                    t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
-                                    if t_part and not t_part.startswith("["):
-                                        st.session_state[s_key] = t_part
-                                except Exception:
-                                    pass
-                                prog_bar.progress(idx_n / len(selected_drive_notes))
-                            prog_bar.progress(1.0)
-                            status_txt.text("✅ 所選筆記提取完成！")
-                            st.rerun()
-
-                        # 彙整所有已讀取之筆記文字
-                        all_selected_texts = []
-                        valid_selected_notes = []
-                        for n in selected_drive_notes:
-                            fn = n["filename"]
-                            c_txt = st.session_state.get(f"cached_note_text_{fn}", "")
-                            if c_txt and not c_txt.startswith("["):
-                                all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{c_txt}")
-                                valid_selected_notes.append(n)
-                            else:
-                                # 嘗試直接快速讀取文字
-                                try:
-                                    t_part = read_note_text(n["path"], max_pages=15, auto_ocr=False)
-                                    if t_part and not t_part.startswith("["):
-                                        st.session_state[f"cached_note_text_{fn}"] = t_part
-                                        all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{t_part}")
-                                        valid_selected_notes.append(n)
-                                except Exception:
-                                    pass
-
-                        if all_selected_texts:
-                            notes_from_drive = "\n\n---\n\n".join(all_selected_texts)
-                            st.success(f"🎉 成功鎖定 **{len(valid_selected_notes)} / {len(selected_drive_notes)} 份** 雲端筆記，累計取得 **{len(notes_from_drive):,}** 字元！已自動帶入命題引擎。")
-                            
-                            with st.expander(f"🔍 檢視已鎖定之 {len(valid_selected_notes)} 份筆記全文重點與考點爭點", expanded=False):
-                                st.text_area("勾選筆記內容彙整（已鎖定為命題材料）：", value=notes_from_drive, height=200, key="preview_selected_drive_notes")
-                        elif uncached_count > 0:
-                            st.info(f"💡 您勾選了 {len(selected_drive_notes)} 份筆記，請點擊上方【🚀 立即載入並提取勾選筆記文字】以啟動文字提取/手寫 OCR。")
-                else:
-                    st.info("💡 目前 Google Drive SamsungNotes 尚未收錄筆記檔案，請點擊下方按鈕自動同步。")
-                    if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
-                        with st.spinner("正在同步..."):
-                            c = sync_all_drive_notes_to_samsung_notes()
-                            load_all_drive_notes.clear()
-                            st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
-                            st.rerun()
-            except Exception as e_drive:
-                st.error(f"讀取 Google Drive 筆記失敗: {e_drive}")
-    
-    notes_from_file = ""
-    with note_tab_upload:
-        uploaded_note_file = st.file_uploader(
-            "上傳個人筆記檔案（支援手寫掃描 PDF、Word、TXT、JPG、PNG、WEBP）：",
-            type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
-            key="note_uploader"
-        )
-        if uploaded_note_file is not None:
-            try:
-                with st.spinner("🔍 正在解析文件；若為手寫或掃描檔，自動啟動 Gemini 多模態神經網路進行辨識..."):
-                    parsed_text, _ = parse_document(uploaded_note_file.read(), uploaded_note_file.name, auto_ocr_handwriting=True)
-                    notes_from_file = parsed_text
-                    st.success(f"已讀取筆記《{uploaded_note_file.name}》，成功擷取/辨識出 {len(parsed_text):,} 字元！")
-                    with st.expander("🔍 檢視已辨識/提取之筆記重點與爭點摘要"):
-                        st.text_area("筆記內容預覽：", value=parsed_text, height=180, key="preview_ocr_note")
-            except Exception as pe:
-                st.error(f"檔案解析失敗: {pe}")
-
-    notes_from_text = ""
-    with note_tab_text:
-        default_val = notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else "")
-        notes_from_text = st.text_area(
-            "直接貼上或補充法學筆記、實務見解或考點爭議重點：",
-            value=default_val,
-            height=140,
-            placeholder="例如：貼上王澤鑑老師權益歸屬說論點、最高法院108台上大字1719號裁定重點摘要..."
+        drive_tab_label = "📂 Google Drive 個人筆記庫 (🔒 開發者專用)" if not is_developer() else (
+            f"📂 從 Google Drive 個人筆記庫挑選 (免上傳，全庫收錄 {len(drive_notes)} 份筆記)" if drive_notes else "📂 從 Google Drive 個人筆記庫挑選 (免上傳)"
         )
 
-    notes_from_coursework = ""
-    with note_tab_cw:
-        cw_index_path = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
-        if cw_index_path.exists():
-            try:
-                with open(cw_index_path, "r", encoding="utf-8") as f_cw:
-                    cw_list = json.load(f_cw)
-                cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
-                if not cw_sub_list:
-                    cw_sub_list = cw_list
-
-                all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
-                cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
-                sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
-                if sel_cw == all_cw_label:
-                    st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
-                    if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
-                        notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
-                elif sel_cw:
-                    sel_idx = cw_options.index(sel_cw) - 1
-                    chosen_item = cw_sub_list[sel_idx]
-                    st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
-                    st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
-                    if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
-                        notes_from_coursework = chosen_item.get("summary_preview", "")
-            except Exception as e:
-                st.error(f"讀取講義庫失敗: {e}")
-        else:
-            st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
-
-    final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
-    if final_notes:
-        st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
-
-    def _clear_stage1_exam_answers():
-        st.session_state.pop("stage1_graded", None)
-        st.session_state.pop("stage1_user_answers", None)
-        for k in list(st.session_state.keys()):
-            if k.startswith("user_choice_") or k.startswith("rep_res_") or k.startswith("rep_input_"):
-                del st.session_state[k]
-
-    if stage == "一試 (選擇題 / 單選題)":
-        stage1_tab_ai, stage1_tab_bank, stage1_tab_upload, stage1_tab_reports = st.tabs([
-            "🎲 AI 智慧命題模式（任意題數 & 自動入庫共享）",
-            "📖 司律一試全科全真模擬題庫實戰（含行政法 300 題・跨考科・動態考點）",
-            "📥 匯入考題 PDF / 試卷解析入庫",
-            "📋 試題疑義報錯審查日誌與修正清單"
+        note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
+            drive_tab_label,
+            "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
+            "✍️ 直接貼上/編輯筆記文字",
+            "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
         ])
 
-        with stage1_tab_ai:
-            st.markdown("#### ⚙️ AI 一試出題參數設定（比照 300 題模擬題庫規格）")
-            qcol1, qcol2 = st.columns(2)
-            with qcol1:
-                q_mode = st.selectbox(
-                    "題型結構模式：",
-                    ["標準單選題 (案例情境盲測)", "綜合案例實事實務題組題 (跨子題)", "全真綜合模考卷 (混合題型)"]
-                )
-            with qcol2:
-                q_count_option = st.selectbox(
-                    "出題題數：",
-                    ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "50 題 (半套模考卷)", "100 題 (全真一試大卷)", "自訂題數"],
-                    key="ai_q_count_select"
-                )
-                if q_count_option == "自訂題數":
-                    q_count = st.number_input("請輸入自訂題數 (1~100 題)：", min_value=1, max_value=100, value=10, key="ai_custom_q_count")
-                else:
-                    q_count = int(q_count_option.split(" ")[0])
-
-            q_difficulty = st.slider("🎯 題目難度設定：", min_value=1, max_value=10, value=10, help="10分滿分即為考選部司律一試全真難度；新手練習可調至1~5分", key="stage1_difficulty_slider")
-
-            if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
-                target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
-
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                status_text.text(f"正在以司律一試命題規格（難度 {q_difficulty}/10）批次生成 {q_count} 題，每批 5 題穩定出題中...")
-
-                def update_progress(curr, tot):
-                    progress_bar.progress(min(1.0, curr / tot))
-                    status_text.text(f"已完成 {curr} / {tot} 題...")
-
+        notes_from_drive = ""
+        with note_tab_drive:
+            if not is_developer():
+                st.warning("🔒 【個人雲端筆記庫已受保護】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記與體系教材僅限開發者本人授權調閱與命題。一般訪客請切換至【📄 手動上傳新筆記】或【✍️ 直接貼上/編輯筆記文字】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
+            else:
                 try:
-                    gen = LawExamGenerator()
-                    exam_res = gen.generate_stage1_exam(
-                        subject=subject,
-                        topic=target_topic,
-                        count=q_count,
-                        question_mode=q_mode,
-                        notes_content=final_notes if final_notes else None,
-                        progress_callback=update_progress,
-                        difficulty=q_difficulty
-                    )
-                    progress_bar.progress(1.0)
-                    
-                    # 自動將 AI 題目、解答、詳解加入雲端題庫供全體考生隨選抽考
-                    bank_mgr = get_mcq_bank_manager()
-                    added_cnt = bank_mgr.save_ai_generated_questions(
-                        subject=subject,
-                        questions=exam_res.get("questions", []),
-                        topic=target_topic
-                    )
-                    _clear_stage1_exam_answers()
+                    if drive_notes:
+                        st.caption(f"⚡ 已自您的 Google Drive「資源」與筆記庫自動偵測並收錄 **{len(drive_notes)} 份** 個人手寫與打字法學筆記（免下載免上傳，點選即讀！）：")
 
-                    status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
-                    if added_cnt > 0:
-                        st.info(f"✨ 已將本次 AI 生成的 {added_cnt} 道高品質試題、標準答案與解析同步典藏至題庫，供全體考生於題庫實戰中抽考！")
-                    st.session_state["stage1_exam_data"] = exam_res
+                        # 科目分類群組與統計
+                        CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
+                        CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
+                        PUB_GROUP = ["憲法", "行政法", "公法考古題"]
+                        COMM_GROUP = ["商事法", "保險法"]
+                        IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
 
-                except Exception as e:
-                    st.error(f"出題失敗: {e}")
+                        civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
+                        crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
+                        pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
+                        comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
+                        ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
 
-        with stage1_tab_bank:
-            bank_mgr = get_mcq_bank_manager()
+                        sub_counts = {}
+                        for n in drive_notes:
+                            sub_counts[n["subject"]] = sub_counts.get(n["subject"], 0) + 1
 
-            sel_bank_sub = st.selectbox(
-                "📚 選擇模擬測驗考科（涵蓋司律一試全部專業科目）：",
-                CORE_EXAM_SUBJECTS,
-                index=0,
-                key="sel_bank_exam_subject"
-            )
-            norm_sub = normalize_subject_key(sel_bank_sub)
+                        cat_options = [
+                            f"全部科目 (全庫共 {len(drive_notes)} 份)",
+                            f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
+                            f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
+                            f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
+                            f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
+                            f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
+                        ]
+                        for s, c in sorted(sub_counts.items(), key=lambda x: -x[1]):
+                            cat_options.append(f"【{s}】(共 {c} 份)")
 
-            if norm_sub == SUBJECT_ADMIN_LAW:
-                st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
-                st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
-            else:
-                st.markdown(f"#### 📖 司律一試【{norm_sub}】全真模擬題庫實戰（精選範本試卷）")
-                st.write(f"已完整解析收錄《司律一試{norm_sub}全真模擬試題大庫》，支援自選篇章大類、考點分類專題與抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+                        # 智能預設選中匹配當前考科
+                        default_cat_idx = 0
+                        if subject:
+                            if any(k in subject for k in ["民法", "債", "物權", "身分", "總則"]):
+                                default_cat_idx = 1
+                            elif any(k in subject for k in ["刑法", "刑總", "刑分"]):
+                                default_cat_idx = 2
+                            elif any(k in subject for k in ["公法", "憲法", "行政"]):
+                                default_cat_idx = 3
+                            elif any(k in subject for k in ["商事", "公司", "保險", "證交"]):
+                                default_cat_idx = 4
+                            elif any(k in subject for k in ["智財", "智慧財產", "專利", "商標", "著作"]):
+                                default_cat_idx = 5
 
-            c300_col1, c300_col2, c300_col3 = st.columns([1, 1, 1])
-            with c300_col1:
-                chapter_list = bank_mgr.get_chapters_for_subject(norm_sub)
-                part_choice = st.selectbox(
-                    "選擇篇章大類：",
-                    chapter_list,
-                    key=f"sel_chapter_{norm_sub}"
-                )
-            with c300_col2:
-                category_list = bank_mgr.get_categories_for_subject_and_chapter(norm_sub, part_choice)
-                cat_300_choice = st.selectbox(
-                    "🎯 考點分類專題篩選：",
-                    category_list,
-                    key=f"sel_cat_{norm_sub}"
-                )
-            with c300_col3:
-                count_300_choice = st.selectbox(
-                    "抽題題數：",
-                    ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
-                    key=f"count_300_select_{norm_sub}"
-                )
-                if count_300_choice == "自訂題數":
-                    take_count = st.number_input("請輸入抽取題數 (1~100 題)：", min_value=1, max_value=100, value=10, key=f"custom_300_count_{norm_sub}")
-                else:
-                    take_count = int(count_300_choice.split(" ")[0])
+                        col_sel1, col_sel_nat = st.columns([1.1, 1.1])
+                        with col_sel1:
+                            sel_note_category = st.selectbox(
+                                "考科分類篩選：",
+                                cat_options,
+                                index=default_cat_idx,
+                                key="sel_note_subject_filter"
+                            )
+                        with col_sel_nat:
+                            sel_doc_nature = st.selectbox(
+                                "文檔性質篩選：",
+                                ["📝 個人讀書筆記 (手寫/體系)", "📘 課輔與授課講義", "🎯 實例試題與百題演練", "全部性質 (筆記/講義/題目)"],
+                                index=0,
+                                key="sel_note_nature_filter"
+                            )
 
-            btn_label = "🚀 從 300 題庫抽取試題開始測驗" if norm_sub == SUBJECT_ADMIN_LAW else f"🚀 從【{norm_sub}】題庫抽取試題開始測驗"
-            if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_draw_{norm_sub}"):
-                _clear_stage1_exam_answers()
-                sampled_exam = bank_mgr.sample_exam_questions(
-                    subject=norm_sub,
-                    chapter=part_choice,
-                    category=cat_300_choice,
-                    count=take_count
-                )
-                if not sampled_exam.get("questions"):
-                    st.warning(f"目前【{norm_sub}】在所選條件下無足夠可用試題（可能已被下架待審或該分類尚無試題），請切換考點或透過『匯入考題 PDF』擴充題庫！")
-                else:
-                    st.session_state["stage1_exam_data"] = sampled_exam
-                    st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(sampled_exam.get('questions', []))} 題，請於下方開始作答！")
-                    st.rerun()
+                        # 依分類篩選筆記
+                        if "全部科目" in sel_note_category:
+                            base_notes = drive_notes
+                            cat_display = "全部科目"
+                        elif "民法全輯" in sel_note_category:
+                            base_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
+                            cat_display = "民法全輯（總則/債編/物權/身分）"
+                        elif "刑法全輯" in sel_note_category:
+                            base_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
+                            cat_display = "刑法全輯（刑總/刑分）"
+                        elif "公法全輯" in sel_note_category:
+                            base_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
+                            cat_display = "公法全輯（憲法/行政法）"
+                        elif "商事法全輯" in sel_note_category:
+                            base_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
+                            cat_display = "商事法全輯"
+                        elif "智財全輯" in sel_note_category:
+                            base_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
+                            cat_display = "智慧財產權法全輯"
+                        else:
+                            target_sub = sel_note_category.split("【")[1].split("】")[0]
+                            base_notes = [n for n in drive_notes if n["subject"] == target_sub]
+                            cat_display = target_sub
 
-        with stage1_tab_upload:
-            st.markdown("#### 📥 選擇題考題 PDF / Word 試卷解析入庫")
-            st.write("支援上傳考選部一試真題 PDF、補習班模擬考卷或個人彙整試卷，系統將自動解析題幹、選項 (A)(B)(C)(D)、答案與解析，並秒級典藏至雲端共享題庫供全體考生抽考！")
+                        # 依性質二次過濾，徹底排除題目混入筆記
+                        if "個人讀書筆記" in sel_doc_nature:
+                            filtered_notes = [n for n in base_notes if n.get("doc_nature") == "note"]
+                        elif "課輔與授課講義" in sel_doc_nature:
+                            filtered_notes = [n for n in base_notes if n.get("doc_nature") == "handout"]
+                        elif "實例試題與百題演練" in sel_doc_nature:
+                            filtered_notes = [n for n in base_notes if n.get("doc_nature") == "question"]
+                        else:
+                            filtered_notes = base_notes
 
-            up_col1, up_col2 = st.columns([1, 1])
-            with up_col1:
-                pdf_sub = st.selectbox(
-                    "指定匯入試卷之考科：",
-                    [SUBJECT_ADMIN_LAW, SUBJECT_CIVIL_LAW, SUBJECT_CRIMINAL_LAW, SUBJECT_CONST_LAW, SUBJECT_CIVIL_PROC, SUBJECT_CRIMINAL_PROC, SUBJECT_COMMERCIAL_LAW],
-                    key="pdf_upload_subject_picker"
-                )
-            with up_col2:
-                uploaded_pdf = st.file_uploader(
-                    "上傳考題試卷檔案 (支援 .pdf, .docx, .txt)：",
-                    type=["pdf", "docx", "txt"],
-                    key="pdf_file_mcq_uploader"
-                )
+                        st.markdown("##### 📑 勾選欲作為本次命題核心範圍的個人筆記（勾選之筆記即為本次爭點與案例素材）：")
+                        st.caption(f"💡 目前【{cat_display}】共篩選出 **{len(filtered_notes)} 份** 雲端筆記。支援多選，勾選後系統自動擷取其內容彙整為命題材料，並將標題注入出題提示詞！")
 
-            manual_mcq_input = st.text_area(
-                "或直接貼上試卷純文字內容（支援題號 1. 2. 與 (A)(B)(C)(D) 選項）：",
-                height=120,
-                placeholder="1. 關於行政處分之撤銷與廢止，下列何者正確？\n(A) 違法行政處分僅得上級機關撤銷\n(B) 原處分機關得依職權撤銷違法行政處分\n(C) 受益處分無論何時均不得廢止\n(D) 負擔處分不得廢止\n答案：(B)\n解析：依行政程序法第117條規定...",
-                key="manual_mcq_paste_area"
-            )
+                        c_act1, c_act2, c_act3 = st.columns([1.2, 1.2, 2.6])
+                        with c_act1:
+                            if st.button("✅ 全選當前分類筆記", key="btn_select_all_drive_notes"):
+                                st.session_state["msel_drive_notes_scope"] = filtered_notes
+                                st.rerun()
+                        with c_act2:
+                            if st.button("🗑️ 清空筆記勾選", key="btn_clear_drive_notes_sel"):
+                                st.session_state["msel_drive_notes_scope"] = []
+                                st.rerun()
+                        with c_act3:
+                            if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_drive_notes_multi"):
+                                with st.spinner("正在掃描雲端硬碟各科筆記..."):
+                                    c = sync_all_drive_notes_to_samsung_notes()
+                                    load_all_drive_notes.clear()
+                                    st.success(f"同步完成！已收錄 {c} 份筆記檔案。")
+                                    st.rerun()
 
-            if st.button("🚀 開始結構化解析並入庫", type="primary", use_container_width=True, key="btn_run_pdf_import"):
-                raw_content = ""
-                fname = "手動貼上文字"
-                if uploaded_pdf is not None:
-                    fname = uploaded_pdf.name
-                    with st.spinner("正在解析試卷檔案內容..."):
-                        try:
-                            fbytes = uploaded_pdf.read()
-                            parsed_text, _ = parse_document(fbytes, fname)
-                            raw_content = parsed_text
-                        except Exception as e:
-                            st.error(f"檔案讀取失敗: {e}")
-                elif manual_mcq_input.strip():
-                    raw_content = manual_mcq_input.strip()
+                        selected_drive_notes = st.multiselect(
+                            "挑選筆記檔案（可複選一至多份）：",
+                            options=filtered_notes,
+                            default=st.session_state.get("msel_drive_notes_scope", []),
+                            format_func=lambda n: f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n.get('is_cached') else ""),
+                            key="msel_drive_notes_scope"
+                        )
 
-                if not raw_content:
-                    st.warning("請先上傳試卷檔案或貼上試卷內容！")
-                else:
-                    with st.spinner(f"正在從試卷中結構化萃取【{pdf_sub}】選擇題與選項解答..."):
-                        bank_mgr = get_mcq_bank_manager()
-                        added, extracted = bank_mgr.import_mcqs_from_pdf_text(raw_content, filename=fname, default_subject=pdf_sub)
+                        if selected_drive_notes:
+                            uncached_count = sum(1 for n in selected_drive_notes if not st.session_state.get(f"cached_note_text_{n['filename']}"))
 
-                    if not extracted:
-                        st.error("未能從上傳內容中識別出一試選擇題格式，請確認內容包含題號、題幹與 (A)(B)(C)(D) 選項。")
+                            col_load1, col_load2 = st.columns([2, 1])
+                            with col_load1:
+                                if uncached_count > 0:
+                                    load_sel_btn = st.button(
+                                        f"🚀 立即載入並提取勾選筆記文字 (尚有 {uncached_count} 份需多模態解析/OCR)",
+                                        type="primary",
+                                        key="btn_load_selected_notes"
+                                    )
+                                else:
+                                    load_sel_btn = st.button(
+                                        f"⚡ 已就緒！重新提取已勾選的 {len(selected_drive_notes)} 份筆記",
+                                        key="btn_refresh_selected_notes"
+                                    )
+
+                            if load_sel_btn:
+                                prog_bar = st.progress(0.0)
+                                status_txt = st.empty()
+                                for idx_n, n_item in enumerate(selected_drive_notes, 1):
+                                    fn = n_item["filename"]
+                                    s_key = f"cached_note_text_{fn}"
+                                    status_txt.text(f"正在提取 [{idx_n}/{len(selected_drive_notes)}]: 《{fn[:25]}...》")
+                                    try:
+                                        t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
+                                        if t_part and not t_part.startswith("["):
+                                            st.session_state[s_key] = t_part
+                                    except Exception:
+                                        pass
+                                    prog_bar.progress(idx_n / len(selected_drive_notes))
+                                prog_bar.progress(1.0)
+                                status_txt.text("✅ 所選筆記提取完成！")
+                                st.rerun()
+
+                            # 彙整所有已讀取之筆記文字
+                            all_selected_texts = []
+                            valid_selected_notes = []
+                            for n in selected_drive_notes:
+                                fn = n["filename"]
+                                c_txt = st.session_state.get(f"cached_note_text_{fn}", "")
+                                if c_txt and not c_txt.startswith("["):
+                                    all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{c_txt}")
+                                    valid_selected_notes.append(n)
+                                else:
+                                    # 嘗試直接快速讀取文字
+                                    try:
+                                        t_part = read_note_text(n["path"], max_pages=15, auto_ocr=False)
+                                        if t_part and not t_part.startswith("["):
+                                            st.session_state[f"cached_note_text_{fn}"] = t_part
+                                            all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{t_part}")
+                                            valid_selected_notes.append(n)
+                                    except Exception:
+                                        pass
+
+                            if all_selected_texts:
+                                notes_from_drive = "\n\n---\n\n".join(all_selected_texts)
+                                st.success(f"🎉 成功鎖定 **{len(valid_selected_notes)} / {len(selected_drive_notes)} 份** 雲端筆記，累計取得 **{len(notes_from_drive):,}** 字元！已自動帶入命題引擎。")
+
+                                with st.expander(f"🔍 檢視已鎖定之 {len(valid_selected_notes)} 份筆記全文重點與考點爭點", expanded=False):
+                                    st.text_area("勾選筆記內容彙整（已鎖定為命題材料）：", value=notes_from_drive, height=200, key="preview_selected_drive_notes")
+                            elif uncached_count > 0:
+                                st.info(f"💡 您勾選了 {len(selected_drive_notes)} 份筆記，請點擊上方【🚀 立即載入並提取勾選筆記文字】以啟動文字提取/手寫 OCR。")
                     else:
-                        st.success(f"🎉 成功識別出 {len(extracted)} 道選擇題！其中 {added} 道新試題已去重典藏入庫至【{pdf_sub}】題庫！")
+                        st.info("💡 目前 Google Drive SamsungNotes 尚未收錄筆記檔案，請點擊下方按鈕自動同步。")
+                        if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
+                            with st.spinner("正在同步..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
+                                st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
+                                st.rerun()
+                except Exception as e_drive:
+                    st.error(f"讀取 Google Drive 筆記失敗: {e_drive}")
 
-                        if st.button(f"🎯 立即以此份試卷 ({len(extracted)} 題) 開始測驗", key="btn_start_imported_exam"):
-                            _clear_stage1_exam_answers()
-                            st.session_state["stage1_exam_data"] = {
-                                "subject": pdf_sub,
-                                "topic": f"匯入試卷實戰（{fname[:15]}）",
-                                "total_count": len(extracted),
-                                "questions": extracted,
-                                "answer_key": {str(i+1): q.get("answer", "A") for i, q in enumerate(extracted)}
-                            }
-                            st.rerun()
+        notes_from_file = ""
+        with note_tab_upload:
+            uploaded_note_file = st.file_uploader(
+                "上傳個人筆記檔案（支援手寫掃描 PDF、Word、TXT、JPG、PNG、WEBP）：",
+                type=["pdf", "docx", "txt", "md", "png", "jpg", "jpeg", "webp"],
+                key="note_uploader"
+            )
+            if uploaded_note_file is not None:
+                try:
+                    with st.spinner("🔍 正在解析文件；若為手寫或掃描檔，自動啟動 Gemini 多模態神經網路進行辨識..."):
+                        parsed_text, _ = parse_document(uploaded_note_file.read(), uploaded_note_file.name, auto_ocr_handwriting=True)
+                        notes_from_file = parsed_text
+                        st.success(f"已讀取筆記《{uploaded_note_file.name}》，成功擷取/辨識出 {len(parsed_text):,} 字元！")
+                        with st.expander("🔍 檢視已辨識/提取之筆記重點與爭點摘要"):
+                            st.text_area("筆記內容預覽：", value=parsed_text, height=180, key="preview_ocr_note")
+                except Exception as pe:
+                    st.error(f"檔案解析失敗: {pe}")
 
-                        with st.expander(f"🔍 檢視本次解析出的 {len(extracted)} 道試題預覽", expanded=False):
-                            for idx, eq in enumerate(extracted, 1):
-                                st.markdown(f"**第 {idx} 題**：{eq.get('question')}")
-                                for opt_k, opt_v in eq.get("options", {}).items():
-                                    st.write(f"- ({opt_k}) {opt_v}")
-                                st.caption(f"解答：({eq.get('answer')}) ｜ 解析：{eq.get('explanation')}")
-                                st.divider()
+        notes_from_text = ""
+        with note_tab_text:
+            default_val = notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else "")
+            notes_from_text = st.text_area(
+                "直接貼上或補充法學筆記、實務見解或考點爭議重點：",
+                value=default_val,
+                height=140,
+                placeholder="例如：貼上王澤鑑老師權益歸屬說論點、最高法院108台上大字1719號裁定重點摘要..."
+            )
 
-        with stage1_tab_reports:
-            st.markdown("#### 📋 司律一試試題疑義報錯、下架與 AI 審查紀錄")
-            st.write("貫徹【先撤下保護】原則：試題一經報錯立即移出抽考題池；附具體理由者，經 AI 權威審查判定修正或釋疑後重新上架！")
+        notes_from_coursework = ""
+        with note_tab_cw:
+            cw_index_path = Path(RAW_DATA_DIR) / "academic_coursework_index.json"
+            if cw_index_path.exists():
+                try:
+                    with open(cw_index_path, "r", encoding="utf-8") as f_cw:
+                        cw_list = json.load(f_cw)
+                    cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
+                    if not cw_sub_list:
+                        cw_sub_list = cw_list
 
-            bank_mgr = get_mcq_bank_manager()
-            reports = bank_mgr.reports_log
-
-            if not reports:
-                st.info("目前尚無試題疑義報錯紀錄，題庫運作良好！")
+                    all_cw_label = f"🌟 【全部分析】引用此考科所有名師講義重點 (共 {len(cw_sub_list)} 份)"
+                    cw_options = [all_cw_label] + [f"【{c.get('subject')}】{c.get('filename')} ({c.get('char_count', 0):,} 字)" for c in cw_sub_list]
+                    sel_cw = st.selectbox("選擇欲引用的名師講義/課輔檔案：", cw_options, key="select_coursework_doc")
+                    if sel_cw == all_cw_label:
+                        st.caption(f"📁 涵蓋本考科全部 **{len(cw_sub_list)} 份** 名師講義與課輔大綱精華。")
+                        if st.checkbox("✅ 確認載入全部講義精華爭點以進行全科命題", value=True, key="cb_use_all_cw"):
+                            notes_from_coursework = "\n\n---\n\n".join([f"### 《{c.get('filename')}》（考科：{c.get('subject')}）\n" + c.get("summary_preview", "") for c in cw_sub_list])
+                    elif sel_cw:
+                        sel_idx = cw_options.index(sel_cw) - 1
+                        chosen_item = cw_sub_list[sel_idx]
+                        st.caption(f"📁 來源目錄：`{chosen_item.get('relative_path')}` ｜ 字數：{chosen_item.get('char_count', 0):,} 字")
+                        st.info(f"**講義摘要預覽**：\n{chosen_item.get('summary_preview', '')}...")
+                        if st.checkbox("✅ 確認載入此講義重點以進行客製命題", value=True, key="cb_use_cw"):
+                            notes_from_coursework = chosen_item.get("summary_preview", "")
+                except Exception as e:
+                    st.error(f"讀取講義庫失敗: {e}")
             else:
-                unique_reports = {}
-                for k, v in reports.items():
-                    rep_id = v.get("id") or k
-                    unique_reports[rep_id] = v
+                st.info("💡 講義索引檔案載入中（若尚未生成完畢，稍候將自動呈現）。")
 
-                total_rep = len(unique_reports)
-                under_rev = sum(1 for v in unique_reports.values() if v.get("status") == "under_review")
-                corrected = sum(1 for v in unique_reports.values() if v.get("status") == "verified_corrected")
-                kept = sum(1 for v in unique_reports.values() if v.get("status") == "verified_original")
+        final_notes = (notes_from_text if notes_from_text else (notes_from_drive if notes_from_drive else (notes_from_file if notes_from_file else notes_from_coursework))).strip()
+        if final_notes:
+            st.info(f"💡 目前已載入個人筆記重點（共 {len(final_notes):,} 字），命題引擎將嚴密結合您的筆記重點進行客製化命題！")
 
-                mcol1, mcol2, mcol3, mcol4 = st.columns(4)
-                mcol1.metric("總疑義提報數", f"{total_rep} 筆")
-                mcol2.metric("🚨 撤下待審保護中", f"{under_rev} 題", delta="已移出抽題池")
-                mcol3.metric("✅ 審查確認修正", f"{corrected} 題", delta="題幹解答已更新")
-                mcol4.metric("💡 理由釋疑完畢", f"{kept} 題", delta="增補詳解重新上架")
+        def _clear_stage1_exam_answers():
+            st.session_state.pop("stage1_graded", None)
+            st.session_state.pop("stage1_user_answers", None)
+            for k in list(st.session_state.keys()):
+                if k.startswith("user_choice_") or k.startswith("rep_res_") or k.startswith("rep_input_"):
+                    del st.session_state[k]
+
+        if stage == "一試 (選擇題 / 單選題)":
+            stage1_tab_ai, stage1_tab_bank, stage1_tab_upload, stage1_tab_reports = st.tabs([
+                "🎲 AI 智慧命題模式（任意題數 & 自動入庫共享）",
+                "📖 司律一試全科全真模擬題庫實戰（含行政法 300 題・跨考科・動態考點）",
+                "📥 匯入考題 PDF / 試卷解析入庫",
+                "📋 試題疑義報錯審查日誌與修正清單"
+            ])
+
+            with stage1_tab_ai:
+                st.markdown("#### ⚙️ AI 一試出題參數設定（比照 300 題模擬題庫規格）")
+                qcol1, qcol2 = st.columns(2)
+                with qcol1:
+                    q_mode = st.selectbox(
+                        "題型結構模式：",
+                        ["標準單選題 (案例情境盲測)", "綜合案例實事實務題組題 (跨子題)", "全真綜合模考卷 (混合題型)"]
+                    )
+                with qcol2:
+                    q_count_option = st.selectbox(
+                        "出題題數：",
+                        ["5 題 (隨堂測驗)", "10 題 (標準單元測)", "15 題 (強化題組)", "20 題 (大型模考卷)", "30 題 (全真模擬題庫)", "50 題 (半套模考卷)", "100 題 (全真一試大卷)", "自訂題數"],
+                        key="ai_q_count_select"
+                    )
+                    if q_count_option == "自訂題數":
+                        q_count = st.number_input("請輸入自訂題數 (1~100 題)：", min_value=1, max_value=100, value=10, key="ai_custom_q_count")
+                    else:
+                        q_count = int(q_count_option.split(" ")[0])
+
+                q_difficulty = st.slider("🎯 題目難度設定：", min_value=1, max_value=10, value=10, help="10分滿分即為考選部司律一試全真難度；新手練習可調至1~5分", key="stage1_difficulty_slider")
+
+                if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
+                    target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
+
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    status_text.text(f"正在以司律一試命題規格（難度 {q_difficulty}/10）批次生成 {q_count} 題，每批 5 題穩定出題中...")
+
+                    def update_progress(curr, tot):
+                        progress_bar.progress(min(1.0, curr / tot))
+                        status_text.text(f"已完成 {curr} / {tot} 題...")
+
+                    try:
+                        gen = LawExamGenerator()
+                        exam_res = gen.generate_stage1_exam(
+                            subject=subject,
+                            topic=target_topic,
+                            count=q_count,
+                            question_mode=q_mode,
+                            notes_content=final_notes if final_notes else None,
+                            progress_callback=update_progress,
+                            difficulty=q_difficulty
+                        )
+                        progress_bar.progress(1.0)
+
+                        # 自動將 AI 題目、解答、詳解加入雲端題庫供全體考生隨選抽考
+                        bank_mgr = get_mcq_bank_manager()
+                        added_cnt = bank_mgr.save_ai_generated_questions(
+                            subject=subject,
+                            questions=exam_res.get("questions", []),
+                            topic=target_topic
+                        )
+                        _clear_stage1_exam_answers()
+
+                        try:
+                            q_pool_items = []
+                            for _q in exam_res.get('questions', []):
+                                q_pool_items.append({
+                                    'exam_stage': '第一試 (選擇題)',
+                                    'subject': subject,
+                                    'chapter_topic': target_topic,
+                                    'core_concepts': _q.get('core_issue') or _q.get('category') or '',
+                                    'difficulty': f'難度 {q_difficulty}/10',
+                                    'stem': _q.get('question') or _q.get('case_facts', ''),
+                                    'options': _q.get('options', {}),
+                                    'correct_answer': _q.get('answer', 'A'),
+                                    'explanation': _q.get('explanation', ''),
+                                    'laws_cited': _q.get('legal_references', '')
+                                })
+                            save_questions_to_pool(q_pool_items)
+                        except Exception:
+                            pass
+
+                        status_text.success(f"🎉 成功生成【{subject}】共 {len(exam_res.get('questions', []))} 題司律一試測驗卷！")
+                        if added_cnt > 0:
+                            st.info(f"✨ 已將本次 AI 生成的 {added_cnt} 道高品質試題、標準答案與解析同步典藏至題庫，供全體考生於題庫實戰中抽考！")
+                        st.session_state["stage1_exam_data"] = exam_res
+
+                    except Exception as e:
+                        st.error(f"出題失敗: {e}")
+
+            with stage1_tab_bank:
+                bank_mgr = get_mcq_bank_manager()
+
+                sel_bank_sub = st.selectbox(
+                    "📚 選擇模擬測驗考科（涵蓋司律一試全部專業科目）：",
+                    CORE_EXAM_SUBJECTS,
+                    index=0,
+                    key="sel_bank_exam_subject"
+                )
+                norm_sub = normalize_subject_key(sel_bank_sub)
+
+                if norm_sub == SUBJECT_ADMIN_LAW:
+                    st.markdown("#### 📖 司律一試行政法 300 題全真模擬題庫（精選範本試卷）")
+                    st.write("已完整解析收錄附件《司律一試行政法全真模擬題庫暨詳解（300題完整版）》，可自由指定抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+                else:
+                    st.markdown(f"#### 📖 司律一試【{norm_sub}】全真模擬題庫實戰（精選範本試卷）")
+                    st.write(f"已完整解析收錄《司律一試{norm_sub}全真模擬試題大庫》，支援自選篇章大類、考點分類專題與抽考題數，包含標準答案速查表、逐題解析與實務裁判字號！")
+
+                c300_col1, c300_col2, c300_col3 = st.columns([1, 1, 1])
+                with c300_col1:
+                    chapter_list = bank_mgr.get_chapters_for_subject(norm_sub)
+                    part_choice = st.selectbox(
+                        "選擇篇章大類：",
+                        chapter_list,
+                        key=f"sel_chapter_{norm_sub}"
+                    )
+                with c300_col2:
+                    category_list = bank_mgr.get_categories_for_subject_and_chapter(norm_sub, part_choice)
+                    cat_300_choice = st.selectbox(
+                        "🎯 考點分類專題篩選：",
+                        category_list,
+                        key=f"sel_cat_{norm_sub}"
+                    )
+                with c300_col3:
+                    count_300_choice = st.selectbox(
+                        "抽題題數：",
+                        ["5 題 (快速隨測)", "10 題 (標準測驗)", "20 題 (大模考)", "30 題 (全篇實戰)", "50 題 (高強度特訓)", "自訂題數"],
+                        key=f"count_300_select_{norm_sub}"
+                    )
+                    if count_300_choice == "自訂題數":
+                        take_count = st.number_input("請輸入抽取題數 (1~100 題)：", min_value=1, max_value=100, value=10, key=f"custom_300_count_{norm_sub}")
+                    else:
+                        take_count = int(count_300_choice.split(" ")[0])
+
+                btn_label = "🚀 從 300 題庫抽取試題開始測驗" if norm_sub == SUBJECT_ADMIN_LAW else f"🚀 從【{norm_sub}】題庫抽取試題開始測驗"
+                if st.button(btn_label, type="primary", use_container_width=True, key=f"btn_draw_{norm_sub}"):
+                    _clear_stage1_exam_answers()
+                    sampled_exam = bank_mgr.sample_exam_questions(
+                        subject=norm_sub,
+                        chapter=part_choice,
+                        category=cat_300_choice,
+                        count=take_count
+                    )
+                    if not sampled_exam.get("questions"):
+                        st.warning(f"目前【{norm_sub}】在所選條件下無足夠可用試題（可能已被下架待審或該分類尚無試題），請切換考點或透過『匯入考題 PDF』擴充題庫！")
+                    else:
+                        st.session_state["stage1_exam_data"] = sampled_exam
+                        st.success(f"已成功依【{part_choice[:10]}】與【{cat_300_choice}】抽取 {len(sampled_exam.get('questions', []))} 題，請於下方開始作答！")
+                        st.rerun()
+
+            with stage1_tab_upload:
+                st.markdown("#### 📥 選擇題考題 PDF / Word 試卷解析入庫")
+                st.write("支援上傳考選部一試真題 PDF、補習班模擬考卷或個人彙整試卷，系統將自動解析題幹、選項 (A)(B)(C)(D)、答案與解析，並秒級典藏至雲端共享題庫供全體考生抽考！")
+
+                up_col1, up_col2 = st.columns([1, 1])
+                with up_col1:
+                    pdf_sub = st.selectbox(
+                        "指定匯入試卷之考科：",
+                        [SUBJECT_ADMIN_LAW, SUBJECT_CIVIL_LAW, SUBJECT_CRIMINAL_LAW, SUBJECT_CONST_LAW, SUBJECT_CIVIL_PROC, SUBJECT_CRIMINAL_PROC, SUBJECT_COMMERCIAL_LAW],
+                        key="pdf_upload_subject_picker"
+                    )
+                with up_col2:
+                    uploaded_pdf = st.file_uploader(
+                        "上傳考題試卷檔案 (支援 .pdf, .docx, .txt)：",
+                        type=["pdf", "docx", "txt"],
+                        key="pdf_file_mcq_uploader"
+                    )
+
+                manual_mcq_input = st.text_area(
+                    "或直接貼上試卷純文字內容（支援題號 1. 2. 與 (A)(B)(C)(D) 選項）：",
+                    height=120,
+                    placeholder="1. 關於行政處分之撤銷與廢止，下列何者正確？\n(A) 違法行政處分僅得上級機關撤銷\n(B) 原處分機關得依職權撤銷違法行政處分\n(C) 受益處分無論何時均不得廢止\n(D) 負擔處分不得廢止\n答案：(B)\n解析：依行政程序法第117條規定...",
+                    key="manual_mcq_paste_area"
+                )
+
+                if st.button("🚀 開始結構化解析並入庫", type="primary", use_container_width=True, key="btn_run_pdf_import"):
+                    raw_content = ""
+                    fname = "手動貼上文字"
+                    if uploaded_pdf is not None:
+                        fname = uploaded_pdf.name
+                        with st.spinner("正在解析試卷檔案內容..."):
+                            try:
+                                fbytes = uploaded_pdf.read()
+                                parsed_text, _ = parse_document(fbytes, fname)
+                                raw_content = parsed_text
+                            except Exception as e:
+                                st.error(f"檔案讀取失敗: {e}")
+                    elif manual_mcq_input.strip():
+                        raw_content = manual_mcq_input.strip()
+
+                    if not raw_content:
+                        st.warning("請先上傳試卷檔案或貼上試卷內容！")
+                    else:
+                        with st.spinner(f"正在從試卷中結構化萃取【{pdf_sub}】選擇題與選項解答..."):
+                            bank_mgr = get_mcq_bank_manager()
+                            added, extracted = bank_mgr.import_mcqs_from_pdf_text(raw_content, filename=fname, default_subject=pdf_sub)
+
+                        if not extracted:
+                            st.error("未能從上傳內容中識別出一試選擇題格式，請確認內容包含題號、題幹與 (A)(B)(C)(D) 選項。")
+                        else:
+                            st.success(f"🎉 成功識別出 {len(extracted)} 道選擇題！其中 {added} 道新試題已去重典藏入庫至【{pdf_sub}】題庫！")
+
+                            if st.button(f"🎯 立即以此份試卷 ({len(extracted)} 題) 開始測驗", key="btn_start_imported_exam"):
+                                _clear_stage1_exam_answers()
+                                st.session_state["stage1_exam_data"] = {
+                                    "subject": pdf_sub,
+                                    "topic": f"匯入試卷實戰（{fname[:15]}）",
+                                    "total_count": len(extracted),
+                                    "questions": extracted,
+                                    "answer_key": {str(i+1): q.get("answer", "A") for i, q in enumerate(extracted)}
+                                }
+                                st.rerun()
+
+                            with st.expander(f"🔍 檢視本次解析出的 {len(extracted)} 道試題預覽", expanded=False):
+                                for idx, eq in enumerate(extracted, 1):
+                                    st.markdown(f"**第 {idx} 題**：{eq.get('question')}")
+                                    for opt_k, opt_v in eq.get("options", {}).items():
+                                        st.write(f"- ({opt_k}) {opt_v}")
+                                    st.caption(f"解答：({eq.get('answer')}) ｜ 解析：{eq.get('explanation')}")
+                                    st.divider()
+
+            with stage1_tab_reports:
+                st.markdown("#### 📋 司律一試試題疑義報錯、下架與 AI 審查紀錄")
+                st.write("貫徹【先撤下保護】原則：試題一經報錯立即移出抽考題池；附具體理由者，經 AI 權威審查判定修正或釋疑後重新上架！")
+
+                bank_mgr = get_mcq_bank_manager()
+                reports = bank_mgr.reports_log
+
+                if not reports:
+                    st.info("目前尚無試題疑義報錯紀錄，題庫運作良好！")
+                else:
+                    unique_reports = {}
+                    for k, v in reports.items():
+                        rep_id = v.get("id") or k
+                        unique_reports[rep_id] = v
+
+                    total_rep = len(unique_reports)
+                    under_rev = sum(1 for v in unique_reports.values() if v.get("status") == "under_review")
+                    corrected = sum(1 for v in unique_reports.values() if v.get("status") == "verified_corrected")
+                    kept = sum(1 for v in unique_reports.values() if v.get("status") == "verified_original")
+
+                    mcol1, mcol2, mcol3, mcol4 = st.columns(4)
+                    mcol1.metric("總疑義提報數", f"{total_rep} 筆")
+                    mcol2.metric("🚨 撤下待審保護中", f"{under_rev} 題", delta="已移出抽題池")
+                    mcol3.metric("✅ 審查確認修正", f"{corrected} 題", delta="題幹解答已更新")
+                    mcol4.metric("💡 理由釋疑完畢", f"{kept} 題", delta="增補詳解重新上架")
+
+                    st.divider()
+                    for rid, rdata in list(unique_reports.items())[::-1]:
+                        st_val = rdata.get("status", "under_review")
+                        if st_val == "under_review":
+                            status_badge = "🚨 【先撤下待審】（不在抽題池中）"
+                        elif st_val == "verified_corrected":
+                            status_badge = "✅ 【已審查修正重新上架】"
+                        else:
+                            status_badge = "💡 【原題合法・已增補釋疑重新上架】"
+
+                        with st.expander(f"{status_badge} [{rdata.get('subject', '法學')}] {rdata.get('original_question', '')[:35]}..."):
+                            st.markdown(f"**原試題題幹**：\n{rdata.get('original_question')}")
+                            st.markdown(f"**考生報錯理由**：\n:orange[{rdata.get('user_reason') or '（未附理由，題庫已先執行撤下保護）'}]")
+                            st.markdown(f"**報錯時間**：`{rdata.get('reported_at', '')}`")
+                            st.info(f"**AI 審查處理結論**：\n{rdata.get('review_note') or '尚未完成 AI 裁定'}")
+                            if rdata.get("corrected_answer"):
+                                st.success(f"**修正後正確答案**：`({rdata.get('corrected_answer')})`")
+
+            # 若 session 中有一試試題，展示作答、速查表與詳解
+            if "stage1_exam_data" in st.session_state:
+                exam_data = st.session_state["stage1_exam_data"]
+                questions = exam_data.get("questions", [])
+                answer_key = exam_data.get("answer_key", {})
+
+                # 統計本卷所有試題考點分類
+                raw_cats = [q.get("category", "").strip() for q in questions if q.get("category")]
+                clean_cats = sorted(list(set(raw_cats)))
 
                 st.divider()
-                for rid, rdata in list(unique_reports.items())[::-1]:
-                    st_val = rdata.get("status", "under_review")
-                    if st_val == "under_review":
-                        status_badge = "🚨 【先撤下待審】（不在抽題池中）"
-                    elif st_val == "verified_corrected":
-                        status_badge = "✅ 【已審查修正重新上架】"
+                col_sec_head, col_sec_cat = st.columns([2, 1])
+                with col_sec_head:
+                    st.subheader(f"📝 【第一部分：全真試題區】（盲測情境實力）")
+                    st.caption("提示：題幹已全面隱匿法條條號與裁判字號，請直接依具體事實判斷最正確選項。")
+                with col_sec_cat:
+                    if clean_cats:
+                        view_cat_filter = st.selectbox(
+                            "🏷️ 依試題考點分類過濾瀏覽：",
+                            ["🌟 顯示全卷考點試題 (共 %d 題)" % len(questions)] + [f"{c} ({raw_cats.count(c)} 題)" for c in clean_cats],
+                            key="stage1_exam_category_filter"
+                        )
                     else:
-                        status_badge = "💡 【原題合法・已增補釋疑重新上架】"
+                        view_cat_filter = "🌟 顯示全卷考點試題"
 
-                    with st.expander(f"{status_badge} [{rdata.get('subject', '法學')}] {rdata.get('original_question', '')[:35]}..."):
-                        st.markdown(f"**原試題題幹**：\n{rdata.get('original_question')}")
-                        st.markdown(f"**考生報錯理由**：\n:orange[{rdata.get('user_reason') or '（未附理由，題庫已先執行撤下保護）'}]")
-                        st.markdown(f"**報錯時間**：`{rdata.get('reported_at', '')}`")
-                        st.info(f"**AI 審查處理結論**：\n{rdata.get('review_note') or '尚未完成 AI 裁定'}")
-                        if rdata.get("corrected_answer"):
-                            st.success(f"**修正後正確答案**：`({rdata.get('corrected_answer')})`")
-
-        # 若 session 中有一試試題，展示作答、速查表與詳解
-        if "stage1_exam_data" in st.session_state:
-            exam_data = st.session_state["stage1_exam_data"]
-            questions = exam_data.get("questions", [])
-            answer_key = exam_data.get("answer_key", {})
-
-            # 統計本卷所有試題考點分類
-            raw_cats = [q.get("category", "").strip() for q in questions if q.get("category")]
-            clean_cats = sorted(list(set(raw_cats)))
-
-            st.divider()
-            col_sec_head, col_sec_cat = st.columns([2, 1])
-            with col_sec_head:
-                st.subheader(f"📝 【第一部分：全真試題區】（盲測情境實力）")
-                st.caption("提示：題幹已全面隱匿法條條號與裁判字號，請直接依具體事實判斷最正確選項。")
-            with col_sec_cat:
-                if clean_cats:
-                    view_cat_filter = st.selectbox(
-                        "🏷️ 依試題考點分類過濾瀏覽：",
-                        ["🌟 顯示全卷考點試題 (共 %d 題)" % len(questions)] + [f"{c} ({raw_cats.count(c)} 題)" for c in clean_cats],
-                        key="stage1_exam_category_filter"
-                    )
-                else:
-                    view_cat_filter = "🌟 顯示全卷考點試題"
-
-            user_answers = {}
-            for q in questions:
-                q_no = q.get("question_no")
-                cat = q.get("category", "")
-                cat_display = f" `{cat}`" if cat else ""
-
-                # 若有選定分類過濾，且不符合當前分類，則跳過顯示
-                if view_cat_filter != "🌟 顯示全卷考點試題" and not view_cat_filter.startswith("🌟 顯示全卷"):
-                    chosen_cat = view_cat_filter.split(" (")[0].strip()
-                    if cat.strip() != chosen_cat:
-                        continue
-
-                st.markdown(f"#### 第 {q_no} 題{cat_display}")
-                if q.get("case_facts"):
-                    st.info(f"**【題組共通案件事實】**：\n\n{q.get('case_facts')}")
-
-                st.write(q.get("question"))
-
-                opts = q.get("options", {})
-                choice_options = []
-                for k in ["A", "B", "C", "D"]:
-                    if k in opts:
-                        choice_options.append(f"({k}) {opts[k]}")
-
-                user_ans = st.radio(
-                    f"請選擇第 {q_no} 題答案：",
-                    choice_options,
-                    index=None,
-                    key=f"user_choice_{q_no}"
-                )
-                if user_ans:
-                    user_answers[str(q_no)] = user_ans[1] # 提取 'A'
-
-                st.write("")
-
-            col_submit, col_export = st.columns([1, 1])
-            with col_submit:
-                if st.button("🏁 交卷立即線上批改評分", type="primary"):
-                    st.session_state["stage1_graded"] = True
-                    st.session_state["stage1_user_answers"] = user_answers
-                    st.rerun()
-
-            with col_export:
-                md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
-                st.download_button(
-                    label="💾 一鍵下載完整全真模擬試卷 (Markdown 檔)",
-                    data=md_content,
-                    file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
-                    mime="text/markdown"
-                )
-
-            # 批改結果與考點分類實力診斷
-            is_graded = st.session_state.get("stage1_graded", False)
-            if is_graded:
-                u_answers = st.session_state.get("stage1_user_answers", user_answers)
-                score = 0
-                for q_num_str, correct_ans in answer_key.items():
-                    if u_answers.get(q_num_str) == correct_ans:
-                        score += 1
-                total_q = len(questions)
-                pct = int(score / total_q * 100) if total_q > 0 else 0
-                st.balloons()
-                st.success(f"🎉 測驗批改完成！總成績：{score} / {total_q} 題（得分率：{pct}%）")
-
-                # 考點分類實力診斷與弱點分析報告
-                st.markdown("#### 🎯 考點分類實力診斷與弱點分析報告")
-                cat_stats = {}
+                user_answers = {}
                 for q in questions:
-                    c = q.get("category", "綜合實務考點").strip()
-                    if not c:
-                        c = "綜合實務考點"
-                    if c not in cat_stats:
-                        cat_stats[c] = {"total": 0, "correct": 0, "missed": []}
-                    cat_stats[c]["total"] += 1
-                    q_no_str = str(q.get("question_no"))
-                    if u_answers.get(q_no_str) == answer_key.get(q_no_str):
-                        cat_stats[c]["correct"] += 1
-                    else:
-                        cat_stats[c]["missed"].append(q.get("question_no"))
+                    q_no = q.get("question_no")
+                    cat = q.get("category", "")
+                    cat_display = f" `{cat}`" if cat else ""
 
-                diag_cols = st.columns(min(len(cat_stats), 4) if cat_stats else 1)
-                for idx_c, (c_name, stats) in enumerate(cat_stats.items()):
-                    with diag_cols[idx_c % len(diag_cols)]:
-                        c_rate = int(stats["correct"] / stats["total"] * 100) if stats["total"] > 0 else 0
-                        if c_rate == 100:
-                            badge = "🌟 精熟達標"
-                        elif c_rate >= 60:
-                            badge = "👍 掌握良好"
-                        else:
-                            badge = "⚠️ 建議複習加強"
-                        st.metric(
-                            label=f"{c_name[:14]}",
-                            value=f"{stats['correct']}/{stats['total']} 題 ({c_rate}%)",
-                            delta=badge
-                        )
-                        if stats["missed"]:
-                            st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
+                    # 若有選定分類過濾，且不符合當前分類，則跳過顯示
+                    if view_cat_filter != "🌟 顯示全卷考點試題" and not view_cat_filter.startswith("🌟 顯示全卷"):
+                        chosen_cat = view_cat_filter.split(" (")[0].strip()
+                        if cat.strip() != chosen_cat:
+                            continue
 
-            # 第二部分：標準答案速查表 (置於試題區與線上批改評分之後，避免提前洩題)
-            st.divider()
-            st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
+                    st.markdown(f"#### 第 {q_no} 題{cat_display}")
+                    if q.get("case_facts"):
+                        st.info(f"**【題組共通案件事實】**：\n\n{q.get('case_facts')}")
 
-            u_answers_map = st.session_state.get("stage1_user_answers", user_answers) if is_graded else {}
-            # 以每 5 題一行排版速查表
-            cols_per_row = 5
-            for row_start in range(1, len(questions) + 1, cols_per_row):
-                key_cols = st.columns(cols_per_row)
-                for c_idx in range(cols_per_row):
-                    q_num = row_start + c_idx
-                    if q_num <= len(questions):
-                        with key_cols[c_idx]:
-                            c_ans = answer_key.get(str(q_num), 'A')
-                            if is_graded:
-                                u_ans = u_answers_map.get(str(q_num))
-                                if u_ans == c_ans:
-                                    st.success(f"**第 {q_num} 題**：`({c_ans})` ✅ 正確")
-                                elif u_ans:
-                                    st.error(f"**第 {q_num} 題**：`({c_ans})` ❌ (選 {u_ans})")
-                                else:
-                                    st.warning(f"**第 {q_num} 題**：`({c_ans})` ⚪ 未作答")
-                            else:
-                                st.info(f"**第 {q_num} 題**：`({c_ans})`")
+                    st.write(q.get("question"))
 
-            st.divider()
-            st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
-            for q in questions:
-                q_no = q.get("question_no")
-                ans = q.get("answer")
-                with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
-                    q_status = q.get("status", "active")
-                    if q_status == "verified_corrected":
-                        st.success(f"🎉 **【AI 審查修正紀錄】**：本題曾有考生提出疑義，經 AI 審查判定指摘有據，已修正題目與解答為 ({ans})！")
-                    elif q_status == "verified_original":
-                        st.info("💡 **【AI 審查釋疑紀錄】**：本題曾有考生提報疑義，經 AI 依現行法規裁判審查判定原題合法有據，已於詳解增補釋疑！")
-                    elif q_status == "under_review":
-                        st.warning("⚠️ **【撤下保護中】**：本題目前正在進行疑義覆審，已暫時移出題庫抽題池。")
+                    opts = q.get("options", {})
+                    choice_options = []
+                    for k in ["A", "B", "C", "D"]:
+                        if k in opts:
+                            choice_options.append(f"({k}) {opts[k]}")
 
-                    if q.get("core_issue"):
-                        st.markdown(f"**【核心爭點】**：:blue[{q.get('core_issue')}]")
-                    if q.get("legal_references"):
-                        st.markdown(f"**【規範法條及實務裁判字號】**：:green[{q.get('legal_references')}]")
-                    st.markdown("**【逐項解析與盲點辨析】**：")
-                    st.write(q.get("explanation", ""))
-
-                    # 試題疑義報錯 / AI 審查表單
-                    st.markdown("---")
-                    with st.expander(f"⚠️ 對第 {q_no} 題提出疑義報錯 / 申請 AI 覆審修正", expanded=False):
-                        st.caption("提示：提交報錯後，系統將【立即將本題先從題庫撤下（下架保護）】；若您附上具體理由（如條號、裁判字號或選項瑕疵），AI 將立即進行法學專業審查並自律修正題目、解答與詳解！")
-                        user_rep_reason = st.text_area(
-                            f"請輸入您對第 {q_no} 題的質疑或更正理由（選填）：",
-                            placeholder="例如：選項 (B) 依最高法院最新見解亦屬正當，本題答案應更正為 (B)...",
-                            key=f"rep_input_{q_no}_{q.get('id', q.get('hash', q_no))}"
-                        )
-                        if st.button(f"🚨 送出第 {q_no} 題報錯（立即撤下並由 AI 審查）", key=f"btn_sub_rep_{q_no}_{q.get('id', q.get('hash', q_no))}"):
-                            with st.spinner("系統正在執行撤下保護，並調用司法官律師 AI 審查委員進行法理覆核..."):
-                                bank_mgr = get_mcq_bank_manager()
-                                rep_res = bank_mgr.report_and_adjudicate_question(q, user_rep_reason)
-                                st.session_state[f"rep_res_{q_no}"] = rep_res
-
-                        if f"rep_res_{q_no}" in st.session_state:
-                            rep_res = st.session_state[f"rep_res_{q_no}"]
-                            if rep_res.get("status") == "under_review":
-                                st.warning(rep_res.get("message"))
-                            elif rep_res.get("is_valid"):
-                                st.success(rep_res.get("message"))
-                                if rep_res.get("verdict"):
-                                    st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
-                                if rep_res.get("rationale"):
-                                    st.info(f"**【法理裁判依據】**：\n{rep_res.get('rationale')}")
-                                q["question"] = rep_res.get("corrected_question", q.get("question"))
-                                q["options"] = rep_res.get("corrected_options", q.get("options"))
-                                q["answer"] = rep_res.get("new_answer", q.get("answer"))
-                                q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
-                                q["status"] = "verified_corrected"
-                                exam_data["answer_key"][str(q_no)] = q["answer"]
-                            else:
-                                st.info(rep_res.get("message"))
-                                if rep_res.get("verdict"):
-                                    st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
-                                if rep_res.get("rationale"):
-                                    st.caption(f"**【法理釋疑】**：\n{rep_res.get('rationale')}")
-                                q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
-                                q["status"] = "verified_original"
-
-    else:
-        # 二試申論實例題
-        if st.button("🎲 生成二試實例申論題", type="primary", use_container_width=True):
-            target_topic = topic.strip() if topic.strip() else "年度重大爭議實例與實務大法庭爭點"
-            with st.spinner("正在融合最新判例、大法庭與考生筆記，設計二試綜合案例事實..."):
-                try:
-                    gen = LawExamGenerator()
-                    res = gen.generate_stage2_exam(
-                        subject=subject,
-                        topic=target_topic,
-                        notes_content=final_notes if final_notes else None
+                    user_ans = st.radio(
+                        f"請選擇第 {q_no} 題答案：",
+                        choice_options,
+                        index=None,
+                        key=f"user_choice_{q_no}"
                     )
-                    st.session_state["stage2_exam_data"] = res
-                    st.success("二試實例題設計完成！")
-                except Exception as e:
-                    st.error(f"出題失敗: {e}")
+                    if user_ans:
+                        user_answers[str(q_no)] = user_ans[1] # 提取 'A'
 
-        if "stage2_exam_data" in st.session_state:
-            res = st.session_state["stage2_exam_data"]
-            st.divider()
-            st.subheader(f"【{res.get('subject', subject)}】綜合實例申論題 (總分：{res.get('total_points', 100)} 分)")
-            st.markdown("#### 📜 案例事實背景：")
-            st.write(res.get("question_facts", ""))
+                    st.write("")
 
-            st.markdown("#### ❓ 請回答下列問題：")
-            for sub in res.get("sub_questions", []):
-                st.write(f"- **{sub}**")
+                col_submit, col_export = st.columns([1, 1])
+                with col_submit:
+                    if st.button("🏁 交卷立即線上批改評分", type="primary"):
+                        st.session_state["stage1_graded"] = True
+                        st.session_state["stage1_user_answers"] = user_answers
+                        st.rerun()
 
-            with st.expander("🔍 查看命題核心爭點與評分指標"):
-                for cr in res.get("core_issues", []):
-                    st.write(f"- {cr}")
-                st.info(f"**命題要點與得分關鍵：**\n{res.get('scoring_criteria', '')}")
+                with col_export:
+                    md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
+                    st.download_button(
+                        label="💾 一鍵下載完整全真模擬試卷 (Markdown 檔)",
+                        data=md_content,
+                        file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
+                        mime="text/markdown"
+                    )
 
-            full_q_text = f"【案例事實】：\n{res.get('question_facts', '')}\n\n【問題】：\n" + "\n".join(res.get("sub_questions", []))
+                # 批改結果與考點分類實力診斷
+                is_graded = st.session_state.get("stage1_graded", False)
+                if is_graded:
+                    u_answers = st.session_state.get("stage1_user_answers", user_answers)
+                    score = 0
+                    for q_num_str, correct_ans in answer_key.items():
+                        if u_answers.get(q_num_str) == correct_ans:
+                            score += 1
+                    total_q = len(questions)
+                    pct = int(score / total_q * 100) if total_q > 0 else 0
+                    st.balloons()
+                    st.success(f"🎉 測驗批改完成！總成績：{score} / {total_q} 題（得分率：{pct}%）")
 
-            cq_col1, cq_col2 = st.columns(2)
-            with cq_col1:
-                if st.button("🏆 生成榜首級示範擬答 (IRAC 三段論法)", type="primary"):
-                    with st.spinner("榜首法學講座名師正在撰寫嚴謹三段論法擬答..."):
+                    # 考點分類實力診斷與弱點分析報告
+                    st.markdown("#### 🎯 考點分類實力診斷與弱點分析報告")
+                    cat_stats = {}
+                    for q in questions:
+                        c = q.get("category", "綜合實務考點").strip()
+                        if not c:
+                            c = "綜合實務考點"
+                        if c not in cat_stats:
+                            cat_stats[c] = {"total": 0, "correct": 0, "missed": []}
+                        cat_stats[c]["total"] += 1
+                        q_no_str = str(q.get("question_no"))
+                        if u_answers.get(q_no_str) == answer_key.get(q_no_str):
+                            cat_stats[c]["correct"] += 1
+                        else:
+                            cat_stats[c]["missed"].append(q.get("question_no"))
+
+                    diag_cols = st.columns(min(len(cat_stats), 4) if cat_stats else 1)
+                    for idx_c, (c_name, stats) in enumerate(cat_stats.items()):
+                        with diag_cols[idx_c % len(diag_cols)]:
+                            c_rate = int(stats["correct"] / stats["total"] * 100) if stats["total"] > 0 else 0
+                            if c_rate == 100:
+                                badge = "🌟 精熟達標"
+                            elif c_rate >= 60:
+                                badge = "👍 掌握良好"
+                            else:
+                                badge = "⚠️ 建議複習加強"
+                            st.metric(
+                                label=f"{c_name[:14]}",
+                                value=f"{stats['correct']}/{stats['total']} 題 ({c_rate}%)",
+                                delta=badge
+                            )
+                            if stats["missed"]:
+                                st.caption(f"錯題題號：第 {', '.join(map(str, stats['missed']))} 題")
+
+                # 第二部分：標準答案速查表 (置於試題區與線上批改評分之後，避免提前洩題)
+                st.divider()
+                st.subheader(f"📋 【第二部分：標準答案速查表】(共 {len(questions)} 題)")
+
+                u_answers_map = st.session_state.get("stage1_user_answers", user_answers) if is_graded else {}
+                # 以每 5 題一行排版速查表
+                cols_per_row = 5
+                for row_start in range(1, len(questions) + 1, cols_per_row):
+                    key_cols = st.columns(cols_per_row)
+                    for c_idx in range(cols_per_row):
+                        q_num = row_start + c_idx
+                        if q_num <= len(questions):
+                            with key_cols[c_idx]:
+                                c_ans = answer_key.get(str(q_num), 'A')
+                                if is_graded:
+                                    u_ans = u_answers_map.get(str(q_num))
+                                    if u_ans == c_ans:
+                                        st.success(f"**第 {q_num} 題**：`({c_ans})` ✅ 正確")
+                                    elif u_ans:
+                                        st.error(f"**第 {q_num} 題**：`({c_ans})` ❌ (選 {u_ans})")
+                                    else:
+                                        st.warning(f"**第 {q_num} 題**：`({c_ans})` ⚪ 未作答")
+                                else:
+                                    st.info(f"**第 {q_num} 題**：`({c_ans})`")
+
+                st.divider()
+                st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
+                for q in questions:
+                    q_no = q.get("question_no")
+                    ans = q.get("answer")
+                    with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
+                        q_status = q.get("status", "active")
+                        if q_status == "verified_corrected":
+                            st.success(f"🎉 **【AI 審查修正紀錄】**：本題曾有考生提出疑義，經 AI 審查判定指摘有據，已修正題目與解答為 ({ans})！")
+                        elif q_status == "verified_original":
+                            st.info("💡 **【AI 審查釋疑紀錄】**：本題曾有考生提報疑義，經 AI 依現行法規裁判審查判定原題合法有據，已於詳解增補釋疑！")
+                        elif q_status == "under_review":
+                            st.warning("⚠️ **【撤下保護中】**：本題目前正在進行疑義覆審，已暫時移出題庫抽題池。")
+
+                        if q.get("core_issue"):
+                            st.markdown(f"**【核心爭點】**：:blue[{q.get('core_issue')}]")
+                        if q.get("legal_references"):
+                            st.markdown(f"**【規範法條及實務裁判字號】**：:green[{q.get('legal_references')}]")
+                        st.markdown("**【逐項解析與盲點辨析】**：")
+                        st.write(q.get("explanation", ""))
+
+                        # 試題疑義報錯 / AI 審查表單
+                        st.markdown("---")
+                        with st.expander(f"⚠️ 對第 {q_no} 題提出疑義報錯 / 申請 AI 覆審修正", expanded=False):
+                            st.caption("提示：提交報錯後，系統將【立即將本題先從題庫撤下（下架保護）】；若您附上具體理由（如條號、裁判字號或選項瑕疵），AI 將立即進行法學專業審查並自律修正題目、解答與詳解！")
+                            user_rep_reason = st.text_area(
+                                f"請輸入您對第 {q_no} 題的質疑或更正理由（選填）：",
+                                placeholder="例如：選項 (B) 依最高法院最新見解亦屬正當，本題答案應更正為 (B)...",
+                                key=f"rep_input_{q_no}_{q.get('id', q.get('hash', q_no))}"
+                            )
+                            if st.button(f"🚨 送出第 {q_no} 題報錯（立即撤下並由 AI 審查）", key=f"btn_sub_rep_{q_no}_{q.get('id', q.get('hash', q_no))}"):
+                                with st.spinner("系統正在執行撤下保護，並調用司法官律師 AI 審查委員進行法理覆核..."):
+                                    bank_mgr = get_mcq_bank_manager()
+                                    rep_res = bank_mgr.report_and_adjudicate_question(q, user_rep_reason)
+                                    st.session_state[f"rep_res_{q_no}"] = rep_res
+
+                            if f"rep_res_{q_no}" in st.session_state:
+                                rep_res = st.session_state[f"rep_res_{q_no}"]
+                                if rep_res.get("status") == "under_review":
+                                    st.warning(rep_res.get("message"))
+                                elif rep_res.get("is_valid"):
+                                    st.success(rep_res.get("message"))
+                                    if rep_res.get("verdict"):
+                                        st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
+                                    if rep_res.get("rationale"):
+                                        st.info(f"**【法理裁判依據】**：\n{rep_res.get('rationale')}")
+                                    q["question"] = rep_res.get("corrected_question", q.get("question"))
+                                    q["options"] = rep_res.get("corrected_options", q.get("options"))
+                                    q["answer"] = rep_res.get("new_answer", q.get("answer"))
+                                    q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
+                                    q["status"] = "verified_corrected"
+                                    exam_data["answer_key"][str(q_no)] = q["answer"]
+                                else:
+                                    st.info(rep_res.get("message"))
+                                    if rep_res.get("verdict"):
+                                        st.markdown(f"**【審查判定】**：{rep_res.get('verdict')}")
+                                    if rep_res.get("rationale"):
+                                        st.caption(f"**【法理釋疑】**：\n{rep_res.get('rationale')}")
+                                    q["explanation"] = rep_res.get("new_explanation", q.get("explanation"))
+                                    q["status"] = "verified_original"
+
+        else:
+            # 二試申論實例題
+            if st.button("🎲 生成二試實例申論題", type="primary", use_container_width=True):
+                target_topic = topic.strip() if topic.strip() else "年度重大爭議實例與實務大法庭爭點"
+                with st.spinner("正在融合最新判例、大法庭與考生筆記，設計二試綜合案例事實..."):
+                    try:
                         gen = LawExamGenerator()
-                        ans = gen.generate_model_answer(question=full_q_text, subject=subject)
-                        st.markdown("### 🏆 閱卷高分示範擬答：")
-                        st.markdown(ans)
-            with cq_col2:
-                if st.button("📝 一鍵將此題直接帶入【試卷評分】批改"):
-                    st.session_state["question_text_content"] = full_q_text
-                    st.session_state["imported_from_bank_label"] = f"【AI 客製模擬考題 - {subject}】"
-                    st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-                    st.rerun()
+                        res = gen.generate_stage2_exam(
+                            subject=subject,
+                            topic=target_topic,
+                            notes_content=final_notes if final_notes else None
+                        )
+                        st.session_state["stage2_exam_data"] = res
+                        st.success("二試實例題設計完成！")
+                        try:
+                            _f_stem = f"【案例事實背景】：\n{res.get('question_facts', '')}\n\n【請回答下列問題】：\n" + "\n".join(f"- {s}" for s in res.get("sub_questions", []))
+                            save_questions_to_pool([{
+                                'exam_stage': '第二試 (申論實例題)',
+                                'subject': res.get('subject', subject),
+                                'chapter_topic': target_topic,
+                                'core_concepts': '、'.join(res.get('core_issues', [])),
+                                'difficulty': '司律二試 (高難度)',
+                                'stem': _f_stem,
+                                'options': [],
+                                'correct_answer': '詳見核心爭點與評分指標',
+                                'explanation': f"**命題要點與得分關鍵：**\n{res.get('scoring_criteria', '')}",
+                                'laws_cited': '、'.join(res.get('core_issues', []))
+                            }])
+                        except Exception:
+                            pass
+                    except Exception as e:
+                        st.error(f"出題失敗: {e}")
+
+            if "stage2_exam_data" in st.session_state:
+                res = st.session_state["stage2_exam_data"]
+                st.divider()
+                st.subheader(f"【{res.get('subject', subject)}】綜合實例申論題 (總分：{res.get('total_points', 100)} 分)")
+                st.markdown("#### 📜 案例事實背景：")
+                st.write(res.get("question_facts", ""))
+
+                st.markdown("#### ❓ 請回答下列問題：")
+                for sub in res.get("sub_questions", []):
+                    st.write(f"- **{sub}**")
+
+                with st.expander("🔍 查看命題核心爭點與評分指標"):
+                    for cr in res.get("core_issues", []):
+                        st.write(f"- {cr}")
+                    st.info(f"**命題要點與得分關鍵：**\n{res.get('scoring_criteria', '')}")
+
+                full_q_text = f"【案例事實】：\n{res.get('question_facts', '')}\n\n【問題】：\n" + "\n".join(res.get("sub_questions", []))
+
+                cq_col1, cq_col2 = st.columns(2)
+                with cq_col1:
+                    if st.button("🏆 生成榜首級示範擬答 (IRAC 三段論法)", type="primary"):
+                        with st.spinner("榜首法學講座名師正在撰寫嚴謹三段論法擬答..."):
+                            gen = LawExamGenerator()
+                            ans = gen.generate_model_answer(question=full_q_text, subject=subject)
+                            st.markdown("### 🏆 閱卷高分示範擬答：")
+                            st.markdown(ans)
+                with cq_col2:
+                    if st.button("📝 一鍵將此題直接帶入【試卷評分】批改"):
+                        st.session_state["question_text_content"] = full_q_text
+                        st.session_state["imported_from_bank_label"] = f"【AI 客製模擬考題 - {subject}】"
+                        st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
+                        st.rerun()
 
 # ----------------- 模式 3: 歷年真題 -----------------
 elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
