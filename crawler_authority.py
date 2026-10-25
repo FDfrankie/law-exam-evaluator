@@ -123,32 +123,27 @@ class AuthorityCrawler:
     @staticmethod
     def is_substantive_ruling(case_no: str, holding: str, reasoning: str) -> bool:
         """
-        過濾無實質法律爭點之罐頭形式不受理裁定
-        - 憲判字判決、暫時處分裁定：100% 保留
-        - 審裁字、統裁字：若為套版且無深層實體法理分析（論理 < 350 字且符合罐頭特徵），判定為雜訊剔除
+        憲法裁判價值嚴格過濾閥：
+        - 憲判字（判決）：100% 保留
+        - 暫時處分裁定：100% 保留
+        - 憲裁字（全體大法官合議裁定）：保留（排除純不受理）
+        - 審裁字、統裁字：原則 100% 阻絕剔除（審查庭程序雜訊）！
         """
-        # 1. 判決與重大暫時處分絕對 100% 保留
-        if any(k in case_no for k in ["憲判", "暫時處分"]) or "暫時處分" in holding:
+        # 1. 審查庭審裁字、統裁字：一律 100% 阻絕跳過（純程序審查庭雜訊）
+        if any(k in case_no for k in ["審裁", "統裁"]):
+            return False
+
+        # 2. 憲判字（判決）與全體大法官合議暫時處分：絕對 100% 保留
+        if "憲判" in case_no or "暫時處分" in case_no or "暫時處分" in holding:
             return True
 
-        # 2. 檢測審裁字、統裁字之純程序罐頭駁回特徵
-        if any(k in case_no for k in ["審裁", "統裁"]):
-            canned_patterns = [
-                r"未具體指摘.*確定終局裁判.*牴觸憲法",
-                r"核屬對法院認事用法當否之指摘",
-                r"逾越.*法定期間",
-                r"非屬憲法訴訟法.*之聲請標的",
-                r"見解並無歧異",
-                r"不生牴觸憲法之問題",
-                r"核與憲法訴訟法第.*條所定要件不合",
-                r"本件聲請.*應不受理"
-            ]
-            is_canned = any(re.search(pat, reasoning) for pat in canned_patterns)
-            # 若符合罐頭特徵且論理字數短（< 350 字），判定為無爭點雜訊直接跳過
-            if is_canned and len(reasoning.strip()) < 350:
+        # 3. 憲裁字：若明確為主文不受理且理由無深層闡述，予以剔除
+        if "憲裁" in case_no:
+            if "不受理" in holding and any(w in reasoning for w in ["不生牴觸憲法", "未具體指摘", "認事用法"]):
                 return False
+            return True
 
-        return True
+        return False
 
     # =========================================================================
     # 1. 最高法院（TPS）大法庭與重要裁定全量收錄（含 108 年起大字與徵字）
@@ -471,20 +466,17 @@ class AuthorityCrawler:
     # =========================================================================
     def purge_dirty_constitutional_data(self) -> int:
         """
-        執行一次性 SQL 清理，將資料庫中已入庫之短篇純套版審裁字與統裁字紀錄清除：
-        - 案號含審裁或統裁
-        - 裁判狀態或主文標註不受理
-        - 理由論理字數 < 350 字之罐頭裁定
+        執行一次性 SQL 清理，將資料庫中已入庫之審裁字與統裁字純程序雜訊記錄全部清除：
+        DELETE FROM authority_records WHERE case_no LIKE '%審裁%' OR case_no LIKE '%統裁%';
+        DELETE FROM authority_fts WHERE id LIKE '%審裁%' OR id LIKE '%統裁%';
         """
-        print("[*] 正在掃描並清洗資料庫中之純程序罐頭駁回紀錄...")
+        print("[*] 正在掃描並清洗資料庫中之純程序罐頭駁回紀錄（審裁字/統裁字）...")
         try:
             conn = self.engine._get_conn()
             cur = conn.cursor()
             cur.execute("""
                 DELETE FROM authority_records 
-                WHERE (case_no LIKE '%審裁%' OR case_no LIKE '%統裁%') 
-                  AND (status LIKE '%不受理%' OR holding LIKE '%不受理%') 
-                  AND LENGTH(reasoning) < 350;
+                WHERE case_no LIKE '%審裁%' OR case_no LIKE '%統裁%';
             """)
             deleted_cnt = cur.rowcount
             conn.commit()
@@ -493,14 +485,15 @@ class AuthorityCrawler:
             try:
                 cur.execute("""
                     DELETE FROM authority_fts 
-                    WHERE id NOT IN (SELECT id FROM authority_records);
+                    WHERE id LIKE '%審裁%' OR id LIKE '%統裁%'
+                       OR id NOT IN (SELECT id FROM authority_records);
                 """)
                 conn.commit()
             except Exception:
                 pass
 
             conn.close()
-            print(f"[✓] 髒資料清洗完畢：成功剔除 {deleted_cnt} 筆無實質爭點之罐頭形式不受理裁定！")
+            print(f"[✓] 髒資料清洗完畢：成功剔除 {deleted_cnt} 筆無實質爭點之審裁字/統裁字雜訊！")
             return deleted_cnt
         except Exception as e:
             print(f"[!] 清洗髒資料失敗: {e}")
