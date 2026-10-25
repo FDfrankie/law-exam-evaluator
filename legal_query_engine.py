@@ -29,6 +29,8 @@ except Exception:
 from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
 
 CATALOG_PATHS = [
+    Path(__file__).resolve().parent / "data" / "precedents_catalog.json",
+    Path(DATA_DIR) / "precedents_catalog.json",
     Path(RAW_DATA_DIR) / "precedents_catalog.json",
     Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json",
     Path(DATA_DIR) / "raw_exams" / "precedents_catalog.json"

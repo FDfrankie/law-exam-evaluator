@@ -45,9 +45,9 @@ except ImportError:
     BeautifulSoup = None
 
 # 路徑設定
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BASE_DIR.parent
-DB_PATH = PROJECT_ROOT / "data" / "judicial_authority.db"
+PROJECT_ROOT = Path(__file__).resolve().parent if (Path(__file__).resolve().parent / "data").exists() else Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_ROOT / "data"
+DB_PATH = DATA_DIR / "judicial_authority.db"
 
 # 司法院 FINT 系統端點
 FINT_BASE_URL = "https://legal.judicial.gov.tw/FINT/"

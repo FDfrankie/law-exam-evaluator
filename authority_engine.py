@@ -23,11 +23,9 @@ except ImportError:
     DATA_DIR = Path(__file__).resolve().parent / "data"
 
 DB_PATHS = [
-    Path(DATA_DIR) / "data" / "judicial_authority.db",
-    Path("G:/我的雲端硬碟/LawExamData/data/judicial_authority.db"),
-    Path(__file__).resolve().parent / "data" / "judicial_authority.db",
     Path(DATA_DIR) / "judicial_authority.db",
-    Path("G:/我的雲端硬碟/LawExamData/judicial_authority.db")
+    Path(__file__).resolve().parent.parent / "data" / "judicial_authority.db",
+    Path(__file__).resolve().parent / "data" / "judicial_authority.db" 
 ]
 
 def get_authority_db_path() -> Path:

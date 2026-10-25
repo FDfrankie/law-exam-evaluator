@@ -49,9 +49,7 @@ def _load_massive_taxonomy() -> Dict[str, Any]:
     candidate_paths = [
         BASE_DATA_DIR / "statute_issues_massive.json",
         Path(__file__).resolve().parent.parent / "data" / "statute_issues_massive.json",
-        Path(__file__).resolve().parent / "data" / "statute_issues_massive.json",
-        Path(r"G:\我的雲端硬碟\LawExamData\data\statute_issues_massive.json"),
-        Path(r"G:\我的雲端硬碟\LawExamData\statute_issues_massive.json")
+        Path(__file__).resolve().parent / "data" / "statute_issues_massive.json" 
     ]
 
     for p in candidate_paths:

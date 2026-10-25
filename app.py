@@ -1815,12 +1815,10 @@ def get_realtime_database_stats() -> dict:
 
     base_dir = Path(__file__).resolve().parent
     auth_cands = [
+        Path(DATA_DIR) / "judicial_authority.db",
         base_dir / "data" / "judicial_authority.db",
         base_dir.parent / "data" / "judicial_authority.db",
-        Path("data/judicial_authority.db"),
-        Path(DATA_DIR) / "judicial_authority.db",
-        Path(r"G:\我的雲端硬碟\LawExamData\data\judicial_authority.db"),
-        Path(r"G:\我的雲端硬碟\LawExamData\judicial_authority.db")
+        Path("data/judicial_authority.db")
     ]
 
     for p in auth_cands:
@@ -1863,11 +1861,11 @@ def get_realtime_database_stats() -> dict:
 
     if total_judgments == 0:
         judg_cands = [
-            base_dir / "data" / "legal_judgments.db",
-            base_dir / "data" / "judicial_1m_index.db",
             Path(DATA_DIR) / "legal_judgments.db",
             Path(DATA_DIR) / "judicial_1m_index.db",
-            Path(r"G:\我的雲端硬碟\LawExamData\data\legal_judgments.db")
+            base_dir / "data" / "legal_judgments.db",
+            base_dir / "data" / "judicial_1m_index.db",
+            base_dir.parent / "data" / "legal_judgments.db"
         ]
         for jp in judg_cands:
             if jp.exists() and jp.is_file() and jp.stat().st_size > 4096:
@@ -1887,15 +1885,36 @@ def get_realtime_database_stats() -> dict:
     # 若處於雲端環境 (Streamlit Cloud) 且本地無實體 SQLite 庫，啟用雲端常態基準回退
     is_cloud_fallback = not db_located
     if total_prec == 0:
-        try:
-            from legal_query_engine import get_precedents_catalog
-            cat_list = get_precedents_catalog()
-            if cat_list and len(cat_list) > 0:
-                total_prec = len(cat_list)
-            else:
-                total_prec = 4088
-        except Exception:
-            total_prec = 4088  # 最新採集權威判例真實基準
+        catalog_files = [
+            base_dir / "data" / "precedents_catalog.json",
+            base_dir / "data" / "raw_exams" / "precedents_catalog.json",
+            Path("data/precedents_catalog.json"),
+            Path(DATA_DIR) / "precedents_catalog.json"
+        ]
+        for cf in catalog_files:
+            if cf.exists() and cf.is_file():
+                try:
+                    with open(cf, "r", encoding="utf-8") as f:
+                        c_data = json.load(f)
+                    if isinstance(c_data, list) and len(c_data) > 0:
+                        total_prec = len(c_data)
+                        break
+                except Exception:
+                    pass
+
+        if total_prec == 0:
+            try:
+                from legal_query_engine import get_precedents_catalog
+                cat_list = get_precedents_catalog()
+                prec_records = [c for c in cat_list if "判例" in c.get("level", "") or "判例" in c.get("case_id", "") or c.get("sys_type")]
+                if prec_records:
+                    total_prec = len(prec_records)
+                elif cat_list and len(cat_list) > 0:
+                    total_prec = len(cat_list)
+                else:
+                    total_prec = 4088
+            except Exception:
+                total_prec = 4088  # 最新採集權威判例真實基準
 
     if total_orders == 0:
         total_orders = 20  # 憲法法庭判決與重大見解基準
@@ -3820,7 +3839,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         # 觸發檢索
         do_search = btn_exec_lb or st.session_state.pop("lb_did_search", False)
         if do_search:
-            with st.spinner("正在以專業規格多維度檢索本機 3,680+ 筆權威判解庫..."):
+            with st.spinner("正在以專業規格多維度檢索本機 4,088+ 筆權威判解庫..."):
                 try:
                     results = search_precedents_advanced(
                         court_system=sel_court,
@@ -3961,7 +3980,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
     # ==================== 子功能 2: ⚡ 極速全域熱搜 極速熱搜與全國資料庫矩陣 ====================
     elif m5_active_tab == m5_sub_modes[1]:
         st.subheader("⚡ 極速全域熱搜 極速熱搜與全國法學資料庫矩陣")
-        st.caption("支援高頻爭點晶片快選、雙向自然語言搜尋、案號縮寫智慧解析、本機 3,680+ 筆裁判與六法法條即時命中，並跨庫直通官方權威司法檢索系統！")
+        st.caption("支援高頻爭點晶片快選、雙向自然語言搜尋、案號縮寫智慧解析、本機 4,088+ 筆裁判與六法法條即時命中，並跨庫直通官方權威司法檢索系統！")
 
         # 極速全域搜尋列
         cur_lp_val = st.session_state.get("lp_search_query", "")
@@ -4135,7 +4154,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
 
 
-        all_precedents_tags = ["-- 📚 從本機 3,680+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
+        all_precedents_tags = ["-- 📚 從本機 4,088+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
         cur_hist_val = st.session_state.get("target_history_case_id", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
         def_hist_idx = 0
         if cur_hist_val:
@@ -4145,12 +4164,12 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                     break
 
         sel_prec_hist_tag = st.selectbox(
-            "從本機權威裁判庫挑選欲溯源之指標裁判（支援 3,680+ 筆裁判/大法庭/憲判字/高院/筆記地院判決）：",
+            "從本機權威裁判庫挑選欲溯源之指標裁判（支援 4,088+ 筆裁判/大法庭/憲判字/高院/筆記地院判決）：",
             all_precedents_tags,
             index=def_hist_idx,
             key="sel_prec_for_history"
         )
-        if sel_prec_hist_tag and sel_prec_hist_tag != "-- 📚 從本機 3,680+ 筆權威庫中挑選裁判 --":
+        if sel_prec_hist_tag and sel_prec_hist_tag != "-- 📚 從本機 4,088+ 筆權威庫中挑選裁判 --":
             cur_hist_val = sel_prec_hist_tag.split(" ｜ ")[0].strip()
 
         col_h_in1, col_h_in2 = st.columns([3, 1])
@@ -4292,7 +4311,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
     # ==================== 子功能 4: 🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典 ====================
     elif m5_active_tab == m5_sub_modes[3]:
         st.subheader("🤖 AI 智慧法學爭點剖析與二試上位卷 IRAC 大典")
-        st.caption("引領司律考生直通二試上位卷！結合本機 3,680+ 筆權威判解庫與 Gemini 法學推論模型，自動輸出【法條構成要件】、【爭點所在】、【憲法法庭/大法庭/判例實務見解】、【學說肯否二說】及【俐落開標涵攝 IRAC 示範】。")
+        st.caption("引領司律考生直通二試上位卷！結合本機 4,088+ 筆權威判解庫與 Gemini 法學推論模型，自動輸出【法條構成要件】、【爭點所在】、【憲法法庭/大法庭/判例實務見解】、【學說肯否二說】及【俐落開標涵攝 IRAC 示範】。")
 
         # 考科選擇與模式
         col_q_domain, col_q_sub, col_q_mode = st.columns([1.1, 1.8, 1.4])
@@ -4379,7 +4398,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
             if not target_q:
                 st.warning("請先輸入欲查詢之爭點、判決字號或關鍵字！")
             else:
-                with st.spinner("AI 司法典試顧問正在跨庫比對本機 3,680+ 筆裁判並提煉 IRAC 深度法理報告..."):
+                with st.spinner("AI 司法典試顧問正在跨庫比對本機 4,088+ 筆裁判並提煉 IRAC 深度法理報告..."):
                     try:
                         engine = LegalIssueQueryEngine()
                         res = engine.query_legal_issue(query=target_q, subject=q_subject)
@@ -4476,7 +4495,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         # ----------------- 分頁 1: 輸入爭點・找出所有判決採何說 -----------------
         with distinguish_tab1:
             st.markdown("#### 🎯 輸入爭點・找出所有判決採何說 (實務各說頻譜與裁判歸納)")
-            st.caption("輸入具體爭點，AI 將深入檢索本機 3,680++ 裁判庫、大法庭裁定、歷審脈絡鏈與行政函釋，自動歸納【甲說、乙說、折衷說】各說核心論理，並精確梳理【哪些具體判決採何說】與【現行終局定錨見解】！")
+            st.caption("輸入具體爭點，AI 將深入檢索本機 4,088++ 裁判庫、大法庭裁定、歷審脈絡鏈與行政函釋，自動歸納【甲說、乙說、折衷說】各說核心論理，並精確梳理【哪些具體判決採何說】與【現行終局定錨見解】！")
 
             # 快捷熱門重大爭點晶片
             st.markdown("##### 📌 熱門重大法律爭點一鍵快捷體驗：")
@@ -4550,7 +4569,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                 if not inp_issue_topic.strip():
                     st.warning("請先輸入欲研析之法律爭點！")
                 else:
-                    with st.spinner(f"AI 司法典試長正在檢索本機 3,680++ 裁判庫與大法庭裁定，歸納各說論理與【所有判決採何說】..."):
+                    with st.spinner(f"AI 司法典試長正在檢索本機 4,088++ 裁判庫與大法庭裁定，歸納各說論理與【所有判決採何說】..."):
                         try:
                             engine = LegalIssueQueryEngine()
                             doc_res = engine.analyze_doctrines_by_issue(
@@ -4613,7 +4632,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         with distinguish_tab2:
             st.markdown("#### ⚖️ 指定兩大裁判橫向精確比對 (Case A vs Case B Distinguishing)")
             st.caption("深度對比兩則裁判或大法庭裁定之【事實情境異同】、【當事人主張】、【法院心證核心對比】、【法律見解分歧 (肯否兩說)】及【司律二試案例區別作答心法】。")
-            all_precedents_tags = ["-- 📚 從本機 3,680+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
+            all_precedents_tags = ["-- 📚 從本機 4,088+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
 
             c_a_val = st.session_state.get("target_compare_case_a", "最高法院 108 年度台上大字第 1719 號民事大法庭裁定")
             c_b_val = st.session_state.get("target_compare_case_b", "最高法院 96 年度台上字第 2851 號判決")
@@ -4628,7 +4647,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         def_idx_a = idx_a
                         break
                 sel_tag_a = st.selectbox("從庫中選取裁判 A：", all_precedents_tags, index=def_idx_a, key="sel_cmp_tag_a")
-                if sel_tag_a and sel_tag_a != "-- 📚 從本機 3,680+ 筆權威庫中挑選裁判 --":
+                if sel_tag_a and sel_tag_a != "-- 📚 從本機 4,088+ 筆權威庫中挑選裁判 --":
                     c_a_val = sel_tag_a.split(" ｜ ")[0].strip()
                 inp_case_a = st.text_input("裁判 A 案號/字號：", value=c_a_val, key="inp_cmp_case_a")
 
@@ -4640,7 +4659,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         def_idx_b = idx_b
                         break
                 sel_tag_b = st.selectbox("從庫中選取裁判 B：", all_precedents_tags, index=def_idx_b, key="sel_cmp_tag_b")
-                if sel_tag_b and sel_tag_b != "-- 📚 從本機 3,680+ 筆權威庫中挑選裁判 --":
+                if sel_tag_b and sel_tag_b != "-- 📚 從本機 4,088+ 筆權威庫中挑選裁判 --":
                     c_b_val = sel_tag_b.split(" ｜ ")[0].strip()
                 inp_case_b = st.text_input("裁判 B 案號/字號：", value=c_b_val, key="inp_cmp_case_b")
 
@@ -5217,7 +5236,7 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
 """)
 
     # 本機權威庫下拉選單快速挑選
-    all_precedents_tags = ["-- 📚 或從本機 3,680+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
+    all_precedents_tags = ["-- 📚 或從本機 4,088+ 筆權威庫中挑選裁判 --"] + get_all_precedent_options()
     default_tag_idx = 0
     cur_cite_val = st.session_state.get("sum_citation_search", "")
     if cur_cite_val:
@@ -5227,12 +5246,12 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
                 break
 
     sel_prec_tag = st.selectbox(
-        "📚 從本機 3,680+ 筆權威裁判庫快速挑選（支援大法庭、憲判字、高等法院、地院實戰判決）：",
+        "📚 從本機 4,088+ 筆權威裁判庫快速挑選（支援大法庭、憲判字、高等法院、地院實戰判決）：",
         all_precedents_tags,
         index=default_tag_idx,
         key="sel_prec_for_mode7"
     )
-    if sel_prec_tag and sel_prec_tag != "-- 📚 或從本機 3,680+ 筆權威庫中挑選裁判 --":
+    if sel_prec_tag and sel_prec_tag != "-- 📚 或從本機 4,088+ 筆權威庫中挑選裁判 --":
         selected_case_id = sel_prec_tag.split(" ｜ ")[0].strip()
         if selected_case_id != cur_cite_val:
             st.session_state["sum_citation_search"] = selected_case_id
