@@ -28,10 +28,30 @@ except ImportError:
 
 
 def _get_connection(db_path: Optional[str] = None) -> sqlite3.Connection:
-    if db_path is None:
-        target = get_db_path()
-    else:
+    if db_path is not None:
         target = Path(db_path)
+    else:
+        target = None
+        try:
+            p = get_db_path()
+            if p.exists() and p.stat().st_size > 0:
+                target = p
+        except Exception:
+            pass
+
+        if target is None:
+            cands = [
+                Path("G:/我的雲端硬碟/LawExamData/data/judicial_authority.db"),
+                PROJECT_ROOT / "data" / "judicial_authority.db",
+                Path(__file__).resolve().parent.parent / "data" / "judicial_authority.db",
+                Path("data/judicial_authority.db")
+            ]
+            for c in cands:
+                if c.exists() and c.stat().st_size > 0:
+                    target = c
+                    break
+            if target is None:
+                target = get_db_path()
     
     target.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target), timeout=10.0)
