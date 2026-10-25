@@ -1803,6 +1803,79 @@ def render_judgements_ingest_view():
                         else:
                             st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
 
+def get_realtime_database_stats() -> dict:
+    """動態穿透快取，即時查詢 SQLite 資料庫內的真實判例、憲判裁定與裁判總數"""
+    total_prec = 0
+    total_orders = 0
+    total_judgments = 0
+
+    # 1. 統計判例專用庫 (judicial_authority.db)
+    auth_cands = [
+        Path(DATA_DIR) / "judicial_authority.db",
+        Path(__file__).resolve().parent.parent / "data" / "judicial_authority.db",
+        Path(__file__).resolve().parent / "data" / "judicial_authority.db",
+        Path(r"G:\我的雲端硬碟\LawExamData\data\judicial_authority.db"),
+        Path(r"G:\我的雲端硬碟\LawExamData\judicial_authority.db")
+    ]
+    for p in auth_cands:
+        if p.exists():
+            try:
+                conn = sqlite3.connect(p, timeout=3)
+                cur = conn.cursor()
+                try:
+                    cur.execute("SELECT COUNT(*) FROM precedents")
+                    total_prec = cur.fetchone()[0]
+                except Exception:
+                    pass
+                try:
+                    cur.execute("SELECT COUNT(*) FROM authority_records")
+                    total_orders = cur.fetchone()[0]
+                except Exception:
+                    pass
+                try:
+                    cur.execute("SELECT COUNT(*) FROM constitutional_orders")
+                    total_orders += cur.fetchone()[0]
+                except Exception:
+                    pass
+                conn.close()
+                if total_prec > 0 or total_orders > 0:
+                    break
+            except Exception:
+                pass
+
+    # 2. 統計一般裁判庫 (legal_judgments.db 或 百萬大庫)
+    try:
+        total_judgments = get_million_db_engine().get_total_count()
+    except Exception:
+        total_judgments = 0
+
+    if total_judgments == 0:
+        judg_cands = [
+            Path(DATA_DIR) / "legal_judgments.db",
+            Path(DATA_DIR) / "judicial_1m_index.db",
+            Path(r"G:\我的雲端硬碟\LawExamData\data\legal_judgments.db")
+        ]
+        for jp in judg_cands:
+            if jp.exists() and jp.stat().st_size > 0:
+                try:
+                    conn = sqlite3.connect(jp, timeout=3)
+                    cur = conn.cursor()
+                    cur.execute("SELECT COUNT(*) FROM judgments")
+                    total_judgments = cur.fetchone()[0]
+                    conn.close()
+                    break
+                except Exception:
+                    pass
+
+    total = total_prec + total_orders + total_judgments
+    return {
+        "precedents": total_prec,
+        "constitutional_orders": total_orders,
+        "judgments": total_judgments,
+        "total": total
+    }
+
+
 # ----------------- 模式 0: 首頁與系統導覽 (含隱私權政策與法律聲明) -----------------
 if app_mode == MODE_HOME:
     st.markdown("""
@@ -1814,17 +1887,21 @@ if app_mode == MODE_HOME:
         </div>
     """, unsafe_allow_html=True)
 
-    # 平台資源即時統計儀表板
-    try:
-        total_prec_cnt = len(get_precedents_catalog()) + get_million_db_engine().get_total_count()
-    except Exception:
-        total_prec_cnt = len(get_precedents_catalog())
+    # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
+    db_stats = get_realtime_database_stats()
     total_mcq_cnt = len(load_all_existing_stage1_mcqs())
+
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
     m_c1.metric("📜 全國法規與命令條文", "2,053 部 / 62,342 條", "支援最新修法自動同步")
-    m_c2.metric("🏛️ 判決・原判例・決議・座談會", f"{total_prec_cnt:,} 筆", "含大法庭/憲判/原判例/決議/座談會")
+    m_c2.metric(
+        "🏛️ 裁判大庫與權威見解",
+        f"{db_stats['total']:,} 筆",
+        f"判例 {db_stats['precedents']:,} ｜ 憲判 {db_stats['constitutional_orders']:,}"
+    )
     m_c3.metric("🏢 中央部會權威行政函釋", "600+ 則", "經濟部/金管會/法務部/勞動部")
     m_c4.metric("🎯 一試全真選擇與歷屆題庫", f"{total_mcq_cnt:,}+ 題", "跨科隨機抽考與盲測批改")
+
+    st.caption(f"⚡ 即時資料庫連線統計：⚖️ 權威判例：**{db_stats['precedents']:,}** 筆 ｜ 🏛️ 憲法裁定/重大見解：**{db_stats['constitutional_orders']:,}** 筆 ｜ 總裁判庫存：**{db_stats['total']:,}** 筆")
 
     st.write("")
     home_tab_nav, home_tab_privacy, home_tab_copyright, home_tab_disclaimer = st.tabs([

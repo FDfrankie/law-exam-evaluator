@@ -53,6 +53,21 @@ DB_PATH = PROJECT_ROOT / "data" / "judicial_authority.db"
 FINT_BASE_URL = "https://legal.judicial.gov.tw/FINT/"
 QRY_ENTRY_URL = "https://legal.judicial.gov.tw/FINT/qryresult.aspx?ty=J1"
 
+# 年代區間清單（確保各區間判例數均小於 500 筆上限）
+YEAR_RANGES = [
+    (1, 20),
+    (21, 30),
+    (31, 40),
+    (41, 50),
+    (51, 60),
+    (61, 70),  # 涵蓋民國 70 年所有重要判例
+    (71, 80),
+    (81, 90),
+    (91, 100),
+    (101, 115)
+]
+
+
 # 隨機輪替之合法瀏覽器 User-Agent
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -174,6 +189,67 @@ class PrecedentCrawlerPipeline:
     # =========================================================================
     # 隊列自動發現 (Queue Population)
     # =========================================================================
+    def _get_decade_query_hash(self, y_start: int, y_end: int, max_retries: int = 3) -> Optional[str]:
+        """
+        透過 Default_AD.aspx 取得指定民國年份區間 (txtY1, txtY2) 的專屬查詢 hash (q)。
+        內建重試與指數退避防護機制。
+        """
+        ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._polite_sleep()
+                entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+                if not entry_html:
+                    continue
+                soup = BeautifulSoup(entry_html, "html.parser")
+                vs = soup.find(id="__VIEWSTATE")
+                vsg = soup.find(id="__VIEWSTATEGENERATOR")
+                ev = soup.find(id="__EVENTVALIDATION")
+                if not vs or not vsg or not ev:
+                    continue
+
+                payload = [
+                    ("__VIEWSTATE", vs["value"]),
+                    ("__VIEWSTATEGENERATOR", vsg["value"]),
+                    ("__EVENTVALIDATION", ev["value"]),
+                    ("txtKW", ""),
+                    ("txtKT", ""),
+                    ("txtYear", ""),
+                    ("txtCase", ""),
+                    ("txtNo", ""),
+                    ("txtY1", str(y_start)),
+                    ("txtM1", ""),
+                    ("txtD1", ""),
+                    ("txtY2", str(y_end)),
+                    ("txtM2", ""),
+                    ("txtD2", ""),
+                    ("sdate", ""),
+                    ("edate", ""),
+                    ("ctl00$cp_content$btnQry", "送出查詢")
+                ]
+
+                headers = self._get_headers(referer=ad_url)
+                if self.session:
+                    import urllib3
+                    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                    resp = self.session.post(ad_url, data=payload, headers=headers, verify=False, timeout=20)
+                    resp_text = resp.text
+                else:
+                    data_bytes = urllib.parse.urlencode(payload).encode("utf-8")
+                    req = urllib.request.Request(ad_url, data=data_bytes, headers=headers)
+                    ctx = ssl.create_default_context()
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
+                    with urllib.request.urlopen(req, timeout=20, context=ctx) as r:
+                        resp_text = r.read().decode("utf-8", errors="ignore")
+
+                m_q = re.search(r'qryresultlst\.aspx\?ty=([^&]+)&q=([a-f0-9]{32})', resp_text)
+                if m_q:
+                    return m_q.group(2)
+            except Exception as e:
+                time.sleep(1.0 * attempt)
+        return None
+
     def populate_crawl_queue(self, force_refresh: bool = False) -> int:
         """
         遍歷司法院 FINT 系統之全量判例清單（包含停止適用判例、未停止適用之歷史判例池及大法庭裁定），
@@ -219,44 +295,50 @@ class PrecedentCrawlerPipeline:
         print(f"[+] 成功獲取查詢會話識別碼 (q): {q_hash}")
 
         # =========================================================================
-        # 構建全量判例掃描任務矩陣（突破單一查詢 500 筆/25 頁上限）
-        # (說明, ty 查詢類型, gc 分類代碼, sort 排序方式, 是否僅過濾「判例」字樣)
+        # 構建全量判例掃描任務矩陣（採年代切片矩陣 Decade Slicing Matrix 徹底解決 500 筆截斷黑洞）
+        # (說明, ty 查詢類型, gc 分類代碼, sort 排序方式, 是否僅過濾「判例」字樣, 專屬 q-hash)
         # =========================================================================
         scan_matrix = [
-            # --- 1. 停止適用之全量判例池（ty=J1，官方標定停止適用或不再援用，雙向DS/DB穿透500筆上限） ---
-            ("停止適用判例-全量不限類別(DS降冪)", "J1", None, "DS", False),
-            ("停止適用判例-全量不限類別(DB升冪)", "J1", None, "DB", False),
-            ("停止適用判例-民事A編號(DS降冪)", "J1", "A", "DS", False),
-            ("停止適用判例-民事A編號(DB升冪)", "J1", "A", "DB", False),
-            ("停止適用判例-刑事B編號(DS降冪)", "J1", "B", "DS", False),
-            ("停止適用判例-刑事B編號(DB升冪)", "J1", "B", "DB", False),
-            ("停止適用判例-家事UA編號(DS降冪)", "J1", "UA", "DS", False),
-            ("停止適用判例-家事UA編號(DB升冪)", "J1", "UA", "DB", False),
-            ("停止適用判例-行政E編號(DS降冪)", "J1", "E", "DS", False),
-            ("停止適用判例-行政E編號(DB升冪)", "J1", "E", "DB", False),
-
-            # --- 2. 未停止適用（現行有效）之歷史判例池（ty=J，民國16年起最高法院及行政法院各庭） ---
-            ("未停止適用-最高法院民事判例池(C升冪-早年判例優先)", "J", "C", "DB", True),
-            ("未停止適用-最高法院民事判例池(C降冪-近年判例優先)", "J", "C", "DS", True),
-            ("未停止適用-最高法院刑事判例池(D升冪-早年判例優先)", "J", "D", "DB", True),
-            ("未停止適用-最高法院刑事判例池(D降冪-近年判例優先)", "J", "D", "DS", True),
-            ("未停止適用-最高行政法院判例池(F升冪-早年判例優先)", "J", "F", "DB", True),
-            ("未停止適用-最高行政法院判例池(F降冪-近年判例優先)", "J", "F", "DS", True),
-            ("未停止適用-最高法院家事判例池(UC升冪-早年判例優先)", "J", "UC", "DB", True),
-            ("未停止適用-最高法院家事判例池(UC降冪-近年判例優先)", "J", "UC", "DS", True),
-
-            # --- 3. 司法院大法庭專區（ty=J2，具備統一法見解最高效力裁定） ---
-            ("司法院大法庭專區裁定(J2全量)", "J2", None, "DS", False),
+            # --- 1. 官方停止適用判例池（ty=J1，雙向DS/DB穿透）與司法院大法庭專區（ty=J2） ---
+            ("停止適用判例-全量不限類別(DS降冪)", "J1", None, "DS", False, q_hash),
+            ("停止適用判例-全量不限類別(DB升冪)", "J1", None, "DB", False, q_hash),
+            ("停止適用判例-民事A編號(DS降冪)", "J1", "A", "DS", False, q_hash),
+            ("停止適用判例-刑事B編號(DS降冪)", "J1", "B", "DS", False, q_hash),
+            ("停止適用判例-家事UA編號(DS降冪)", "J1", "UA", "DS", False, q_hash),
+            ("停止適用判例-行政E編號(DS降冪)", "J1", "E", "DS", False, q_hash),
+            ("司法院大法庭專區裁定(J2全量)", "J2", None, "DS", False, q_hash),
         ]
+
+        # --- 2. 遍歷年代區間迴圈（Decade Slicing Matrix），動態注入未停止適用判例任務 ---
+        print("\n[*] 正在啟動「年代切片矩陣」查詢會話生成（遍歷民國 1~115 年各區間）...")
+        for y_start, y_end in YEAR_RANGES:
+            print(f"  -> 正在連線 Default_AD.aspx 請求民國 {y_start:02d} ~ {y_end:02d} 年專屬檢索會話...")
+            decade_q = self._get_decade_query_hash(y_start, y_end)
+            if not decade_q:
+                print(f"  [!] 民國 {y_start:02d} ~ {y_end:02d} 年查詢會話生成失敗，略過該區間。")
+                continue
+
+            print(f"  [+] 成功獲取民國 {y_start:02d} ~ {y_end:02d} 年檢索會話 (q): {decade_q}")
+            decade_tasks = [
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年民事(C降冪)", "J", "C", "DS", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年民事(C升冪)", "J", "C", "DB", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年刑事(D降冪)", "J", "D", "DS", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年刑事(D升冪)", "J", "D", "DB", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年行政(F降冪)", "J", "F", "DS", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年行政(F升冪)", "J", "F", "DB", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年家事(UC降冪)", "J", "UC", "DS", True, decade_q),
+                (f"未停止適用-民國{y_start:02d}~{y_end:02d}年家事(UC升冪)", "J", "UC", "DB", True, decade_q),
+            ]
+            scan_matrix.extend(decade_tasks)
 
         total_added = 0
         batch_queue = []
 
-        for task_idx, (task_name, ty, gc, sort_order, filter_prec) in enumerate(scan_matrix, 1):
+        for task_idx, (task_name, ty, gc, sort_order, filter_prec, task_q) in enumerate(scan_matrix, 1):
             if gc:
-                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort={sort_order}&gy=code&gc={gc}"
+                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={task_q}&sort={sort_order}&gy=code&gc={gc}"
             else:
-                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort={sort_order}"
+                base_query_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={task_q}&sort={sort_order}"
 
             first_page_url = f"{base_query_url}&page=1"
             try:

@@ -370,7 +370,7 @@ def build_massive_taxonomy() -> Dict[str, Any]:
     整合並生成全法門千級爭點資料庫架構（民、刑、智財、商事、公法、程序法）
     """
     print("⚡ 正在組裝全法門千級法學爭點資料庫...")
-    
+
     # 1. 取得專門深度智財四法 (400+ 爭點)
     massive_db = build_ip_issues()
 
@@ -537,4 +537,3 @@ def build_massive_taxonomy() -> Dict[str, Any]:
 
 if __name__ == "__main__":
     build_massive_taxonomy()
-

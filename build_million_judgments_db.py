@@ -72,9 +72,6 @@ class MillionJudgmentsSQLiteEngine:
             ]
             matched = next((p for p in candidates if p.exists() or p.parent.exists()), None)
             self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
-            ]
-            matched = next((p for p in candidates if p.exists() or p.parent.exists()), None)
-            self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
 
         self.shards_dir = self.base_dir / "shards"
         self.index_db_path = self.base_dir / "judicial_1m_index.db"
