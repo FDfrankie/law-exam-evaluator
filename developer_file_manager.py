@@ -184,8 +184,6 @@ def get_all_managed_files() -> List[Dict[str, Any]]:
     samsung_candidates = [
         Path(DATA_DIR) / "SamsungNotes",
         Path(__file__).resolve().parent / "data" / "SamsungNotes",
-        Path(r"G:\我的雲端硬碟\LawExamData\SamsungNotes"),
-        Path(r"G:\My Drive\LawExamData\SamsungNotes"),
         Path(__file__).resolve().parent.parent / "SamsungNotes",
         Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/SamsungNotes")
     ]
@@ -226,7 +224,6 @@ def get_all_managed_files() -> List[Dict[str, Any]]:
         Path(DATA_DIR) / "community_archives" / "notes",
         Path(DATA_DIR).parent / "community_archives" / "notes",
         Path(__file__).resolve().parent / "data" / "community_archives" / "notes",
-        Path(r"G:\我的雲端硬碟\LawExamData\community_archives\notes"),
         Path(r"G:\我的雲端硬碟\LawExamData\code\data\community_archives\notes")
     ]
     for c_dir in comm_candidates:

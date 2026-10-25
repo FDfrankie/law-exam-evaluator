@@ -396,7 +396,9 @@ def build_massive_taxonomy() -> Dict[str, Any]:
         print(f"  [警示] 載入現有 taxonomy 略過: {e}")
 
     # 3. 讀取法定條文庫 (core_exam_laws_articles.json) 程式化衍生千級具體考點
-    articles_catalog_path = Path(r"G:\我的雲端硬碟\LawExamData\national_laws\core_exam_laws_articles.json")
+    PROJECT_ROOT = Path(__file__).resolve().parent if (Path(__file__).resolve().parent / "data").exists() else Path(__file__).resolve().parent.parent
+    DATA_DIR = PROJECT_ROOT / "data"
+    articles_catalog_path = DATA_DIR / "national_laws" / "core_exam_laws_articles.json" if (DATA_DIR / "national_laws" / "core_exam_laws_articles.json").exists() else PROJECT_ROOT / "national_laws" / "core_exam_laws_articles.json"
     if not articles_catalog_path.exists():
         articles_catalog_path = BASE_DATA_DIR / "national_laws" / "core_exam_laws_articles.json"
 

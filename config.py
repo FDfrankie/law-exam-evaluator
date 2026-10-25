@@ -52,55 +52,54 @@ def get_gemini_models_to_try(primary_model: str = None) -> list:
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")
     if custom_dir and Path(custom_dir).exists():
-        return Path(custom_dir)
+        p = Path(custom_dir)
+        return p if p.name == "data" else p / "data"
 
     # Priority 0: Streamlit Cloud persistent data mount
     streamlit_mount = Path("/mount/src/law-exam-evaluator/data")
     if streamlit_mount.exists():
         return streamlit_mount
-    
-    # Priority 1: Check if Google Drive directory exists on macOS
-    macos_candidates = [
-        Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData",
-        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData")
-    ]
-    for m_path in macos_candidates:
-        if m_path.exists():
-            return m_path
 
-    # Priority 2: Check if Google Drive directory exists on Windows
-    for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
-        if g_path.exists():
-            return g_path
-            
-    # Priority 3: Repository local data directory (for Streamlit Cloud / Linux / cloned repo)
-    local_data = Path(__file__).resolve().parent / "data"
-    if local_data.exists():
-        return local_data
-        
-    # Priority 4: Fallback to G: drive parent if user is setting up Google Drive
-    for g_path in [Path("G:/我的雲端硬碟/LawExamData"), Path("G:/My Drive/LawExamData")]:
-        if g_path.parent.exists():
-            return g_path
+    # Priority 1: Standard Project Root & Data Dir Resolution
+    curr = Path(__file__).resolve().parent
+    if (curr.parent / "data").exists() and (curr.parent / "data" / "judicial_authority.db").exists():
+        return curr.parent / "data"
 
-    return local_data
+    project_root = curr if (curr / "data").exists() else curr.parent
+    return project_root / "data"
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent if (Path(__file__).resolve().parent / "data").exists() else Path(__file__).resolve().parent.parent
 DATA_DIR = get_base_data_dir()
+if not DATA_DIR.exists() and (PROJECT_ROOT / "data").exists():
+    DATA_DIR = PROJECT_ROOT / "data"
+PROJECT_ROOT = DATA_DIR.parent
 GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
 
-RAW_DATA_DIR = DATA_DIR / "raw_exams"
-STANDARDS_DIR = DATA_DIR / "scoring_standards"
-STUDENT_PAPERS_DIR = DATA_DIR / "student_submissions"
-REPORTS_DIR = DATA_DIR / "evaluation_reports"
-CONSTITUTIONAL_DIR = DATA_DIR / "constitutional_cases"
-NATIONAL_LAWS_DIR = DATA_DIR / "national_laws" if (DATA_DIR / "national_laws").exists() else (DATA_DIR.parent / "national_laws" if (DATA_DIR.parent / "national_laws").exists() else DATA_DIR / "national_laws")
-TRAINING_DATA_DIR = DATA_DIR / "training_data"
-SAMSUNG_NOTES_DIR = DATA_DIR / "SamsungNotes"
-MODEL_WEIGHTS_DIR = DATA_DIR / "model_weights"
-JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db" if (DATA_DIR / "judicial_1m_db").exists() else (DATA_DIR / "data" / "judicial_1m_db" if (DATA_DIR / "data" / "judicial_1m_db").exists() else DATA_DIR / "judicial_1m_db")
-OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox" if (DATA_DIR / "opendata_inbox").exists() else (DATA_DIR / "data" / "opendata_inbox" if (DATA_DIR / "data" / "opendata_inbox").exists() else DATA_DIR / "opendata_inbox")
-DEFAULT_WINDOWS_JUDGEMENTS_DIR = Path(r"G:\我的雲端硬碟\LawExamData\data\judgements")
+
+def resolve_data_subdir(name: str) -> Path:
+    p_data = DATA_DIR / name
+    if p_data.exists():
+        return p_data
+    p_root = PROJECT_ROOT / name
+    if p_root.exists():
+        return p_root
+    return p_data
+
+
+RAW_DATA_DIR = resolve_data_subdir("raw_exams")
+STANDARDS_DIR = resolve_data_subdir("scoring_standards")
+STUDENT_PAPERS_DIR = resolve_data_subdir("student_submissions")
+REPORTS_DIR = resolve_data_subdir("evaluation_reports")
+CONSTITUTIONAL_DIR = resolve_data_subdir("constitutional_cases")
+NATIONAL_LAWS_DIR = resolve_data_subdir("national_laws")
+TRAINING_DATA_DIR = resolve_data_subdir("training_data")
+SAMSUNG_NOTES_DIR = resolve_data_subdir("SamsungNotes")
+MODEL_WEIGHTS_DIR = resolve_data_subdir("model_weights")
+JUDICIAL_1M_DIR = resolve_data_subdir("judicial_1m_db")
+OPENDATA_INBOX_DIR = resolve_data_subdir("opendata_inbox")
+DEFAULT_WINDOWS_JUDGEMENTS_DIR = DATA_DIR / "judgements"
+
 
 def get_judgements_dir() -> Path:
     """獲取裁判壓縮包 (.rar, .7z, .zip) 監控目錄，自動適配本機 Windows、macOS 與 Linux/Streamlit Cloud"""
@@ -113,40 +112,26 @@ def get_judgements_dir() -> Path:
                 custom_j = str(st.secrets["JUDGEMENTS_DIR"]).strip()
         except Exception:
             pass
-    if custom_j:
+    if custom_j and Path(custom_j).exists():
         return Path(custom_j)
 
-    # 1. 若本機是 Windows 且 G 槽路徑存在
-    if sys.platform == "win32":
-        for w_path in [
-            Path(r"G:\我的雲端硬碟\LawExamData\data\judgements"),
-            Path(r"G:\My Drive\LawExamData\data\judgements"),
-            Path("G:/我的雲端硬碟/LawExamData/data/judgements")
-        ]:
-            if w_path.exists():
-                return w_path
-        if DEFAULT_WINDOWS_JUDGEMENTS_DIR.parent.exists():
-            return DEFAULT_WINDOWS_JUDGEMENTS_DIR
+    # 1. 主資料目錄下的 judgements
+    j_data = DATA_DIR / "judgements"
+    if j_data.exists():
+        return j_data
 
-    # 2. 若為 macOS 且 Google Drive 路徑存在
-    macos_candidates = [
-        Path.home() / "Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements",
-        Path("/Users/liuguanfu/Library/CloudStorage/GoogleDrive-kennyliu950614@gmail.com/.shortcut-targets-by-id/1pzgFOqjs01oM9ohyn58hYeCDl73D-ihQ/LawExamData/data/judgements")
-    ]
-    for m_path in macos_candidates:
-        if m_path.exists():
-            return m_path
+    # 2. 專案根目錄備選 judgements
+    j_root = PROJECT_ROOT / "judgements"
+    if j_root.exists():
+        return j_root
 
-    # 3. 專案內部相對 data/judgements 目錄（跨平台保證存在，支援 Streamlit Cloud / Linux）
-    local_j = DATA_DIR / "judgements"
-    if not local_j.exists():
-        repo_j = Path(__file__).resolve().parent / "data" / "judgements"
-        if repo_j.exists():
-            return repo_j
+    # 3. 本地 repo data/judgements
+    repo_j = Path(__file__).resolve().parent / "data" / "judgements"
+    if repo_j.exists():
+        return repo_j
 
-    return local_j
-
-JUDGEMENTS_DIR = get_judgements_dir()
+    j_data.mkdir(parents=True, exist_ok=True)
+    return j_data
 
 def init_directories():
     """Ensure data directories exist"""

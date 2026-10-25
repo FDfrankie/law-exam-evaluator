@@ -74,7 +74,6 @@ def _load_syllabus_data() -> Dict[str, Any]:
         DATA_DIR / "curriculum_syllabus.json",
         CODE_DIR / "data" / "curriculum_syllabus.json",
         PROJECT_ROOT / "curriculum_syllabus.json",
-        Path(r"G:\我的雲端硬碟\LawExamData\data\curriculum_syllabus.json"),
         Path(r"G:\我的雲端硬碟\LawExamData\code\data\curriculum_syllabus.json")
     ]
 
@@ -140,7 +139,6 @@ def _find_authority_db_path() -> Optional[Path]:
         DATA_DIR / "judicial_authority.db",
         PROJECT_ROOT / "judicial_authority.db",
         CODE_DIR / "judicial_authority.db",
-        Path(r"G:\我的雲端硬碟\LawExamData\data\judicial_authority.db"),
         Path(r"G:\我的雲端硬碟\LawExamData\judicial_authority.db")
     ]
     for p in candidates:

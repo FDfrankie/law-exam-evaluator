@@ -3,23 +3,38 @@
 .env.*
 *.key
 *.pem
+secrets.toml
 
-# Python 編譯快取
+# Python 編譯快取與暫存目錄
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# 資料輸出與暫存報告
+# 系統隱藏檔與雲端硬碟同步衝突檔/備份目錄
+.DS_Store
+Thumbs.db
+desktop.ini
+* (*).py
+* (*).json
+* (*).md
+* (*)/
+archive_*/
+temp_*
+*.tmp
+~$*
+
+# 資料輸出與大型模型衍生目錄
 evaluation_reports/
 student_submissions/
 checkpoints/
 model_weights/
 *.log
-*.tmp
 _cache/
-data/ingest_log.jsonl
+logs/
 
 # 大檔排除 (超過 GitHub 100MB 限制之全量合成庫與權重)
 *1m_judicial_reasoning*.jsonl
@@ -29,7 +44,15 @@ data/ingest_log.jsonl
 *.bin
 *.pt
 
-# 忽略 data 內的動態暫存目錄與本地個人筆記原檔
+# 資料庫與大庫檔案
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+data/*.db
+data/*.sqlite3
+
+# 忽略 data 內的動態暫存目錄與本地個人筆記原檔（單一真理來源已收斂至主 data/）
 data/evaluation_reports/
 data/student_submissions/
 data/checkpoints/
@@ -38,22 +61,12 @@ data/SamsungNotes/
 data/community_archives/
 data/judicial_1m_db/
 data/judicial_opendata/
-*.db
-*.sqlite3
-
+data/opendata_inbox/
+data/lost_and_found_archive/
+data/judgements/*.rar
+data/judgements/*.zip
+data/judgements/*.7z
+data/ingest_log.jsonl
 
 # Jupyter Notebook 快取
 .ipynb_checkpoints/
-
-# 系統隱藏檔與雲端硬碟同步衝突檔
-.DS_Store
-Thumbs.db
-desktop.ini
-* (*).py
-* (*).json
-* (*).md
-
-
-data/lost_and_found_archive/
-data/ingest_log.jsonl
-logs/

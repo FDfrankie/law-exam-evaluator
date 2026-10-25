@@ -60,10 +60,6 @@ class MillionJudgmentsSQLiteEngine:
             self.base_dir = Path(base_dir)
         else:
             candidates = [
-                Path("G:/我的雲端硬碟/LawExamData/data/judicial_1m_db"),
-                Path("G:/My Drive/LawExamData/data/judicial_1m_db"),
-                Path("G:/我的雲端硬碟/LawExamData/judicial_1m_db"),
-                Path("G:/My Drive/LawExamData/judicial_1m_db"),
                 Path(JUDICIAL_1M_DIR),
                 Path(DATA_DIR) / "data" / "judicial_1m_db",
                 Path(DATA_DIR) / "judicial_1m_db",
