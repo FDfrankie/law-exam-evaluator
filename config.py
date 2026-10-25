@@ -133,6 +133,8 @@ def get_judgements_dir() -> Path:
     j_data.mkdir(parents=True, exist_ok=True)
     return j_data
 
+JUDGEMENTS_DIR = get_judgements_dir()
+
 def init_directories():
     """Ensure data directories exist"""
     for folder in [
