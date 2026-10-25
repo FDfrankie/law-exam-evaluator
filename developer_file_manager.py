@@ -738,6 +738,84 @@ def execute_rename_file(old_path: Path, new_filename: str) -> Dict[str, Any]:
         return {"success": False, "error": f"重命名過程發生異常: {e}"}
 
 
+def smart_resolve_note_file(item: Any) -> Tuple[Optional[Path], str]:
+    """
+    智慧路徑解析與容錯匹配 (Smart Path Resolver):
+    1. 實體檔案存在性檢測 (支援 DATA_DIR, PROJECT_ROOT, 和模糊匹配)
+    2. 文字快取優先獲取 (即便在 Streamlit Cloud 實體二進位未隨 Git 上傳，亦能取得 OCR 快取)
+    """
+    path_val = item.get("path") if isinstance(item, dict) else item
+    filename = item.get("filename") if isinstance(item, dict) else (Path(path_val).name if path_val else "")
+    
+    candidates = []
+    if path_val:
+        candidates.append(Path(path_val))
+    
+    samsung_candidates = [
+        Path(DATA_DIR) / "SamsungNotes",
+        Path(DATA_DIR).parent / "SamsungNotes",
+        Path(__file__).resolve().parent / "data" / "SamsungNotes",
+        Path(__file__).resolve().parent.parent / "SamsungNotes",
+        Path(DATA_DIR) / "community_archives" / "notes"
+    ]
+    
+    for s_dir in samsung_candidates:
+        if filename:
+            candidates.append(s_dir / filename)
+            clean_fn = re.sub(r'\s*\([1-9]\)|\s*-\s*複製|_拷貝', '', filename)
+            candidates.append(s_dir / clean_fn)
+            stem_clean = re.sub(r'_\d{6}_\d{6}$', '', Path(clean_fn).stem)
+            candidates.append(s_dir / f"{stem_clean}{Path(filename).suffix}")
+
+    matched_path = None
+    for cand in candidates:
+        try:
+            if cand and cand.exists() and cand.is_file() and cand.stat().st_size > 0:
+                matched_path = cand
+                break
+        except Exception:
+            continue
+
+    if matched_path is None and filename:
+        clean_stem = re.sub(r'_\d{6}_\d{6}$', '', re.sub(r'\s*\([1-9]\)|\s*-\s*複製|_拷貝', '', Path(filename).stem)).strip().lower()
+        if len(clean_stem) >= 4:
+            for s_dir in samsung_candidates:
+                if s_dir.exists() and s_dir.is_dir():
+                    try:
+                        for entry in s_dir.iterdir():
+                            if entry.is_file() and clean_stem in entry.name.lower():
+                                matched_path = entry
+                                break
+                    except Exception:
+                        pass
+                if matched_path:
+                    break
+
+    cached_text = ""
+    cache_dirs = [
+        Path(DATA_DIR) / "SamsungNotes" / "_cache",
+        Path(DATA_DIR).parent / "SamsungNotes" / "_cache",
+        Path(__file__).resolve().parent / "data" / "SamsungNotes" / "_cache"
+    ]
+    for cdir in cache_dirs:
+        if cdir.exists():
+            for cand_txt in [cdir / f"{filename}.txt", cdir / f"{Path(filename).stem}.txt"]:
+                if cand_txt.exists() and cand_txt.is_file():
+                    try:
+                        cached_text = cand_txt.read_text(encoding="utf-8", errors="replace")
+                        if cached_text.strip():
+                            break
+                    except Exception:
+                        pass
+        if cached_text:
+            break
+
+    if not cached_text and isinstance(item, dict) and item.get("cached_preview"):
+        cached_text = item.get("cached_preview", "")
+
+    return matched_path, cached_text
+
+
 def execute_undo_rename(history_item: Dict[str, Any]) -> Dict[str, Any]:
     """一鍵復原前次重命名操作"""
     current_path = Path(history_item["new_path"])
@@ -885,49 +963,83 @@ def render_developer_file_manager():
                     else:
                         st.caption("💡 尚未快取文字內容。點擊右側或下方「⚡ 立即提取文字」即可由 AI 高速辨識並快取。")
 
+                resolved_path, cached_txt = smart_resolve_note_file(item)
+                clean_name = re.sub(r'\s*\([1-9]\)|\s*-\s*複製|_拷貝', '', item['filename'])
+                clean_stem = Path(clean_name).stem
+
                 with col_act:
-                    # 檔案下載按鈕
-                    try:
-                        with open(item["path"], "rb") as fp:
+                    # 檔案下載按鈕（3-Tier Delivery Engine）
+                    if resolved_path and resolved_path.exists():
+                        try:
+                            with open(resolved_path, "rb") as fp:
+                                file_bytes = fp.read()
+                            mime_type = "application/pdf" if item["ext"] == ".pdf" else "application/octet-stream"
                             st.download_button(
-                                label=f"💾 下載原檔 ({item['size_str']})",
-                                data=fp.read(),
-                                file_name=item["filename"],
+                                label=f"📥 下載原始 {item['ext'].upper()} ({item['size_str']})",
+                                data=file_bytes,
+                                file_name=clean_name,
+                                mime=mime_type,
+                                use_container_width=True,
                                 key=f"dl_file_{idx}"
                             )
-                    except Exception:
-                        pass
+                        except Exception:
+                            pass
+                    elif cached_txt:
+                        st.download_button(
+                            label="📄 下載講義文字 (.md)",
+                            data=cached_txt,
+                            file_name=f"{clean_stem}.md",
+                            mime="text/markdown",
+                            use_container_width=True,
+                            key=f"dl_txt_file_{idx}"
+                        )
 
                 # 在線預覽區塊
                 st.markdown("#### 👁️ 在線多模態檔案檢視器：")
-                ext_l = item["ext"]
-                if ext_l == ".pdf":
-                    try:
-                        with open(item["path"], "rb") as f_pdf:
-                            pdf_bytes = f_pdf.read()
-                        b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                        pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="520" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
-                        st.markdown(pdf_display, unsafe_allow_html=True)
-                    except Exception as pe:
-                        st.warning(f"在線 PDF 渲染提示: {pe}")
-                elif ext_l in [".jpg", ".jpeg", ".png", ".webp"]:
-                    try:
-                        st.image(str(item["path"]), caption=item["filename"], use_container_width=True)
-                    except Exception as ie:
-                        st.warning(f"圖片渲染提示: {ie}")
-                elif ext_l in [".txt", ".md"]:
-                    try:
-                        t_content = item["path"].read_text(encoding="utf-8", errors="replace")
-                        st.text_area("純文字內容全文：", t_content, height=350, key=f"txt_area_{idx}")
-                    except Exception as te:
-                        st.warning(f"文字讀取提示: {te}")
+                if resolved_path and resolved_path.exists():
+                    ext_l = resolved_path.suffix.lower()
+                    if ext_l == ".pdf":
+                        try:
+                            with open(resolved_path, "rb") as f_pdf:
+                                pdf_bytes = f_pdf.read()
+                            b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                            pdf_display = f'<iframe src="data:application/pdf;base64,{b64_pdf}" width="100%" height="600" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+                            st.markdown(pdf_display, unsafe_allow_html=True)
+                        except Exception as pe:
+                            st.warning(f"在線 PDF 渲染提示: {pe}")
+                    elif ext_l in [".jpg", ".jpeg", ".png", ".webp"]:
+                        try:
+                            st.image(str(resolved_path), caption=clean_name, use_container_width=True)
+                        except Exception as ie:
+                            st.warning(f"圖片渲染提示: {ie}")
+                    elif ext_l in [".txt", ".md"]:
+                        try:
+                            t_content = resolved_path.read_text(encoding="utf-8", errors="replace")
+                            st.text_area("純文字內容全文：", t_content, height=350, key=f"txt_area_{idx}")
+                        except Exception as te:
+                            st.warning(f"文字讀取提示: {te}")
+                else:
+                    # 雲端輕量化模式 (Streamlit Cloud 實體二進位未隨 Git 上傳)
+                    st.info(f"💡 **【雲端輕量化模式提示】**：本講義之高解析原始檔案（{item['size_str']}）存放於開發者私有雲端硬碟；您可直接於下方閱讀【⚡ 已提取之 OCR 結構化文字快取】，並點擊上方或下方按鈕下載 Markdown 文字講義！")
+                    if cached_txt:
+                        st.text_area("📄 已快取之結構化講義文字全文：", cached_txt, height=280, key=f"cloud_txt_view_{idx}")
+                        st.download_button(
+                            label=f"📥 點此下載《{clean_stem}.md》講義筆記",
+                            data=cached_txt,
+                            file_name=f"{clean_stem}.md",
+                            mime="text/markdown",
+                            key=f"dl_cached_md_{idx}"
+                        )
 
                 # 底部即時文字檢視 / 提取按鈕
                 c_btn1, c_btn2 = st.columns(2)
                 with c_btn1:
                     if st.button("📝 展開檢視 / 重新提取 OCR 完整文字", key=f"btn_ocr_view_{idx}"):
                         with st.spinner("正在調閱文字快取或啟動多模態辨識..."):
-                            full_txt = read_file_text_cached(item["path"], max_pages=8, auto_extract=True)
+                            target_p = resolved_path if (resolved_path and resolved_path.exists()) else item["path"]
+                            full_txt = read_file_text_cached(target_p, max_pages=8, auto_extract=True)
+                            if not full_txt and cached_txt:
+                                full_txt = cached_txt
                             st.session_state[f"full_txt_view_{idx}"] = full_txt
                             st.rerun()
 

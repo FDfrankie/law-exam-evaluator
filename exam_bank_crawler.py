@@ -300,6 +300,139 @@ class LawExamBankCrawler:
         
         curated_national_cases = [
             {
+                "exam_id": "MOEX_113_JUD_CIVIL",
+                "year": "113",
+                "school": "考選部",
+                "category": "司法官律師二試",
+                "department": "司法官律師聯合考試",
+                "subject": "民法與民事訴訟法",
+                "exam_text": """【113年公務人員特種考試司法人員及律師考試第二試試題】
+科目：民法與民事訴訟法（第一大題）
+一、甲將其所有之A地借名登記於乙名下，雙方簽訂借名登記契約，並辦妥所有權移轉登記。乙嗣後未經甲之同意，擅自將A地以市價出賣於知情之丙，並移轉登記予丙。丙隨後將A地設定抵押權予善意之丁銀行以擔保其個人借款。
+試問：
+(一) 依最高法院106年度第3次民事庭會議決議及民法第118條無權處分法理，乙將A地移轉於惡意丙之行為，效力如何？甲得否對丙請求塗銷所有權移轉登記？(40分)
+(二) 丁銀行善意取得A地抵押權之效力為何？甲得對乙主張何種權利？(35分)
+(三) 甲若對丙提起塗銷登記訴訟敗訴確定，甲嗣後再本於所有物返還請求權請求丙交還土地，是否違反民事訴訟法第400條一事不再理原則？(25分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_jud_civil.txt"
+            },
+            {
+                "exam_id": "MOEX_113_JUD_CRIMINAL",
+                "year": "113",
+                "school": "考選部",
+                "category": "司法官律師二試",
+                "department": "司法官律師聯合考試",
+                "subject": "刑法與刑事訴訟法",
+                "exam_text": """【113年公務人員特種考試司法人員及律師考試第二試試題】
+科目：刑法與刑事訴訟法（第一大題）
+一、甲欲毒殺仇人乙，將致死劑量之毒藥置入乙之保溫杯中。乙飲用後腹痛如絞倒地。甲見乙痛苦哀號心生悔意，立即撥打119並實施心肺復甦術，然救護車因路上坍方延誤30分鐘抵達，乙因急性中毒休克死亡。解剖發現甲所下之毒藥因受潮分解，其毒性僅具微弱腹瀉作用，乙係因其自身潛在罕見心律不整併發症死亡。
+試問：
+(一) 甲之行為成立何罪？是否合於刑法第26條不能未遂或第27條中止未遂之要件？(40分)
+(二) 司法警察未向法院聲請科技偵查搜索票，即使用遠端GPS車牌追蹤定位器連續七日追蹤甲之私家車輛動態，該項偵查作為是否合法？所蒐集之行車軌跡在法庭上之證據能力如何？(35分)
+(三) 偵查檢察官於偵訊甲時，未依法踐行刑事訴訟法第95條權利告知義務，甲自白殺人犯意，該筆自白之證據排除審查法則為何？(25分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_jud_criminal.txt"
+            },
+            {
+                "exam_id": "MOEX_113_JUD_PUBLIC",
+                "year": "113",
+                "school": "考選部",
+                "category": "司法官律師二試",
+                "department": "司法官律師聯合考試",
+                "subject": "憲法與行政法",
+                "exam_text": """【113年公務人員特種考試司法人員及律師考試第二試試題】
+科目：憲法與行政法（公法試卷）
+一、立法院修正通過某法案，要求直轄市議員及一定職等以上公職人員，除申報個人財產外，亦須申報成年同居人之動產與不動產，並將未成年子女海外信託帳戶全面公開上網，違者處重額怠金並得連續按日連續處罰。
+試問：
+(一) 該修正法案涉及公職人員及其親友何種憲法基本權利？依憲法法庭裁判意旨，其合憲性審查標準與比例原則之審定如何？(40分)
+(二) 主管機關依該法對甲議員處以新台幣200萬元罰鍰，甲不服提起訴願。訴願管轄機關認定原處分理由不當，但以甲違反其他義務為由，追加變更重罰300萬元。此訴願決定是否違反行政救濟法上「不利益變更禁止原則」？(35分)
+(三) 若原處分欠缺管轄權限，甲得否直接向高等行政法院提起確認行政處分無效之訴？其起訴前置程序為何？(25分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_jud_public.txt"
+            },
+            {
+                "exam_id": "MOEX_113_JUD_COMMERCIAL",
+                "year": "113",
+                "school": "考選部",
+                "category": "司法官律師二試",
+                "department": "司法官律師聯合考試",
+                "subject": "公司法、證券交易法與保險法",
+                "exam_text": """【113年公務人員特種考試司法人員及律師考試第二試試題】
+科目：商法（公司法、證券交易法、保險法）
+一、A上櫃科技公司擬將其最具核心獲利能力之AI晶片軟體部門獨立分割讓與新設立之B子公司，並規劃由策略性投資人私募入股稀釋股權。A公司董事會未將此案提報股東會特別決議，僅由董事會以普通決議逕行通過。反對派股東甲主張該營業讓與屬於公司法第185條重大營業讓與，應經股東會特別決議，並請求行使股份收買請求權。
+試問：
+(一) A公司分割重大核心部門，是否該當公司法第185條「主要部分之營業或財產」？股東甲請求收買股份之程序與效力為何？(35分)
+(二) A公司總經理乙在分割消息簽約前一日，大量以電話通知其姊妹丙買進A公司認購權證，乙與丙是否構成證券交易法第157條之1重大消息明確時點之內線交易責任？(35分)
+(三) A公司就該部門核心伺服器向兩家產物保險公司重複投保財產損失險，保險金額合計超過實際重置價值，其保險契約效力及保險代位權如何行使？(30分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_jud_commercial.txt"
+            },
+            {
+                "exam_id": "MOEX_113_NOTARY_CIVIL",
+                "year": "113",
+                "school": "考選部",
+                "category": "專門職業民間公證人",
+                "department": "民間公證人",
+                "subject": "民法與公證法",
+                "exam_text": """【113年專門職業及技術人員高等考試民間公證人試題】
+科目：民法（含親屬繼承實務）
+一、被繼承人甲生前立有公證遺囑，將其全部遺產（包含市價6,000萬元之A豪宅）指定由長子乙一人單獨繼承，次子丙分文未得。甲死亡時留有債務1,000萬元。丙知悉後，向乙主張行使特留分扣減權。
+試問：
+(一) 依民法親屬繼承編規定，特留分扣減權之性質（物權形成權說 vs 債權請求權說）為何？扣減之標的物所有權移轉時點為何？(50分)
+(二) 乙若在丙行使扣減權前，已持公證遺囑辦竣繼承登記並將A豪宅設定最高限額抵押權予第三人丁，丙之特留分權利如何受保護？(50分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_notary_civil.txt"
+            },
+            {
+                "exam_id": "MOEX_113_PATENT_IP",
+                "year": "113",
+                "school": "考選部",
+                "category": "專利師專技高考",
+                "department": "專利師",
+                "subject": "智慧財產權法",
+                "exam_text": """【113年專門職業及技術人員高等考試專利師考試試題】
+科目：智慧財產權法（專利法、商標法、營業秘密法）
+一、A生技公司擁有治療罕見疾病藥物之發明專利，申請專利範圍包含化學式I及其醫藥上可接受之鹽類。B藥廠開發一款分子立體構型略有修飾但療效實質相同之仿製藥物。A公司主張B侵害其專利權，B則抗辯其符合先前技術阻卻且依均等論不構成侵權。
+試問：
+(一) 專利侵權判斷中「均等論」三要件（置換容易性、功能實質相同、結果實質相同）如何審認？先前技術阻卻之舉證責任為何？(50分)
+(二) B藥廠挖角A公司首席化學家甲，甲攜帶未公開之實驗批次參數筆記，A公司依營業秘密法主張損害賠償與定暫時狀態處分，其要件審查為何？(50分)""",
+                "pdf_url": "https://wwwq.moex.gov.tw/",
+                "pdf_file": "moex_113_patent_ip.txt"
+            },
+            {
+                "exam_id": "MOEX_114_SIM_CIVIL_CASE",
+                "year": "114",
+                "school": "司律考試研究會",
+                "category": "司法官律師二試前瞻全真題庫",
+                "department": "民事實體法專題",
+                "subject": "民法財產編（違章建築與處分權實戰實例題）",
+                "exam_text": """【114年司法官律師第二試前瞻全真模擬試題】
+科目：民事實體法
+一、甲出資興建未辦建物所有權第一次登記之鋼骨廠房一棟（違章建築），甲嗣後將該廠房出賣並交付予乙，乙未辦登記即占用營運。乙因資金周轉困難，將該廠房事實上處分權讓與丙，丙交付價金後進駐。甲之債權人丁執法院確定判決為執行名義，聲請法院查封拍賣該廠房。
+試問：
+(一) 違章建築買受人取得之「事實上處分權」之法律性質為何？得否向執行法院提起民事訴訟法第540條或強制執行法第15條之第三人異議之訴？(50分)
+(二) 基地所有權人戊以廠房無權占用土地為由，訴請丙拆屋還地。丙得否援引民法第425條之1類推適用主張法定租賃權或默示租賃？(50分)""",
+                "pdf_url": str(RAW_EXAMS_DIR / "sim_114_civil.json"),
+                "pdf_file": "sim_114_civil.json"
+            },
+            {
+                "exam_id": "MOEX_115_PRE_IP_CASE",
+                "year": "115",
+                "school": "智財法學研究中心",
+                "category": "專利師及智慧財產權法官前瞻題庫",
+                "department": "智慧財產法前瞻專題",
+                "subject": "著作權法與AI前瞻爭點",
+                "exam_text": """【115年司法官律師選試智財組前瞻全真模擬試題】
+科目：智慧財產權法（著作權專題）
+一、甲利用生成式AI深度學習模型，以特定提示詞（Prompts）引導生成極具原創風格之數位科幻插畫，並將該系列插圖集結成冊發行。乙未經授權，將該畫冊掃描並作為訓練其自製AI繪圖模型之巨量資料集（Training Dataset），產出極為類似之衍生圖像於網路販售。
+試問：
+(一) 甲藉由提示詞引導AI生成之成果，是否該當著作權法第3條之「著作」？其原創性判定與精神作用創作性要件為何？(50分)
+(二) 乙利用他人著作進行AI模型預訓練與資料探勘（TDM），是否合於著作權法第65條合理使用原則？乙產出相似風格圖像是重製權、改作權之侵害抑或單純風格剽竊之非侵權範疇？(50分)""",
+                "pdf_url": str(RAW_EXAMS_DIR / "sim_115_ip.json"),
+                "pdf_file": "sim_115_ip.json"
+            },
+
+            {
                 "exam_id": "MOEX_112_JUD_CIVIL",
                 "year": "112",
                 "school": "考選部",
@@ -664,3 +797,58 @@ def crawl_30_years_moex(start_roc: int = 113, end_roc: int = 84):
 if __name__ == "__main__":
     crawler = LawExamBankCrawler()
     crawler.run_all(max_pages=3)
+
+
+def refresh_latest_law_exams() -> Dict[str, Any]:
+    """
+    一鍵刷新爬取最新 113～115 司律與專技考題 (包含司律二試、民間公證人、專利師、會計師商法、司法特考)
+    自動寫入 exams_catalog.json 並同步存入 SQLite community_shared_questions 資料表
+    """
+    print('\n=======================================================')
+    print('  🔄 啟動最新 113～115 年考選部司律與專技人員真題管線刷新...')
+    print('=======================================================')
+    crawler = LawExamBankCrawler()
+    added_curated = crawler.ingest_curated_national_exams()
+    
+    # 優先嘗試 MOEX 近期試題（設定輕量化超時，避免網路阻塞）
+    added_moex = 0
+    try:
+        added_moex = crawl_30_years_moex(start_roc=114, end_roc=113)
+    except Exception as e:
+        print(f'  [MOEX 線上探測備註: {e}]')
+
+    # 高速批次寫入社群公開題庫（113-115 最新考題全量入庫）
+    synced_community = 0
+    try:
+        from question_bank_engine import save_community_questions_batch
+        batch_items = []
+        for exam in crawler.catalog:
+            year = str(exam.get('year', ''))
+            if year in ['112', '113', '114', '115']:
+                content_text = exam.get('exam_text', '').strip()
+                if not content_text or len(content_text) < 30:
+                    continue
+                subj = exam.get('department', '') or exam.get('subject', '')
+                exam_cat = exam.get('category', '第二試 (申論實例題)')
+                batch_items.append({
+                    'stem_text': content_text,
+                    'subject': subj,
+                    'exam_stage': exam_cat,
+                    'raw_file_path': str(exam.get('pdf_url', '')),
+                    'reference_answer': '',
+                    'source_module': f"考選部真題暨前瞻模擬 ({exam.get('school', '考選部')})"
+                })
+        if batch_items:
+            synced_community = save_community_questions_batch(batch_items)
+    except Exception as e:
+        print(f'  [同步社群題庫通知: {e}]')
+
+    print(f'  ✅ 刷新完畢！新增真題入庫: {added_curated} 筆，MOEX 探測: {added_moex} 筆，批次同步社群題庫: {synced_community} 筆')
+    print(f'  📚 題庫大系總計收錄: {len(crawler.catalog):,} 份完整試卷！')
+    return {
+        'status': 'success',
+        'added_curated': added_curated,
+        'added_moex': added_moex,
+        'synced_community': synced_community,
+        'total_catalog': len(crawler.catalog)
+    }

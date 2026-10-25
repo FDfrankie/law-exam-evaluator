@@ -118,7 +118,14 @@ except Exception as _err:
         return f"> **{title}**：  \n" + '\n'.join(lines)
 
 try:
-    from question_bank_engine import save_questions_to_pool, render_shared_question_pool_ui
+    from question_bank_engine import (
+    save_questions_to_pool, render_shared_question_pool_ui,
+    save_community_question, save_community_questions_batch,
+    get_community_questions, get_question_pool_stats,
+    save_user_exam_submission, get_user_exam_submissions,
+    save_author_feedback, render_developer_submission_viewer_ui,
+    infer_subject_from_text
+)
 except ImportError:
     try:
         from code.question_bank_engine import save_questions_to_pool, render_shared_question_pool_ui
@@ -2025,7 +2032,7 @@ if app_mode == MODE_HOME:
         <div style="padding: 18px 24px; border-radius: 12px; background: linear-gradient(135deg, #1d3557 0%, #2a4d69 100%); color: white; margin-bottom: 20px;">
             <h1 style="color: white; margin-bottom: 8px; font-size: 2.0rem;">⚖️ 司律考試 AI 評分、命題、判解檢索與六法研析平台</h1>
             <p style="color: #e0fbfc; font-size: 1.02rem; margin-bottom: 0;">
-                整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 SFT 微調大庫之一站式法學實戰平台。
+                整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 AI 筆記煉金工坊之一站式法學實戰平台。
             </p>
         </div>
     """, unsafe_allow_html=True)
@@ -2033,6 +2040,7 @@ if app_mode == MODE_HOME:
     # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
     db_stats = get_realtime_database_stats()
     total_mcq_cnt = len(load_all_existing_stage1_mcqs())
+    qpool_stats = get_question_pool_stats()
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
     m_c1.metric("📜 全國法規與命令條文", "2,053 部 / 62,342 條", "支援最新修法自動同步")
@@ -2042,33 +2050,43 @@ if app_mode == MODE_HOME:
         f"判例 {db_stats['precedents']:,} ｜ 憲判 {db_stats['constitutional_orders']:,}"
     )
     m_c3.metric("🏢 中央部會權威行政函釋", "600+ 則", "經濟部/金管會/法務部/勞動部")
-    m_c4.metric("🎯 一試全真選擇與歷屆題庫", f"{total_mcq_cnt:,}+ 題", "跨科隨機抽考與盲測批改")
+    m_c4.metric("🎯 題庫大系與社群共享", f"{qpool_stats.get('community_total', 0):,} 題", f"一試選擇 {total_mcq_cnt:,} ｜ 模擬命題 {qpool_stats.get('total', 0)}")
 
     if db_stats.get("is_cloud_fallback"):
         st.caption(f"☁️ 雲端基準統計：⚖️ 權威判例：**{db_stats['precedents']:,}** 筆 ｜ 🏛️ 憲法裁定/重大見解：**{db_stats['constitutional_orders']:,}** 筆 ｜ 總裁判庫存：**{db_stats['total']:,}** 筆 (雲端唯讀快取模式)")
     else:
-        st.caption(f"⚡ 即時資料庫連線統計：⚖️ 權威判例：**{db_stats['precedents']:,}** 筆 ｜ 🏛️ 憲法裁定/重大見解：**{db_stats['constitutional_orders']:,}** 筆 ｜ 總裁判庫存：**{db_stats['total']:,}** 筆")
+        st.caption(f"⚡ 即時資料庫連線統計：⚖️ 權威判例：**{db_stats['precedents']:,}** 筆 ｜ 🏛️ 憲法裁定/重大見解：**{db_stats['constitutional_orders']:,}** 筆 ｜ 總裁判庫存：**{db_stats['total']:,}** 筆 ｜ 社群共享題庫：**{qpool_stats.get('community_total', 0):,}** 題")
 
     st.write("")
-    home_tab_nav, home_tab_privacy, home_tab_copyright, home_tab_disclaimer = st.tabs([
-        "🧭 九大核心模組快速導覽",
-        "🔒 隱私權政策與個人資料保護聲明 (Privacy Policy)",
+
+    # ⚠️ 使用者權益與疑慮特別聲明（醒目警示框）
+    st.warning("""
+    ⚠️ **【使用者權益、題目共享與著作權疑慮特別提醒】**
+    1. **題目公開共享原則**：本平台致力於法學教育與國考資源均平，凡使用者輸入或上傳之考試題目，將自動去重後納入社群公開共享題庫，供廣大考生練習。
+    2. **個人作答絕對隔離**：考生的手寫答卷、批改分數與個人評語報告**嚴格隔離加密保護**（🔒 僅限開發者本人調閱），絕不對外公開。
+    3. **權利人優先下架保障**：若您上傳之試題內容涉及補習班獨家改編著作、期中考私人考卷，或有任何著作權、隱私疑慮，請隨時填寫下方回報表單，作者將於核實後即刻優先移除！
+    """)
+
+    home_tab_nav, home_tab_privacy, home_tab_copyright, home_tab_disclaimer, home_tab_feedback = st.tabs([
+        "🧭 十大核心模組快速導覽",
+        "🔒 隱私權政策與個資分流保護 (Privacy Policy)",
         "📜 著作權與合理使用政策 (Copyright Policy)",
-        "⚖️ 法律免責聲明與服務條款 (Legal Disclaimer)"
+        "⚖️ 法律免責聲明與服務條款 (Legal Disclaimer)",
+        "📩 權益回報與移除申請 (Author Feedback)"
     ])
 
     with home_tab_nav:
-        st.subheader("🧭 平台九大法學核心模組一覽（點擊即可直接進入）")
+        st.subheader("🧭 平台法學核心模組一覽（點擊即可直接進入）")
         nav_cards = [
             (MODE_EVAL, "📝 試卷批改", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行 OCR 辨識、爭點命中分析與四大維度閱卷評分。"),
             (MODE_GEN, "🎯 模擬命題", "支援互動式考點列表增刪、AI 一試/二試客製命題，並整合行政法 300 題與全科既有選擇題庫隨機抽考。"),
-            (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與百題實戰演練，一鍵帶入批改或生成擬答。"),
+            (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與最新 113～115 試卷，一鍵刷新與在線實戰。"),
             (MODE_ANS, "📖 擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、大前提、實務學說對比與事實涵攝 IRAC 示範擬答。"),
             (MODE_SEARCH, "🔍 法學檢索", "支援專業布林語法檢索、原判例／最高院決議／高院座談會篩選、審級歷審脈絡鏈，以及基準判決相同/相反見解比對。"),
             (MODE_QA, "💬 法律問答", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
             (MODE_SUMMARIZER, "📑 裁判精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度開放資料包批次擴充入庫。"),
             (MODE_SIX_CODES, "⚖️ 智慧六法", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
-            (MODE_SFT, "📥 筆記蒸餾", "將個人讀書筆記透過多模態視覺辨識提煉為結構化 SFT 微調語料，支援全科 PDF 合併與 Colab/Kaggle 訓練。")
+            (MODE_SFT, "📥 筆記煉金", "重構之 AI 筆記煉金工坊：三步工作流支援體系數位筆記、Anki 爭點閃卡、實例題出題驗收與一頁式大抄！")
         ]
         for row_i in range(0, len(nav_cards), 3):
             cols = st.columns(3)
@@ -2086,30 +2104,23 @@ if app_mode == MODE_HOME:
 
     with home_tab_privacy:
         st.subheader("🔒 隱私權政策與個人資料保護聲明 (Privacy Policy)")
-        st.caption("最後更新日期：2026 年 10 月 ｜ 遵循中華民國《個人資料保護法》與資訊安全規範")
+        st.caption("最後更新日期：2026 年 10 月 ｜ 遵循中華民國《個人資料保護法》與最新資訊安全規範")
         st.markdown("""
-#### 一、政策適用範圍
-本隱私權政策適用於您使用「司律考試 AI 評分與命題大師」（以下簡稱本平台）各項功能時，所涉及之資料上傳、檢索查詢、API 呼叫及本機／雲端資料同步處理。
+#### 一、學習資料雙軌分流處理架構（題目共享 vs 作答隔離）
+本平台依據《個人資料保護法》及誠信原則，對使用者上傳之資料實施嚴格的**雙軌技術分流**：
+1. **試卷題目（公開共享典藏）**：
+   - 當您使用「試卷評分」、「擬答生成」或「模擬命題」功能時，題目文字會自動進行雜湊計算與重複性比對，並納入**社群公開共享題庫 (`community_shared_questions`)**。
+   - 題目不含任何考生個人識別資料，僅作為法學題庫擴充、學術研究及全員無償演練之用。
+2. **考生個人答卷與批改報告（🔒 絕對隔離保密）**：
+   - 您所上傳之手寫筆跡照片、作答內容文字、AI 閱卷得分、弱點診斷報告與重構建議，均獨立寫入**專屬隔離典藏表 (`user_exam_submissions`)**。
+   - **本資料庫嚴格受技術鎖定保護，僅供開發者本人進行模型評估與系統優化，一般使用者與任何第三方絕對無法檢索或調閱他人之個人答卷**。
 
-#### 二、資料蒐集、處理與利用之範圍
-1. **使用者主動上傳之學習資料**：
-   - 當您使用「試卷評分」、「擬答生成」或「筆記蒸餾」功能時，您所上傳之手寫試卷照片、PDF 檔案、Word 文檔或輸入之題目文字，僅用於當次 OCR 文字辨識、AI 閱卷評分與法學爭點分析。
-   - 若您於設定中啟用個人 Google Drive 雲端硬碟同步或社群共享題庫典藏，相關試題與筆記將儲存於您指定之資料夾路徑中，供您跨裝置複習與檢索。
-2. **API 金鑰與外部帳號憑證之絕對保護**：
-   - 您於介面中輸入之 **Gemini API Key (`GEMINI_API_KEY`)** 或 **司法院資料開放平臺帳號密碼**，僅暫存於您當次瀏覽器連線之獨立工作階段記憶體（`st.session_state` 及當次執行緒環境變數）中，用於直接向官方端點發起加密 HTTPS 請求。
-   - 本平台**絕不將您的 API 金鑰或司法院密碼寫入任何公開資料庫、永存日誌（Logs）或傳送予任何第三方伺服器**；當您關閉瀏覽器分頁或點擊「清除 Token」時，相關憑證即自記憶體中銷毀。
-3. **無強制性個人敏感個資蒐集**：
-   - 本平台無須註冊真實姓名、身分證字號、住址或信用卡號即可使用核心法學檢索與學習功能。請勿於上傳之試卷或法律問答中填入真實當事人之身分證字號、銀行帳號或未公開之個人隱私資料。
+#### 二、API 金鑰與憑證之絕對安全
+- 您輸入之 **Gemini API Key (`GEMINI_API_KEY`)** 或司法院資料開放平台帳號密碼，僅暫存於當次連線之記憶體（`st.session_state`）中，用於發起加密 HTTPS 請求。
+- 本平台**絕不儲存、絕不記錄、亦絕不向第三方伺服器傳輸您的私有 API 金鑰**。
 
-#### 三、第三方 AI 服務與資料傳輸安全
-- 本平台之多模態視覺辨識與法學推論係透過加密連線（TLS/SSL）呼叫 Google Gemini API，並連結司法院裁判書系統、全國法規資料庫等政府公開端點。
-- 傳輸過程均採標準 HTTPS 加密協定，防止資料於傳輸途中遭竊聽或竄改。
-
-#### 四、Cookie 與工作階段（Session）管理
-- 本平台僅使用維持 Streamlit 介面互動狀態所必要之 Session 識別碼，不植入任何跨站廣告追蹤器（Third-party Advertising Cookies）或商業行為剖析腳本。
-
-#### 五、使用者對個人資料之權利
-- 依《個人資料保護法》第 3 條規定，您就您所上傳並儲存於本機或個人雲端目錄之檔案，享有隨時查詢、閱覽、製給複製本、補充、更正、停止處理利用及請求刪除之完整控制權。
+#### 三、當事人權益行使管道
+- 依《個人資料保護法》第 3 條規定，若您對您曾提交之答卷或題目有任何疑慮，可隨時至「📩 權益回報與移除申請」分頁提出刪除或停止處理請求，系統將於核實後即時執行資料淨化。
         """)
 
     with home_tab_copyright:
@@ -2117,28 +2128,58 @@ if app_mode == MODE_HOME:
         st.markdown("""
 #### 一、公共領域之政府公開法學資訊（依法不得為著作權標的）
 依據中華民國《著作權法》第 9 條第 1 項規定，本平台所收錄與檢索之下列法學資料，均屬公共領域（Public Domain）開放資訊，依法不得為著作權之標的：
-1. **憲法、法律、命令或公文**：包含《全國法規資料庫》之法律、法規命令、施行細則、立法院公報立法理由，以及各中央主管機關（經濟部、金管會、法務部、勞動部、財政部、智慧財產局）發布之行政函釋與解釋令。
-2. **司法機關之裁判與公報文書**：包含憲法法庭判決、司法院大法官解釋（釋字、院字、院解字）、最高法院與最高行政法院大法庭裁定、各級法院裁判書、最高法院與最高行政法院原判例、民刑庭會議及庭長法官聯席會議決議、臺灣高等法院暨所屬法院法律座談會紀錄。
-3. **國家考試試題**：考選部依法令舉行之司法官、律師、司法特考、高普考等各類國家考試歷屆試題（《著作權法》第 9 條第 1 項第 5 款）。
+1. **憲法、法律、命令或公文**：包含《全國法規資料庫》之法律、法規命令、施行細則、立法院公報立法理由，以及各中央主管機關之行政函釋與令函。
+2. **司法機關之裁判與公報文書**：憲法法庭判決、大法官解釋、最高法院與最高行政法院大法庭裁定、各級法院裁判書、原判例、庭長法官聯席會議決議、高等法院座談會紀錄。
+3. **國家考試試題**：考選部依法舉行之公務人員與專技人員考試試題（《著作權法》第 9 條第 1 項第 5 款）。
 
 #### 二、學術文獻與個人讀書筆記之合理使用界限
-1. **學說爭點摘要**：本平台於爭點剖析中引述之學者通說與有力說見解，係針對公開法學概念之客觀法理歸納與簡短引註，符合《著作權法》第 52 條（為報導、評論、教學、研究或其他正當目的之必要，在合理範圍內得引用已公開發表之著作）及第 65 條合理使用之規範。
-2. **個人筆記與教材保護**：使用者自行上傳或連結自個人雲端硬碟之讀書筆記、課輔講義，僅供使用者個人非營利自修、國考模擬演練與內部研究使用。未經著作權人事前書面授權，嚴禁將受著作權保護之教材進行公開販售、商業重製或非法散布。
+1. **學說爭點摘要**：本平台引述之學者通說與實務有力見解，係為法學研究與教學評析所必要，合於《著作權法》第 52 條與第 65 條合理使用標準。
+2. **補習班講義與私人筆記保護**：嚴禁將未經授權之受著作權保護講義作為商業販售使用。若有爭議題目，著作權人可隨時申請下架。
         """)
 
     with home_tab_disclaimer:
         st.subheader("⚖️ 法律免責聲明與服務條款 (Legal Disclaimer & Terms of Use)")
         st.markdown("""
 #### 一、非正式法律意見與非律師代理聲明
-1. 本平台所有由 AI 模型生成之內容（包括但不限於：試卷批改評分、高分示範擬答、法學爭點剖析、裁判摘要、法律問題諮詢報告、存證信函草稿、調解聲請要旨，以及車損折舊、資遣費、夫妻剩餘財產、遺產應繼分與特留分之試算結果），**純屬國家考試準備、法學教育訓練與學術研究之輔助參考，絕不構成正式之法律諮詢意見（Legal Advice），亦不因此建立律師與當事人間之委任或信賴關係**。
-2. 人工智慧大型語言模型可能因訓練資料時效或語意推論限制而產生疏漏。若您面臨具體真實之民刑事訴訟、行政救濟或商務契約爭議，**請務必委任合格執業律師或洽詢各地法律扶助基金會／法院訴訟輔導科尋求專業協助**。
+1. 本平台由 AI 生成之所有評閱分析、高分擬答、爭點整理與法學摘要，**純屬國家考試準備與學術自學之輔助參考，絕不構成具體個案之正式法律意見（Legal Advice）**。
+2. 若您遇有具體訴訟糾紛，請務必諮詢合法執業律師或尋求法律扶助基金會協助。
 
-#### 二、法規修正與實務見解效力之核實提醒
-1. **原判例與舊決議之法定地位**：依民國 108 年 7 月 4 日施行之《法院組織法》第 57 條之 1 及《行政法院組織法》第 16 條之 1 規定，最高法院與最高行政法院先前選編之「原判例」，若無裁判全文可資查考者已停止適用；具裁判全文者，其效力與未經選編為判例之最高法院／最高行政法院裁判相同（不再具通案法源拘束力，惟於國家考試與實務說理上仍具高度參考價值）。
-2. 本平台雖提供「一鍵更新最新修法」與「司法院開放資料同步」工具，惟正式應試或撰寫訴訟書狀時，仍請以立法院法律系統、全國法規資料庫及司法院裁判書系統最新公告之官方文本為準。
+#### 二、實務效力核實提醒
+- 原判例與舊決議依《法院組織法》第 57 條之 1 規定已停止適用其法源位階，改為一般裁判見解；最新實務見解仍請隨時參照司法院與憲法法庭官方公告。
         """)
 
-# ----------------- 模式 1: 試卷批改 -----------------
+    with home_tab_feedback:
+        st.subheader("📩 使用者權益回報與資料移除申請")
+        st.write("若您對平台收錄之試題題目有著作權疑慮、希望下架特定題目，或希望刪除您先前上傳之個人作答紀錄，請填寫下方表單：")
+        with st.form("home_author_feedback_form"):
+            fb_cat = st.selectbox(
+                "回報類別：",
+                [
+                    "題目著作權疑慮／申請下架移除",
+                    "個人作答與評閱紀錄刪除申請",
+                    "AI 評閱法理或爭點錯誤糾正",
+                    "功能建議與系統 Bug 回報",
+                    "其他法律或隱私事宜"
+                ]
+            )
+            fb_desc = st.text_area(
+                "詳細說明（請提供欲移除之題目關鍵字、考卷名稱或問題描述）：",
+                height=140,
+                placeholder="例如：請協助下架某題目，該題目包含某補習班專利商標法特定改編例題..."
+            )
+            fb_contact = st.text_input("您的聯絡 Email 或稱呼（選填，便於通知處理進度）：")
+            fb_submit = st.form_submit_button("📤 立即向作者提交回報", type="primary")
+
+            if fb_submit:
+                if not fb_desc.strip():
+                    st.error("請填寫詳細說明內容！")
+                else:
+                    try:
+                        rep_id = save_author_feedback(category=fb_cat, description=fb_desc, contact=fb_contact)
+                        st.success(f"✅ 回報已成功送達！案件編號：`#{rep_id}`。管理員將於核實後優先處理，感謝您協助維護平台合規與品質。")
+                    except Exception as efb:
+                        st.error(f"提交失敗: {efb}")
+
 elif app_mode == MODE_TEXTBOOK or any(k in str(app_mode) for k in ["教科書", "體系教科書", "專題教科書", "自學"]):
     render_textbook_learning_view()
 
@@ -2199,14 +2240,15 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                     st.info("💡 目前雲端硬碟中暫未偵測到實戰試題或百題檔案。")
 
         elif q_input_mode == "👥 從社群考生共享題庫挑選題目":
-            comm_questions = load_community_questions()
+            comm_questions = get_community_questions(limit=100)
             if comm_questions:
-                q_titles = [f"【{q.get('subject', '綜合')}】{q.get('title', '題目')} ({q.get('created_at', '')[:10]})" for q in comm_questions]
+                q_titles = [f"【{q.get('subject', '法學')}】{q.get('stem_text', '')[:42]}... ({q.get('created_at', '')[:10]})" for q in comm_questions]
                 sel_comm_q_idx = st.selectbox("選擇社群考生共享試題：", range(len(comm_questions)), format_func=lambda i: q_titles[i], key="sel_comm_q_m1")
                 if st.button("📥 帶入此題進行評分", key="btn_apply_comm_q"):
                     chosen_q = comm_questions[sel_comm_q_idx]
-                    st.session_state.question_text_content = chosen_q.get("content", "")
-                    st.session_state.rubric_text_content = chosen_q.get("rubric", "")
+                    st.session_state.question_text_content = chosen_q.get("stem_text", "")
+                    st.session_state.rubric_text_content = chosen_q.get("reference_answer", "")
+                    st.session_state.imported_from_bank_label = f"社群題庫【{chosen_q.get('subject')}】"
                     st.rerun()
             else:
                 st.info("💡 目前社群共享庫中暫無試題，您所輸入或上傳之試題評分後將自動典藏共享！")
@@ -2299,15 +2341,18 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
         elif not all_images and not all_texts:
             st.error("請至少上傳一張手寫試卷圖、PDF 或 Word 檔案！")
         else:
-            # 自動新建獨立檔案典藏使用者上傳試卷題目至社群共享庫
+            # 1. 題目自動寫入社群公開題庫（community_shared_questions 表）
+            comm_qid = ""
             try:
-                archive_uploaded_question(
-                    title=st.session_state.get("imported_from_bank_label", "") or "二試實例實戰題",
-                    content=question_text,
-                    subject="司律二試申論題",
-                    rubric=rubric_text
+                comm_qid = save_community_question(
+                    stem_text=question_text,
+                    subject=infer_subject_from_text(question_text, "司律二試申論題"),
+                    exam_stage="第二試 (申論實例題)",
+                    raw_file_path="",
+                    reference_answer=rubric_text,
+                    source_module="試卷批改"
                 )
-            except Exception:
+            except Exception as e_cq:
                 pass
 
             with st.spinner("⚖️ 正在運用 Gemini 視覺多模態神經網路進行手寫辨識、三段論法邏輯檢驗與爭點比對..."):
@@ -2323,6 +2368,24 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
 
                     st.balloons()
                     st.success("評閱完成！診斷報告已即時同步至 Google Drive！")
+
+                    # 2. 考生作答與診斷報告加密寫入隔離典藏庫（user_exam_submissions 表 - 🔒 嚴格限開發者調閱）
+                    try:
+                        eval_md_rep = f"### 總得分：{result.get('total_score', 0)} / 100 ｜ 等第：{result.get('grade_level', '未定')}\n\n"
+                        eval_md_rep += f"**【閱卷委員優化建議】**：\n{result.get('suggested_revision', '')}\n\n"
+                        eval_md_rep += f"**【命中核心爭點】**：{', '.join(result.get('identified_issues', []))}\n\n"
+                        eval_md_rep += f"**【漏論爭點】**：{', '.join(result.get('missed_issues', []))}"
+                        
+                        uploaded_fnames = [f.name for f in uploaded_files] if uploaded_files else []
+                        save_user_exam_submission(
+                            q_id=comm_qid or f"eval_{int(time.time())}",
+                            subject=infer_subject_from_text(question_text, "民事實體法"),
+                            answer_text=result.get("transcription", "") or (combined_text or ""),
+                            answer_files=uploaded_fnames,
+                            ai_evaluation_md=eval_md_rep
+                        )
+                    except Exception as e_sub:
+                        pass
 
                     # 評分結果面板
                     mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
@@ -2361,6 +2424,11 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
 
                 except Exception as e:
                     st.error(f"評閱失敗: {e}")
+
+    # 3. 若為開發者本人，展示作答與評閱深度調閱室（一般訪客不可見）
+    if is_developer():
+        st.divider()
+        render_developer_submission_viewer_ui()
 
 # ----------------- 模式 2: 模擬命題 -----------------
 elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "出題"]):
@@ -3410,7 +3478,20 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
     ])
 
     with m3_tab1:
-        st.write("已收錄國立臺灣大學法研所碩士班、臺大轉學考、考選部司法官律師及司法特考等歷年真實試題，支援在線研讀、AI 擬答與變形出題！")
+        col_b_top1, col_b_top2 = st.columns([3, 1])
+        with col_b_top1:
+            st.write("已收錄國立臺灣大學法研所碩士班、臺大轉學考、考選部司法官律師、司法特考、專利師及公證人等歷年真實試題，支援在線研讀、一鍵帶入批改與 AI 擬答！")
+        with col_b_top2:
+            if st.button("🔄 一鍵刷新最新司律與專技考題", type="primary", use_container_width=True, key="btn_refresh_latest_exams"):
+                with st.spinner("正在探測並刷新 113～115 司律與專技真題入庫..."):
+                    try:
+                        from exam_bank_crawler import refresh_latest_law_exams
+                        res_ref = refresh_latest_law_exams()
+                        st.success(f"✅ 刷新完畢！新增真題入庫 {res_ref.get('added_curated', 0)} 筆，批次同步社群題庫 {res_ref.get('synced_community', 0)} 筆！全庫總計 {res_ref.get('total_catalog', 0):,} 份試卷。")
+                        time.sleep(1)
+                        st.rerun()
+                    except Exception as e_ref:
+                        st.error(f"刷新失敗: {e_ref}")
 
         crawler = LawExamBankCrawler()
         catalog = crawler.catalog
@@ -3849,6 +3930,20 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                 try:
                     gen = LawExamGenerator()
                     ans = gen.generate_model_answer(question=target_q, subject=m4_subject)
+                    
+                    # 自動將題目與示範擬答寫入社群公開題庫共享
+                    try:
+                        save_community_question(
+                            stem_text=target_q,
+                            subject=m4_subject,
+                            exam_stage="第二試 (申論實例題)",
+                            raw_file_path="",
+                            reference_answer=ans,
+                            source_module="高分示範擬答"
+                        )
+                    except Exception:
+                        pass
+
                     st.markdown("### 🏆 示範擬答全文 (IRAC)：")
                     st.markdown(ans)
                     render_clickable_legal_entities(ans, key_prefix="m4_ans_ents")
@@ -6339,512 +6434,701 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         st.session_state["app_mode"] = MODE_ANS; st.session_state["nav_sidebar_radio_mode"] = MODE_ANS
                         st.rerun()
 
-# ----------------- 模式 9: 筆記蒸餾 -----------------
-elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "微調", "SFT"]):
-    st.header("📥 個人手寫筆記 OCR 蒸餾與 100 萬筆 SFT 微調庫管線")
-    st.write("本系統直接支援將考生個人手寫讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
+# ----------------- 模式 9: AI 筆記智慧煉金工坊 -----------------
+elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "微調", "SFT", "煉金"]):
+    st.header("📥 AI 筆記智慧煉金工坊（法學筆記四維度深度提煉引擎）")
+    st.caption("拋棄死板的全文謄錄！三步智慧工作流：選擇筆記來源 ➔ 選擇提煉維度 ➔ 一鍵生成高階法學結構化筆記、Anki 閃卡、出題驗收或救命大抄。")
 
-    sft_tab1, sft_tab2, sft_tab3, sft_tab4 = st.tabs([
-        "📤 單份筆記匯入與即時蒸餾",
-        "📚 全科文字自動提取與合併單一 PDF",
-        "📂 已收錄手寫筆記與 SFT 樣本瀏覽",
-        "📊 100 萬筆 SFT 總資料庫與 Colab 微調指南"
-    ])
+    # 三步工作流
+    col_w1, col_w2 = st.columns([1, 1])
 
-    with sft_tab1:
-        st.subheader("1. 匯入個人法學筆記並啟動多模態蒸餾入庫")
-        st.write("本系統直接支援將考生個人手寫/打字讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
-
-        distill_mode = st.radio(
-            "請選擇匯入方式：",
-            ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，全庫收錄 550+ 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
+    with col_w1:
+        st.subheader("步驟一：選擇筆記來源")
+        sft_src_mode = st.radio(
+            "筆記輸入方式：",
+            ["✍️ 手動輸入或貼上筆記文字", "📁 上傳筆記檔案 (PDF / 圖片 / Word)", "📂 從雲端已歸檔筆記隨選 (706 份法學筆記)"],
             horizontal=True,
-            key="distill_import_mode"
+            key="sft_src_mode_radio"
         )
 
-        if "方案 A" in distill_mode:
+        note_content_text = ""
+        note_subject_hint = "民事實體法"
+
+        if sft_src_mode == "✍️ 手動輸入或貼上筆記文字":
+            note_content_text = st.text_area(
+                "請貼入您的讀書筆記、爭點摘要或上課重點：",
+                height=260,
+                placeholder="例如：最高法院106年第3次民庭決議，借名登記出名人之處分行為為有權處分說...但學說上有無權處分說之強力批判...",
+                key="sft_manual_text_area"
+            )
+
+        elif sft_src_mode == "📁 上傳筆記檔案 (PDF / 圖片 / Word)":
+            up_note_file = st.file_uploader(
+                "選取您的筆記檔案（支援多頁 PDF、手機拍照筆記圖、Word 檔）：",
+                type=["pdf", "png", "jpg", "jpeg", "webp", "docx"],
+                key="sft_up_file_uploader"
+            )
+            if up_note_file is not None:
+                st.info(f"📄 已選取檔案：`{up_note_file.name}` ({len(up_note_file.getvalue()) / (1024*1024):.2f} MB)")
+                if st.button("🔍 提取筆記文字與執行 OCR 辨識", key="btn_sft_ocr_extract"):
+                    with st.spinner("正在使用多模態神經網路辨識筆記架構..."):
+                        try:
+                            txt_res, imgs_res = parse_document(up_note_file.read(), up_note_file.name, auto_ocr_handwriting=True)
+                            if txt_res and len(txt_res.strip()) > 30:
+                                st.session_state["sft_extracted_text"] = txt_res.strip()
+                            elif imgs_res:
+                                extracted_ocr = ocr_handwritten_images(imgs_res[:10], prompt_hint="這是一份法學考試讀書筆記，請完整謄錄其體系大綱、法條、實務判決與爭點分析。")
+                                st.session_state["sft_extracted_text"] = extracted_ocr
+                            st.success("✅ 筆記文字提取成功！")
+                        except Exception as e_up:
+                            st.error(f"提取失敗: {e_up}")
+            
+            note_content_text = st.session_state.get("sft_extracted_text", "")
+            if note_content_text:
+                note_content_text = st.text_area("確認提取之筆記文字（可自由微調）：", value=note_content_text, height=200, key="sft_extracted_text_area")
+
+        elif sft_src_mode == "📂 從雲端已歸檔筆記隨選 (706 份法學筆記)":
             if not is_developer():
-                st.warning("🔒 【雲端個人筆記庫已鎖定】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記僅限開發者本人調閱與微調。一般訪客請切換至【方案 B：手動上傳新筆記】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
+                st.warning("🔒 【雲端個人筆記庫已鎖定】全庫 706 份個人法學手寫筆記受權限保護，僅限開發者本人調閱。一般訪客請切換至【✍️ 手動輸入】或【📁 上傳筆記】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
             else:
-                from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
-                drive_notes = get_google_drive_notes_list()
-                if drive_notes:
-                    sub_counts_dict = {}
-                    for n in drive_notes:
-                        sub_counts_dict[n["subject"]] = sub_counts_dict.get(n["subject"], 0) + 1
-                    cat_summary = "、".join(f"{s} {c} 份" for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1])[:8])
-                    st.caption(f"⚡ 目前已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋 {cat_summary} 等全台法學考科）：")
+                from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text
+                d_notes = get_google_drive_notes_list()
+                if d_notes:
+                    subs = ["全部考科"] + sorted(list(set(x["subject"] for x in d_notes)))
+                    c_ds1, c_ds2 = st.columns([1, 2])
+                    with c_ds1:
+                        sel_d_sub = st.selectbox("筆記考科：", subs, key="sft_d_sub_sel")
+                    f_notes = [x for x in d_notes if sel_d_sub == "全部考科" or x["subject"] == sel_d_sub]
+                    with c_ds2:
+                        sel_n_idx = st.selectbox("選擇雲端筆記：", range(len(f_notes)), format_func=lambda i: f"【{f_notes[i]['subject']}】{f_notes[i]['filename']}", key="sft_sel_n_idx")
+                    chosen_note = f_notes[sel_n_idx]
+                    note_subject_hint = chosen_note["subject"]
+                    if st.button("📥 一鍵載入此份筆記內容", key="btn_load_drive_note"):
+                        with st.spinner(f"正在載入《{chosen_note['filename']}》..."):
+                            n_txt = read_note_text(chosen_note["path"], max_pages=15, auto_ocr=True)
+                            st.session_state["sft_drive_loaded_text"] = n_txt or f"【筆記】：{chosen_note['filename']}"
+                            st.rerun()
 
-                    CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
-                    CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
-                    PUB_GROUP = ["憲法", "行政法", "公法考古題"]
-                    COMM_GROUP = ["商事法", "保險法"]
-                    IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+                    note_content_text = st.session_state.get("sft_drive_loaded_text", "")
+                    if note_content_text:
+                        note_content_text = st.text_area("已載入筆記內容：", value=note_content_text, height=180, key="sft_drive_loaded_text_area")
 
-                    civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
-                    crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
-                    pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
-                    comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
-                    ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
+    with col_w2:
+        st.subheader("步驟二：選擇提煉模式（四大實用維度）")
+        distill_target_type = st.radio(
+            "請選擇您期望產出的提煉成果：",
+            [
+                "📘 結構化數位筆記 (體系框架、核心爭點、實務與學說對照、事實涵攝關鍵詞)",
+                "🗂️ Anki 爭點閃卡 (問答正反面、核心要件卡，支援 CSV 一鍵匯入 Anki)",
+                "🎯 筆記出題驗收 (依據筆記爭點自動命製二試實例題與評分標竿)",
+                "⚡ 一頁式終極大抄 (考前 30 分鐘救命精華、記憶口訣速記與心智大綱)"
+            ],
+            key="sft_distill_target_type_radio"
+        )
 
-                    sft_cat_opts = [
-                        f"全部科目 (全庫共 {len(drive_notes)} 份)",
-                        f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
-                        f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
-                        f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
-                        f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
-                        f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
-                    ]
-                    for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1]):
-                        sft_cat_opts.append(f"【{s}】(共 {c} 份)")
+        st.subheader("步驟三：AI 提煉生成與成果匯出")
+        btn_distill_exec = st.button("🚀 開始啟動 AI 筆記煉金提煉", type="primary", use_container_width=True, key="btn_exec_distill")
 
-                    col_d1, col_d2 = st.columns([1, 2])
-                    with col_d1:
-                        filter_sub_label = st.selectbox("筆記科目篩選：", sft_cat_opts, key="sft_filter_sub")
+    if btn_distill_exec:
+        if not note_content_text.strip():
+            st.error("請先提供或輸入【筆記內容】！")
+        else:
+            with st.spinner("⚖️ AI 筆記煉金工坊正在深度研讀筆記概念、比對實務學說並提煉成果..."):
+                try:
+                    from evaluator import LawExamEvaluator
+                    ev = LawExamEvaluator()
+                    prompt_instructions = ""
+                    
+                    if "結構化數位筆記" in distill_target_type:
+                        prompt_instructions = """你是一位精通台灣法學與司律國考的頂級法學教授兼閱卷委員。請將以下筆記整理提煉為極具深度與條理的【結構化數位筆記】：
+1. 【體系架構與核心條文】：指出該主題在民刑公商法典編章體系中的精準定位與關鍵條號。
+2. 【核心實務爭點】：明確提煉 1~3 個最常出現在二試申論題的核心法律爭議。
+3. 【實務與學說見解深入對照表】：
+   - 實務多數見解（包含字號、原判例、決議、大法庭裁定意旨）
+   - 學者有力見解（通說 vs 少數說核心論據）
+4. 【事實涵攝操作關鍵詞與解題模版】：提供二試作答時可直接調用的大前提金句與事實涵攝技巧。
+筆記內容如下：
+"""
+                    elif "Anki 爭點閃卡" in distill_target_type:
+                        prompt_instructions = """你是一位司律考試高分榜首兼 Anki 閃卡製作專家。請將以下筆記提煉為 5~8 組極具實戰記憶價值的【Anki 爭點閃卡】：
+每張卡片必須包含：
+- 【卡片編號與類型】：例如「要件記憶卡」、「爭點對立卡」、「實務判例卡」
+- 【正面 (Question)】：簡短明確的提問或案例小情境。
+- 【背面 (Answer)】：精準答案，標明關鍵條號、構成要件拆解、主流實務立場與關鍵字。
+最後請附上「標準 CSV 格式區塊 (以 Tab 或分號分隔)」，以便使用者直接複製匯入 Anki 軟體！
+筆記內容如下：
+"""
+                    elif "筆記出題驗收" in distill_target_type:
+                        prompt_instructions = """你是一位國家考試司律二試典試委員。請根據以下筆記中涉及的核心法理或易混淆爭點，直接命製一道【100分制二試申論實例題】：
+1. 【案例事實】：撰寫具備司律等級複雜度之完整事實（含甲乙丙三方利益衝突）。
+2. 【本題問題】：設定 2~3 個精準子題。
+3. 【評分大綱與爭點命中指標】：標列本題之破題關鍵、爭點配分比率。
+4. 【榜首示範擬答框架】：簡要示範各子題之開標、大前提與事實涵攝。
+筆記內容如下：
+"""
+                    else: # 一頁式終極大抄
+                        prompt_instructions = """你是一位專為國考考生設計考前衝刺教材的名師。請將以下筆記極致濃縮為【考前 30 分鐘救命一頁式大抄】：
+1. 【體系骨架與秒記心智圖】：精簡條列該章節脈絡。
+2. 【法條條號與構成要件速記】：不廢話，只列必背關鍵字。
+3. 【各爭點正反說對立速覽表】：以 Markdown 表格呈現「爭點名稱 ｜ 實務見解（字號與結論） ｜ 學說見解 ｜ 考卷開標金句」。
+4. 【避坑警示與閱卷扣分地雷】：提醒考生最常犯的邏輯混淆。
+筆記內容如下：
+"""
+                        
+                    full_prompt = prompt_instructions + "\n" + note_content_text
+                    output_text = ""
+                    if hasattr(ev, "client") and ev.client:
+                        from config import get_gemini_models_to_try
+                        for m_id in get_gemini_models_to_try():
+                            try:
+                                resp = ev.client.models.generate_content(model=m_id, contents=full_prompt)
+                                if resp and resp.text:
+                                    output_text = resp.text.strip()
+                                    break
+                            except Exception:
+                                continue
+                    
+                    if not output_text:
+                        output_text = "【提示】：模型生成逾時，請確認 API Key 與網路連線。"
 
-                    if "全部科目" in filter_sub_label:
-                        sub_notes = drive_notes
-                        filter_sub = "全部科目"
-                    elif "民法全輯" in filter_sub_label:
-                        sub_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
-                        filter_sub = "民法全輯"
-                    elif "刑法全輯" in filter_sub_label:
-                        sub_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
-                        filter_sub = "刑法全輯"
-                    elif "公法全輯" in filter_sub_label:
-                        sub_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
-                        filter_sub = "公法全輯"
-                    elif "商事法全輯" in filter_sub_label:
-                        sub_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
-                        filter_sub = "商事法全輯"
-                    elif "智財全輯" in filter_sub_label:
-                        sub_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
-                        filter_sub = "智慧財產權法全輯"
-                    else:
-                        filter_sub = filter_sub_label.split("【")[1].split("】")[0]
-                        sub_notes = [n for n in drive_notes if n["subject"] == filter_sub]
+                    st.session_state["sft_last_distill_result"] = output_text
+                    st.session_state["sft_last_distill_mode"] = distill_target_type
 
-                    with col_d2:
-                        all_distill_label = f"🌟 【全部分析】批次分析並蒸餾此分類全部筆記 (共 {len(sub_notes)} 份)"
-                        note_opts = [all_distill_label] + [
-                            f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (f" 🎯已提煉 {n['distilled_count']} 筆" if n['distilled_count'] > 0 else "")
-                            for n in sub_notes
+                except Exception as e_dist:
+                    st.error(f"提煉失敗: {e_dist}")
+
+    # 展示提煉成果
+    if st.session_state.get("sft_last_distill_result"):
+        st.divider()
+        st.markdown(f"### 🏆 提煉成果：{st.session_state.get('sft_last_distill_mode', '')}")
+        st.markdown(st.session_state["sft_last_distill_result"])
+        
+        c_down1, c_down2 = st.columns([1, 1])
+        with c_down1:
+            st.download_button(
+                "📥 下載提煉成果 Markdown 檔 (.md)",
+                data=st.session_state["sft_last_distill_result"].encode("utf-8"),
+                file_name=f"legal_distilled_notes_{int(time.time())}.md",
+                mime="text/markdown",
+                use_container_width=True
+            )
+        with c_down2:
+            st.download_button(
+                "📥 下載為純文字檔 (.txt)",
+                data=st.session_state["sft_last_distill_result"].encode("utf-8"),
+                file_name=f"legal_distilled_notes_{int(time.time())}.txt",
+                mime="text/plain",
+                use_container_width=True
+            )
+
+    st.write("")
+    st.divider()
+
+    # 百萬筆 SFT 資料庫與微調管線（摺疊收納至底部）
+    with st.expander("🛠️ 進階：法學百萬語料庫 (SFT/Fine-Tuning) 調閱與訓練導出 (Colab / Kaggle)", expanded=False):
+    
+        sft_tab1, sft_tab2, sft_tab3, sft_tab4 = st.tabs([
+            "📤 單份筆記匯入與即時蒸餾",
+            "📚 全科文字自動提取與合併單一 PDF",
+            "📂 已收錄手寫筆記與 SFT 樣本瀏覽",
+            "📊 100 萬筆 SFT 總資料庫與 Colab 微調指南"
+        ])
+    
+        with sft_tab1:
+            st.subheader("1. 匯入個人法學筆記並啟動多模態蒸餾入庫")
+            st.write("本系統直接支援將考生個人手寫/打字讀書筆記（PDF、掃描圖、Samsung Notes）透過 Gemini 多模態神經網路進行法學架構辨識，並即時提煉蒸餾為高品質的司律二試 IRAC 實例題解、一試單選題與四維度評分微調語料。")
+    
+            distill_mode = st.radio(
+                "請選擇匯入方式：",
+                ["📂 方案 A：直接自 Google Drive 筆記庫挑選並蒸餾 (免上傳，全庫收錄 550+ 份)", "📤 方案 B：手動上傳新筆記檔案 (PDF/圖片/Word)"],
+                horizontal=True,
+                key="distill_import_mode"
+            )
+    
+            if "方案 A" in distill_mode:
+                if not is_developer():
+                    st.warning("🔒 【雲端個人筆記庫已鎖定】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記僅限開發者本人調閱與微調。一般訪客請切換至【方案 B：手動上傳新筆記】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
+                else:
+                    from ingest_user_notes_to_sft import get_google_drive_notes_list, distill_single_note_file, sync_all_drive_notes_to_samsung_notes
+                    drive_notes = get_google_drive_notes_list()
+                    if drive_notes:
+                        sub_counts_dict = {}
+                        for n in drive_notes:
+                            sub_counts_dict[n["subject"]] = sub_counts_dict.get(n["subject"], 0) + 1
+                        cat_summary = "、".join(f"{s} {c} 份" for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1])[:8])
+                        st.caption(f"⚡ 目前已歸檔 **{len(drive_notes)} 份** 個人筆記（涵蓋 {cat_summary} 等全台法學考科）：")
+    
+                        CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法", "民法考古題"]
+                        CRIM_GROUP = ["刑總", "刑分", "刑法考古題"]
+                        PUB_GROUP = ["憲法", "行政法", "公法考古題"]
+                        COMM_GROUP = ["商事法", "保險法"]
+                        IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+    
+                        civil_count = sum(1 for n in drive_notes if n["subject"] in CIVIL_GROUP)
+                        crim_count = sum(1 for n in drive_notes if n["subject"] in CRIM_GROUP)
+                        pub_count = sum(1 for n in drive_notes if n["subject"] in PUB_GROUP)
+                        comm_count = sum(1 for n in drive_notes if n["subject"] in COMM_GROUP)
+                        ip_count = sum(1 for n in drive_notes if n["subject"] in IP_GROUP)
+    
+                        sft_cat_opts = [
+                            f"全部科目 (全庫共 {len(drive_notes)} 份)",
+                            f"🌟 【民法全輯】(總則/債編/物權/身分 共 {civil_count} 份)",
+                            f"🌟 【刑法全輯】(刑總/刑分 共 {crim_count} 份)",
+                            f"🌟 【公法全輯】(憲法/行政法 共 {pub_count} 份)",
+                            f"🌟 【商事法全輯】(公司/證交/保險 共 {comm_count} 份)",
+                            f"🌟 【智財全輯】(專利/商標/著作權 共 {ip_count} 份)"
                         ]
-                        sel_sft_note = st.selectbox("選擇欲蒸餾之雲端筆記：", note_opts, key="sft_sel_note")
-
-                    if sel_sft_note == all_distill_label:
-                        st.info(f"💡 已選擇【全部分析】！系統將批次遍歷【{filter_sub}】全部 **{len(sub_notes)} 份** 筆記，透過 Gemini Flash 多模態神經網路執行高精度手寫辨識、爭點提煉與 SFT 微調語料蒸餾，並即時合併寫入 SFT 微調庫。")
-                        c_btn_a1, c_btn_a2 = st.columns([2, 1])
-                        with c_btn_a1:
-                            if st.button(f"🚀 一鍵啟動全部分析：批次多模態 OCR 蒸餾並入庫 (共 {len(sub_notes)} 份)", type="primary", key="btn_distill_all_drive_sft"):
-                                prog_bar_dist = st.progress(0.0)
-                                status_dist = st.empty()
-                                total_new_samples = []
-                                success_files = 0
-                                failed_files = 0
-
-                                for idx_d, d_note in enumerate(sub_notes, 1):
-                                    status_dist.text(f"正在蒸餾 [{idx_d}/{len(sub_notes)}]: 《{d_note['filename'][:25]}...》")
-                                    prog_bar_dist.progress(idx_d / len(sub_notes))
-                                    try:
-                                        cur_samples = distill_single_note_file(d_note["path"], max_pages=15)
-                                        if cur_samples:
-                                            total_new_samples.extend(cur_samples)
-                                            success_files += 1
-                                    except Exception as e_dist_single:
-                                        failed_files += 1
-
-                                prog_bar_dist.progress(1.0)
-                                status_dist.text("✅ 全選筆記批次蒸餾完成！")
-                                st.balloons()
-                                st.success(f"🎉 全部分析蒸餾完成！共處理 {len(sub_notes)} 份筆記（成功 {success_files} 份，失敗 {failed_files} 份），成功提煉出 **{len(total_new_samples)} 組** 高品質 SFT 法學微調樣本！")
-                                if total_new_samples:
-                                    with st.expander("🔍 檢視本次全部分析提煉之 SFT 樣本預覽 (前 10 組)", expanded=True):
-                                        for s_idx, s in enumerate(total_new_samples[:10], 1):
+                        for s, c in sorted(sub_counts_dict.items(), key=lambda x: -x[1]):
+                            sft_cat_opts.append(f"【{s}】(共 {c} 份)")
+    
+                        col_d1, col_d2 = st.columns([1, 2])
+                        with col_d1:
+                            filter_sub_label = st.selectbox("筆記科目篩選：", sft_cat_opts, key="sft_filter_sub")
+    
+                        if "全部科目" in filter_sub_label:
+                            sub_notes = drive_notes
+                            filter_sub = "全部科目"
+                        elif "民法全輯" in filter_sub_label:
+                            sub_notes = [n for n in drive_notes if n["subject"] in CIVIL_GROUP]
+                            filter_sub = "民法全輯"
+                        elif "刑法全輯" in filter_sub_label:
+                            sub_notes = [n for n in drive_notes if n["subject"] in CRIM_GROUP]
+                            filter_sub = "刑法全輯"
+                        elif "公法全輯" in filter_sub_label:
+                            sub_notes = [n for n in drive_notes if n["subject"] in PUB_GROUP]
+                            filter_sub = "公法全輯"
+                        elif "商事法全輯" in filter_sub_label:
+                            sub_notes = [n for n in drive_notes if n["subject"] in COMM_GROUP]
+                            filter_sub = "商事法全輯"
+                        elif "智財全輯" in filter_sub_label:
+                            sub_notes = [n for n in drive_notes if n["subject"] in IP_GROUP]
+                            filter_sub = "智慧財產權法全輯"
+                        else:
+                            filter_sub = filter_sub_label.split("【")[1].split("】")[0]
+                            sub_notes = [n for n in drive_notes if n["subject"] == filter_sub]
+    
+                        with col_d2:
+                            all_distill_label = f"🌟 【全部分析】批次分析並蒸餾此分類全部筆記 (共 {len(sub_notes)} 份)"
+                            note_opts = [all_distill_label] + [
+                                f"【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (f" 🎯已提煉 {n['distilled_count']} 筆" if n['distilled_count'] > 0 else "")
+                                for n in sub_notes
+                            ]
+                            sel_sft_note = st.selectbox("選擇欲蒸餾之雲端筆記：", note_opts, key="sft_sel_note")
+    
+                        if sel_sft_note == all_distill_label:
+                            st.info(f"💡 已選擇【全部分析】！系統將批次遍歷【{filter_sub}】全部 **{len(sub_notes)} 份** 筆記，透過 Gemini Flash 多模態神經網路執行高精度手寫辨識、爭點提煉與 SFT 微調語料蒸餾，並即時合併寫入 SFT 微調庫。")
+                            c_btn_a1, c_btn_a2 = st.columns([2, 1])
+                            with c_btn_a1:
+                                if st.button(f"🚀 一鍵啟動全部分析：批次多模態 OCR 蒸餾並入庫 (共 {len(sub_notes)} 份)", type="primary", key="btn_distill_all_drive_sft"):
+                                    prog_bar_dist = st.progress(0.0)
+                                    status_dist = st.empty()
+                                    total_new_samples = []
+                                    success_files = 0
+                                    failed_files = 0
+    
+                                    for idx_d, d_note in enumerate(sub_notes, 1):
+                                        status_dist.text(f"正在蒸餾 [{idx_d}/{len(sub_notes)}]: 《{d_note['filename'][:25]}...》")
+                                        prog_bar_dist.progress(idx_d / len(sub_notes))
+                                        try:
+                                            cur_samples = distill_single_note_file(d_note["path"], max_pages=15)
+                                            if cur_samples:
+                                                total_new_samples.extend(cur_samples)
+                                                success_files += 1
+                                        except Exception as e_dist_single:
+                                            failed_files += 1
+    
+                                    prog_bar_dist.progress(1.0)
+                                    status_dist.text("✅ 全選筆記批次蒸餾完成！")
+                                    st.balloons()
+                                    st.success(f"🎉 全部分析蒸餾完成！共處理 {len(sub_notes)} 份筆記（成功 {success_files} 份，失敗 {failed_files} 份），成功提煉出 **{len(total_new_samples)} 組** 高品質 SFT 法學微調樣本！")
+                                    if total_new_samples:
+                                        with st.expander("🔍 檢視本次全部分析提煉之 SFT 樣本預覽 (前 10 組)", expanded=True):
+                                            for s_idx, s in enumerate(total_new_samples[:10], 1):
+                                                st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
+                                                st.caption(f"指令 (Instruction): {s.get('instruction')}")
+                                                st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
+                                                st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
+                                                st.divider()
+                            with c_btn_a2:
+                                if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
+                                    with st.spinner("正在同步..."):
+                                        c = sync_all_drive_notes_to_samsung_notes()
+                                        load_all_drive_notes.clear()
+                                        st.success(f"同步完成！新增/更新 {c} 份筆記。")
+                                        st.rerun()
+                        elif sel_sft_note:
+                            sel_note_idx = note_opts.index(sel_sft_note) - 1
+                            target_note = sub_notes[sel_note_idx]
+    
+                            c_btn_a1, c_btn_a2 = st.columns([2, 1])
+                            with c_btn_a1:
+                                if st.button("🚀 啟動此份雲端筆記多模態 OCR 蒸餾並寫入 SFT 微調庫", type="primary", key="btn_distill_drive_sft"):
+                                    with st.spinner(f"⚖️ 正在運用 Gemini Flash 解析《{target_note['filename']}》手寫法條、爭點肯否二說與實務判例..."):
+                                        try:
+                                            new_samples = distill_single_note_file(target_note["path"], max_pages=15)
+                                            if new_samples:
+                                                st.balloons()
+                                                st.success(f"🎉 蒸餾成功！自《{target_note['filename']}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
+                                                with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                                    for s_idx, s in enumerate(new_samples, 1):
+                                                        st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
+                                                        st.caption(f"指令 (Instruction): {s.get('instruction')}")
+                                                        st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
+                                                        st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
+                                                        st.divider()
+                                            else:
+                                                st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案內容或稍後重試。")
+                                        except Exception as de:
+                                            st.error(f"蒸餾處理失敗: {de}")
+                            with c_btn_a2:
+                                if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes_single"):
+                                    with st.spinner("正在同步..."):
+                                        c = sync_all_drive_notes_to_samsung_notes()
+                                        load_all_drive_notes.clear()
+                                        st.success(f"同步完成！新增/更新 {c} 份筆記。")
+                                        st.rerun()
+                    else:
+                        st.info("💡 目前 Google Drive 尚無筆記檔案。")
+                        if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
+                            with st.spinner("正在同步..."):
+                                c = sync_all_drive_notes_to_samsung_notes()
+                                load_all_drive_notes.clear()
+                                st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
+                                st.rerun()
+    
+            else:
+                up_file = st.file_uploader(
+                    "選擇手寫/打字筆記檔案（支援 PDF, PNG, JPG, WEBP, Word docx）：",
+                    type=["pdf", "png", "jpg", "jpeg", "webp", "docx"],
+                    key="sft_note_uploader"
+                )
+    
+                if up_file is not None:
+                    st.info(f"📄 已選擇檔案：`{up_file.name}` ({len(up_file.getvalue()) / (1024*1024):.2f} MB)")
+                    if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
+                        with st.spinner("⚖️ 正在運用 Gemini Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
+                            try:
+                                # 1. 建立獨立檔案永久典藏至社群筆記庫，並實時連動注入六法註記大典
+                                arch_res = archive_uploaded_note(
+                                    file_bytes=up_file.getvalue(),
+                                    filename=up_file.name,
+                                    subject="法學筆記",
+                                    summary=f"考生上傳之《{up_file.name}》"
+                                )
+    
+                                from ingest_user_notes_to_sft import ingest_single_uploaded_file
+                                new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
+                                if new_samples:
+                                    st.balloons()
+                                    st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動新建獨立檔案 `{arch_res.get('archive_filename', up_file.name)}` 永久典藏至社群筆記庫與六法大典！")
+                                    with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                        for s_idx, s in enumerate(new_samples, 1):
                                             st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
                                             st.caption(f"指令 (Instruction): {s.get('instruction')}")
                                             st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
                                             st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
                                             st.divider()
-                        with c_btn_a2:
-                            if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes"):
-                                with st.spinner("正在同步..."):
-                                    c = sync_all_drive_notes_to_samsung_notes()
-                                    load_all_drive_notes.clear()
-                                    st.success(f"同步完成！新增/更新 {c} 份筆記。")
-                                    st.rerun()
-                    elif sel_sft_note:
-                        sel_note_idx = note_opts.index(sel_sft_note) - 1
-                        target_note = sub_notes[sel_note_idx]
-
-                        c_btn_a1, c_btn_a2 = st.columns([2, 1])
-                        with c_btn_a1:
-                            if st.button("🚀 啟動此份雲端筆記多模態 OCR 蒸餾並寫入 SFT 微調庫", type="primary", key="btn_distill_drive_sft"):
-                                with st.spinner(f"⚖️ 正在運用 Gemini Flash 解析《{target_note['filename']}》手寫法條、爭點肯否二說與實務判例..."):
-                                    try:
-                                        new_samples = distill_single_note_file(target_note["path"], max_pages=15)
-                                        if new_samples:
-                                            st.balloons()
-                                            st.success(f"🎉 蒸餾成功！自《{target_note['filename']}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
-                                            with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
-                                                for s_idx, s in enumerate(new_samples, 1):
-                                                    st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
-                                                    st.caption(f"指令 (Instruction): {s.get('instruction')}")
-                                                    st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
-                                                    st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
-                                                    st.divider()
-                                        else:
-                                            st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案內容或稍後重試。")
-                                    except Exception as de:
-                                        st.error(f"蒸餾處理失敗: {de}")
-                        with c_btn_a2:
-                            if st.button("🔄 同步 Google Drive 最新筆記", key="btn_sync_sft_notes_single"):
-                                with st.spinner("正在同步..."):
-                                    c = sync_all_drive_notes_to_samsung_notes()
-                                    load_all_drive_notes.clear()
-                                    st.success(f"同步完成！新增/更新 {c} 份筆記。")
-                                    st.rerun()
-                else:
-                    st.info("💡 目前 Google Drive 尚無筆記檔案。")
-                    if st.button("🔄 一鍵自 Google Drive「資源」目錄同步所有法學筆記"):
-                        with st.spinner("正在同步..."):
-                            c = sync_all_drive_notes_to_samsung_notes()
-                            load_all_drive_notes.clear()
-                            st.success(f"同步完成！共匯入 {c} 份筆記檔案。")
-                            st.rerun()
-
-        else:
-            up_file = st.file_uploader(
-                "選擇手寫/打字筆記檔案（支援 PDF, PNG, JPG, WEBP, Word docx）：",
-                type=["pdf", "png", "jpg", "jpeg", "webp", "docx"],
-                key="sft_note_uploader"
-            )
-
-            if up_file is not None:
-                st.info(f"📄 已選擇檔案：`{up_file.name}` ({len(up_file.getvalue()) / (1024*1024):.2f} MB)")
-                if st.button("🚀 啟動多模態 OCR 辨識並蒸餾寫入 SFT 微調庫", type="primary", key="btn_distill_sft"):
-                    with st.spinner("⚖️ 正在運用 Gemini Flash 解析手寫法條、爭點肯否二說與實務判例，並轉化為標準 SFT 資料..."):
-                        try:
-                            # 1. 建立獨立檔案永久典藏至社群筆記庫，並實時連動注入六法註記大典
-                            arch_res = archive_uploaded_note(
-                                file_bytes=up_file.getvalue(),
-                                filename=up_file.name,
-                                subject="法學筆記",
-                                summary=f"考生上傳之《{up_file.name}》"
-                            )
-
-                            from ingest_user_notes_to_sft import ingest_single_uploaded_file
-                            new_samples = ingest_single_uploaded_file(up_file.getvalue(), up_file.name)
-                            if new_samples:
-                                st.balloons()
-                                st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動新建獨立檔案 `{arch_res.get('archive_filename', up_file.name)}` 永久典藏至社群筆記庫與六法大典！")
-                                with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
-                                    for s_idx, s in enumerate(new_samples, 1):
-                                        st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
-                                        st.caption(f"指令 (Instruction): {s.get('instruction')}")
-                                        st.markdown(f"**題目情境 (Input)**：\n{s.get('input')}")
-                                        st.markdown(f"**示範解答 (Output)**：\n{s.get('output')}")
-                                        st.divider()
-                            else:
-                                st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。但該檔案已成功新建獨立檔案典藏至社群庫！")
-                        except Exception as de:
-                            st.error(f"蒸餾處理失敗: {de}")
-
-            # 社群考生共享講義與讀書筆記寶庫
-            st.divider()
-            comm_notes_all = load_community_notes()
-            st.markdown(f"#### 👥 全民共享講義筆記寶庫（已永久典藏 {len(comm_notes_all)} 份社群筆記）")
-            st.caption("所有考生手動上傳之手寫/PDF筆記均新建獨立檔案永久保存，供後人研讀並實時注入六法條文註記：")
-            if comm_notes_all:
-                for c_note in comm_notes_all:
-                    c_n_title = c_note.get("filename", "法學筆記")
-                    c_n_sub = c_note.get("subject", "法學")
-                    c_n_uploader = c_note.get("uploader", "社群考生")
-                    c_n_time = c_note.get("uploaded_at", "")
-                    c_n_path = c_note.get("file_path", "")
-                    c_n_size = c_note.get("size_kb", 0)
-
-                    with st.expander(f"📄 【{c_n_sub}】《{c_n_title}》 ｜ 👤 {c_n_uploader} ｜ 📅 {c_n_time} ({c_n_size} KB)"):
-                        st.caption(f"檔案路徑：`{c_note.get('relative_path')}`")
-                        if not is_developer():
-                            st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
-                        elif c_n_path and Path(c_n_path).exists():
-                            try:
-                                with open(c_n_path, "rb") as bf:
-                                    st.download_button(
-                                        label=f"💾 下載此份筆記檔案 ({c_n_size} KB)",
-                                        data=bf.read(),
-                                        file_name=c_n_title,
-                                        key=f"dl_cn_{c_note.get('note_id')}"
-                                    )
-                            except Exception:
-                                pass
-            else:
-                st.info("💡 目前社群筆記寶庫中暫無外部上傳檔案。您在此上傳的任何講義或手寫筆記，系統都將建立獨立檔案典藏入庫！")
-
-    with sft_tab2:
-        st.subheader("📚 全考科整合：依體系合併為單一完整 PDF 與全科文字自動提取")
-        st.write("直接將一整個法學考科（如身分法 27 份、民總 21 份、刑分 16 份、商事法 20 份、保險法 17 份等）所有零散筆記依據法學章節體系邏輯順序，拼接合併為【單一完整 PDF】方便平日研讀，或啟動【全科文字自動提取】彙編為 Markdown 大典並直接批次入庫！")
-
-        if not is_developer():
-            st.warning("🔒 【全考科整合筆記受著作權保護】個人法學筆記合併與全科文字自動提取僅供開發者本人授權調閱。一般訪客請於左側邊欄輸入開發者金鑰解鎖。")
-        else:
-            from ingest_user_notes_to_sft import (
-                get_google_drive_notes_list, merge_subject_pdfs, extract_subject_text_corpus, get_chapter_sort_key
-            )
-
-            all_notes = get_google_drive_notes_list()
-            sub_dict = {}
-            for n in all_notes:
-                if "全科整合" not in n["filename"] and "全科體系" not in n["filename"] and not n["filename"].endswith("_全科筆記文字總彙編.md"):
-                    sub_dict.setdefault(n["subject"], []).append(n)
-
-            if sub_dict:
-                all_sub_count = sum(len(nlist) for nlist in sub_dict.values())
-                CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法"]
-                CRIM_GROUP = ["刑總", "刑分", "刑法"]
-                PUB_GROUP = ["憲法", "行政法"]
-                COMM_GROUP = ["商事法", "保險法"]
-                IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
-
-                civil_notes = [n for n in all_notes if n["subject"] in CIVIL_GROUP]
-                crim_notes = [n for n in all_notes if n["subject"] in CRIM_GROUP]
-                pub_notes = [n for n in all_notes if n["subject"] in PUB_GROUP]
-                comm_notes = [n for n in all_notes if n["subject"] in COMM_GROUP]
-                ip_notes = [n for n in all_notes if n["subject"] in IP_GROUP]
-
-                all_choice_label = f"🌟 【全部考科】全部分析 (全庫共 {all_sub_count} 份筆記 / 講義)"
-                civil_choice_label = f"🌟 【民法全輯】(總則/債總/債各/物權/身分 共 {len(civil_notes)} 份)"
-                crim_choice_label = f"🌟 【刑法全輯】(刑總/刑分 共 {len(crim_notes)} 份)"
-                pub_choice_label = f"🌟 【公法全輯】(憲法/行政法 共 {len(pub_notes)} 份)"
-                comm_choice_label = f"🌟 【商事法全輯】(公司/證交/保險 共 {len(comm_notes)} 份)"
-                ip_choice_label = f"🌟 【智財全輯】(專利/商標/著作權 共 {len(ip_notes)} 份)"
-
-                sub_options = [
-                    all_choice_label,
-                    civil_choice_label,
-                    crim_choice_label,
-                    pub_choice_label,
-                    comm_choice_label,
-                    ip_choice_label
-                ] + [
-                    f"【{s}】(共 {len(nlist)} 份筆記 / 講義)"
-                    for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))
-                ]
-                sel_sub_label = st.selectbox("請選擇欲處理的法學考科：", sub_options, key="merge_sub_select")
-                if sel_sub_label == all_choice_label:
-                    sel_subject = "全部考科"
-                    sub_notes = [n for nlist in sub_dict.values() for n in nlist]
-                elif sel_sub_label == civil_choice_label:
-                    sel_subject = "民法全輯"
-                    sub_notes = civil_notes
-                elif sel_sub_label == crim_choice_label:
-                    sel_subject = "刑法全輯"
-                    sub_notes = crim_notes
-                elif sel_sub_label == pub_choice_label:
-                    sel_subject = "公法全輯"
-                    sub_notes = pub_notes
-                elif sel_sub_label == comm_choice_label:
-                    sel_subject = "商事法全輯"
-                    sub_notes = comm_notes
-                elif sel_sub_label == ip_choice_label:
-                    sel_subject = "智財全輯"
-                    sub_notes = ip_notes
-                else:
-                    sel_subject = sel_sub_label.split("【")[1].split("】")[0]
-                    sub_notes = sub_dict[sel_subject]
-
-                with st.expander(f"📋 展開檢視【{sel_subject}】所收錄的 {len(sub_notes)} 份章節檔案清單（已依體系順序排列）", expanded=False):
-                    sorted_sub_notes = sorted(sub_notes, key=lambda x: (x.get("subject", ""), get_chapter_sort_key(x["path"])))
-                    for s_idx, sn in enumerate(sorted_sub_notes, 1):
-                        badge = "⚡ 已快取" if sn["is_cached"] else "📄 待提取"
-                        dist_badge = f" ｜ 🎯 已提煉 {sn['distilled_count']} 組 SFT" if sn["distilled_count"] > 0 else ""
-                        st.write(f"{s_idx}. **《{sn['filename']}》** (`{sn['size_mb']:.2f} MB`) ｜ {badge}{dist_badge}")
-
+                                else:
+                                    st.warning("未能從此檔案中辨識出足夠的法學爭點，請確認檔案清晰度或是否包含法律筆記內容。但該檔案已成功新建獨立檔案典藏至社群庫！")
+                            except Exception as de:
+                                st.error(f"蒸餾處理失敗: {de}")
+    
+                # 社群考生共享講義與讀書筆記寶庫
                 st.divider()
-
-                c_op1, c_op2 = st.columns(2)
-
-                with c_op1:
-                    st.markdown(f"### 📑 方案一：合併為《{sel_subject}》單一完整 PDF")
-                    st.caption(f"自動依據章節法理順序（如親屬總論 -> 婚約 -> 婚姻...至扣減權）高速拼接本考科所有 {len(sub_notes)} 份 PDF，生成一個完整可離線劃記閱讀的超大 PDF。")
-                    if st.button(f"🚀 開始合併【{sel_subject}】全科為單一 PDF", type="primary", key="btn_run_merge_pdf"):
-                        with st.spinner(f"正在使用高精度 C++ 引擎依章節順序拼接【{sel_subject}】各章頁面..."):
-                            try:
-                                merge_res = merge_subject_pdfs(sel_subject)
-                                st.session_state[f"merged_pdf_{sel_subject}"] = merge_res
-                                st.balloons()
-                                st.success(f"🎉 合併成功！已生成《{merge_res['output_path'].name}》")
-                            except Exception as me:
-                                st.error(f"合併失敗: {me}")
-
-                    if f"merged_pdf_{sel_subject}" in st.session_state:
-                        m_info = st.session_state[f"merged_pdf_{sel_subject}"]
-                        st.info(f"📄 總頁數：**{m_info['total_pages']} 頁** ｜ 檔案大小：**{m_info['file_size_mb']:.2f} MB**")
-                        if not is_developer():
-                            st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
-                        elif m_info["output_path"].exists():
-                            with open(m_info["output_path"], "rb") as f_pdf:
-                                st.download_button(
-                                    label=f"⬇️ 立即下載【{sel_subject}】全科整合手寫體系總筆記 PDF",
-                                    data=f_pdf.read(),
-                                    file_name=m_info["output_path"].name,
-                                    mime="application/pdf",
-                                    key="btn_dl_merged_pdf"
-                                )
-
-                with c_op2:
-                    st.markdown(f"### ⚡ 方案二：全科自動文字提取與 OCR 彙編")
-                    st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini Flash 辨識並彙整為單一 Markdown 筆記大典。")
-                    ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
-
-                    if st.button(f"⚡ 開始全自動文字提取【{sel_subject}】全科筆記", type="primary", key="btn_run_extract_corpus"):
-                        prog_bar = st.progress(0.0)
-                        status_text = st.empty()
-
-                        def ui_progress(cur, total, fname):
-                            prog_bar.progress(cur / total)
-                            status_text.text(f"正在提取 [{cur}/{total}]: 《{fname[:25]}...》")
-
-                        with st.spinner(f"正在遍歷與提取【{sel_subject}】全考科文字..."):
-                            try:
-                                corpus_res = extract_subject_text_corpus(
-                                    sel_subject,
-                                    auto_ocr=ocr_flag,
-                                    progress_callback=ui_progress
-                                )
-                                st.session_state[f"corpus_{sel_subject}"] = corpus_res
-                                prog_bar.progress(1.0)
-                                status_text.text("全科文字提取完成！")
-                                st.balloons()
-                                st.success(f"🎉 提取成功！全科彙整共提取 **{corpus_res['total_chars']:,} 字元**（共 {corpus_res['total_notes']} 份檔案）。")
-                            except Exception as ce:
-                                st.error(f"文字提取失敗: {ce}")
-
-                    if f"corpus_{sel_subject}" in st.session_state:
-                        c_info = st.session_state[f"corpus_{sel_subject}"]
-                        st.info(f"📝 總文字量：**{c_info['total_chars']:,} 字元** ｜ 收錄章節：**{c_info['total_notes']} 章**")
-                        if not is_developer():
-                            st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
-                        else:
-                            st.download_button(
-                                label=f"⬇️ 立即下載【{sel_subject}】全科筆記文字總彙編 Markdown",
-                                data=c_info["full_text"].encode("utf-8"),
-                                file_name=f"{sel_subject}_全科筆記文字總彙編.md",
-                                mime="text/markdown",
-                                key="btn_dl_corpus_md"
-                            )
-                            with st.expander(f"🔍 檢視【{sel_subject}】全科文字彙總預覽 (前 2,000 字)", expanded=False):
-                                st.markdown(c_info["full_text"][:2000] + "\n\n*(篇幅過長，已截斷預覽，完整全文請點擊上方按鈕下載)*")
+                comm_notes_all = load_community_notes()
+                st.markdown(f"#### 👥 全民共享講義筆記寶庫（已永久典藏 {len(comm_notes_all)} 份社群筆記）")
+                st.caption("所有考生手動上傳之手寫/PDF筆記均新建獨立檔案永久保存，供後人研讀並實時注入六法條文註記：")
+                if comm_notes_all:
+                    for c_note in comm_notes_all:
+                        c_n_title = c_note.get("filename", "法學筆記")
+                        c_n_sub = c_note.get("subject", "法學")
+                        c_n_uploader = c_note.get("uploader", "社群考生")
+                        c_n_time = c_note.get("uploaded_at", "")
+                        c_n_path = c_note.get("file_path", "")
+                        c_n_size = c_note.get("size_kb", 0)
+    
+                        with st.expander(f"📄 【{c_n_sub}】《{c_n_title}》 ｜ 👤 {c_n_uploader} ｜ 📅 {c_n_time} ({c_n_size} KB)"):
+                            st.caption(f"檔案路徑：`{c_note.get('relative_path')}`")
+                            if not is_developer():
+                                st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                            elif c_n_path and Path(c_n_path).exists():
+                                try:
+                                    with open(c_n_path, "rb") as bf:
+                                        st.download_button(
+                                            label=f"💾 下載此份筆記檔案 ({c_n_size} KB)",
+                                            data=bf.read(),
+                                            file_name=c_n_title,
+                                            key=f"dl_cn_{c_note.get('note_id')}"
+                                        )
+                                except Exception:
+                                    pass
+                else:
+                    st.info("💡 目前社群筆記寶庫中暫無外部上傳檔案。您在此上傳的任何講義或手寫筆記，系統都將建立獨立檔案典藏入庫！")
+    
+        with sft_tab2:
+            st.subheader("📚 全考科整合：依體系合併為單一完整 PDF 與全科文字自動提取")
+            st.write("直接將一整個法學考科（如身分法 27 份、民總 21 份、刑分 16 份、商事法 20 份、保險法 17 份等）所有零散筆記依據法學章節體系邏輯順序，拼接合併為【單一完整 PDF】方便平日研讀，或啟動【全科文字自動提取】彙編為 Markdown 大典並直接批次入庫！")
+    
+            if not is_developer():
+                st.warning("🔒 【全考科整合筆記受著作權保護】個人法學筆記合併與全科文字自動提取僅供開發者本人授權調閱。一般訪客請於左側邊欄輸入開發者金鑰解鎖。")
             else:
-                st.info("目前尚未偵測到任何法學筆記檔案。")
-
-    with sft_tab3:
-        if not is_developer():
-            st.warning("🔒 【手寫筆記大庫受著作權保護】個人 Samsung Notes 手寫法學筆記檔案僅供開發者授權檢視。請於側邊欄輸入開發者金鑰解鎖。")
-        else:
-            from ingest_user_notes_to_sft import get_google_drive_notes_list
-            all_dn = get_google_drive_notes_list()
-            st.subheader(f"📂 SamsungNotes 已永久歸檔之個人法學筆記 ({len(all_dn)} 份)")
-            if all_dn:
-                st.caption(f"目前已於雲端硬碟永久歸檔 **{len(all_dn)} 份** 手寫與打字法學筆記：")
+                from ingest_user_notes_to_sft import (
+                    get_google_drive_notes_list, merge_subject_pdfs, extract_subject_text_corpus, get_chapter_sort_key
+                )
+    
+                all_notes = get_google_drive_notes_list()
                 sub_dict = {}
-                for n in all_dn:
-                    sub_dict.setdefault(n["subject"], []).append(n)
-
-                for s_name, n_list in sub_dict.items():
-                    with st.expander(f"📁 【{s_name}】共 {len(n_list)} 份筆記檔案", expanded=False):
-                        for nf in n_list:
-                            status_str = " | ⚡ 已快取" if nf["is_cached"] else ""
-                            dist_str = f" | 🎯 已提煉 {nf['distilled_count']} 組 SFT" if nf["distilled_count"] > 0 else ""
-                            st.write(f"- 📄 **《{nf['filename']}》** ｜ 大小：`{nf['size_mb']:.2f} MB`{status_str}{dist_str}")
+                for n in all_notes:
+                    if "全科整合" not in n["filename"] and "全科體系" not in n["filename"] and not n["filename"].endswith("_全科筆記文字總彙編.md"):
+                        sub_dict.setdefault(n["subject"], []).append(n)
+    
+                if sub_dict:
+                    all_sub_count = sum(len(nlist) for nlist in sub_dict.values())
+                    CIVIL_GROUP = ["民總", "債總", "債各", "物權", "身分法", "民法"]
+                    CRIM_GROUP = ["刑總", "刑分", "刑法"]
+                    PUB_GROUP = ["憲法", "行政法"]
+                    COMM_GROUP = ["商事法", "保險法"]
+                    IP_GROUP = ["專利法", "商標法", "著作權法", "智慧財產權法"]
+    
+                    civil_notes = [n for n in all_notes if n["subject"] in CIVIL_GROUP]
+                    crim_notes = [n for n in all_notes if n["subject"] in CRIM_GROUP]
+                    pub_notes = [n for n in all_notes if n["subject"] in PUB_GROUP]
+                    comm_notes = [n for n in all_notes if n["subject"] in COMM_GROUP]
+                    ip_notes = [n for n in all_notes if n["subject"] in IP_GROUP]
+    
+                    all_choice_label = f"🌟 【全部考科】全部分析 (全庫共 {all_sub_count} 份筆記 / 講義)"
+                    civil_choice_label = f"🌟 【民法全輯】(總則/債總/債各/物權/身分 共 {len(civil_notes)} 份)"
+                    crim_choice_label = f"🌟 【刑法全輯】(刑總/刑分 共 {len(crim_notes)} 份)"
+                    pub_choice_label = f"🌟 【公法全輯】(憲法/行政法 共 {len(pub_notes)} 份)"
+                    comm_choice_label = f"🌟 【商事法全輯】(公司/證交/保險 共 {len(comm_notes)} 份)"
+                    ip_choice_label = f"🌟 【智財全輯】(專利/商標/著作權 共 {len(ip_notes)} 份)"
+    
+                    sub_options = [
+                        all_choice_label,
+                        civil_choice_label,
+                        crim_choice_label,
+                        pub_choice_label,
+                        comm_choice_label,
+                        ip_choice_label
+                    ] + [
+                        f"【{s}】(共 {len(nlist)} 份筆記 / 講義)"
+                        for s, nlist in sorted(sub_dict.items(), key=lambda x: -len(x[1]))
+                    ]
+                    sel_sub_label = st.selectbox("請選擇欲處理的法學考科：", sub_options, key="merge_sub_select")
+                    if sel_sub_label == all_choice_label:
+                        sel_subject = "全部考科"
+                        sub_notes = [n for nlist in sub_dict.values() for n in nlist]
+                    elif sel_sub_label == civil_choice_label:
+                        sel_subject = "民法全輯"
+                        sub_notes = civil_notes
+                    elif sel_sub_label == crim_choice_label:
+                        sel_subject = "刑法全輯"
+                        sub_notes = crim_notes
+                    elif sel_sub_label == pub_choice_label:
+                        sel_subject = "公法全輯"
+                        sub_notes = pub_notes
+                    elif sel_sub_label == comm_choice_label:
+                        sel_subject = "商事法全輯"
+                        sub_notes = comm_notes
+                    elif sel_sub_label == ip_choice_label:
+                        sel_subject = "智財全輯"
+                        sub_notes = ip_notes
+                    else:
+                        sel_subject = sel_sub_label.split("【")[1].split("】")[0]
+                        sub_notes = sub_dict[sel_subject]
+    
+                    with st.expander(f"📋 展開檢視【{sel_subject}】所收錄的 {len(sub_notes)} 份章節檔案清單（已依體系順序排列）", expanded=False):
+                        sorted_sub_notes = sorted(sub_notes, key=lambda x: (x.get("subject", ""), get_chapter_sort_key(x["path"])))
+                        for s_idx, sn in enumerate(sorted_sub_notes, 1):
+                            badge = "⚡ 已快取" if sn["is_cached"] else "📄 待提取"
+                            dist_badge = f" ｜ 🎯 已提煉 {sn['distilled_count']} 組 SFT" if sn["distilled_count"] > 0 else ""
+                            st.write(f"{s_idx}. **《{sn['filename']}》** (`{sn['size_mb']:.2f} MB`) ｜ {badge}{dist_badge}")
+    
+                    st.divider()
+    
+                    c_op1, c_op2 = st.columns(2)
+    
+                    with c_op1:
+                        st.markdown(f"### 📑 方案一：合併為《{sel_subject}》單一完整 PDF")
+                        st.caption(f"自動依據章節法理順序（如親屬總論 -> 婚約 -> 婚姻...至扣減權）高速拼接本考科所有 {len(sub_notes)} 份 PDF，生成一個完整可離線劃記閱讀的超大 PDF。")
+                        if st.button(f"🚀 開始合併【{sel_subject}】全科為單一 PDF", type="primary", key="btn_run_merge_pdf"):
+                            with st.spinner(f"正在使用高精度 C++ 引擎依章節順序拼接【{sel_subject}】各章頁面..."):
+                                try:
+                                    merge_res = merge_subject_pdfs(sel_subject)
+                                    st.session_state[f"merged_pdf_{sel_subject}"] = merge_res
+                                    st.balloons()
+                                    st.success(f"🎉 合併成功！已生成《{merge_res['output_path'].name}》")
+                                except Exception as me:
+                                    st.error(f"合併失敗: {me}")
+    
+                        if f"merged_pdf_{sel_subject}" in st.session_state:
+                            m_info = st.session_state[f"merged_pdf_{sel_subject}"]
+                            st.info(f"📄 總頁數：**{m_info['total_pages']} 頁** ｜ 檔案大小：**{m_info['file_size_mb']:.2f} MB**")
+                            if not is_developer():
+                                st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                            elif m_info["output_path"].exists():
+                                with open(m_info["output_path"], "rb") as f_pdf:
+                                    st.download_button(
+                                        label=f"⬇️ 立即下載【{sel_subject}】全科整合手寫體系總筆記 PDF",
+                                        data=f_pdf.read(),
+                                        file_name=m_info["output_path"].name,
+                                        mime="application/pdf",
+                                        key="btn_dl_merged_pdf"
+                                    )
+    
+                    with c_op2:
+                        st.markdown(f"### ⚡ 方案二：全科自動文字提取與 OCR 彙編")
+                        st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini Flash 辨識並彙整為單一 Markdown 筆記大典。")
+                        ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
+    
+                        if st.button(f"⚡ 開始全自動文字提取【{sel_subject}】全科筆記", type="primary", key="btn_run_extract_corpus"):
+                            prog_bar = st.progress(0.0)
+                            status_text = st.empty()
+    
+                            def ui_progress(cur, total, fname):
+                                prog_bar.progress(cur / total)
+                                status_text.text(f"正在提取 [{cur}/{total}]: 《{fname[:25]}...》")
+    
+                            with st.spinner(f"正在遍歷與提取【{sel_subject}】全考科文字..."):
+                                try:
+                                    corpus_res = extract_subject_text_corpus(
+                                        sel_subject,
+                                        auto_ocr=ocr_flag,
+                                        progress_callback=ui_progress
+                                    )
+                                    st.session_state[f"corpus_{sel_subject}"] = corpus_res
+                                    prog_bar.progress(1.0)
+                                    status_text.text("全科文字提取完成！")
+                                    st.balloons()
+                                    st.success(f"🎉 提取成功！全科彙整共提取 **{corpus_res['total_chars']:,} 字元**（共 {corpus_res['total_notes']} 份檔案）。")
+                                except Exception as ce:
+                                    st.error(f"文字提取失敗: {ce}")
+    
+                        if f"corpus_{sel_subject}" in st.session_state:
+                            c_info = st.session_state[f"corpus_{sel_subject}"]
+                            st.info(f"📝 總文字量：**{c_info['total_chars']:,} 字元** ｜ 收錄章節：**{c_info['total_notes']} 章**")
+                            if not is_developer():
+                                st.warning("🔒 基於著作權保護，未獲授權僅能調閱法規與公開判決，筆記與教材請輸入開發者金鑰解鎖。")
+                            else:
+                                st.download_button(
+                                    label=f"⬇️ 立即下載【{sel_subject}】全科筆記文字總彙編 Markdown",
+                                    data=c_info["full_text"].encode("utf-8"),
+                                    file_name=f"{sel_subject}_全科筆記文字總彙編.md",
+                                    mime="text/markdown",
+                                    key="btn_dl_corpus_md"
+                                )
+                                with st.expander(f"🔍 檢視【{sel_subject}】全科文字彙總預覽 (前 2,000 字)", expanded=False):
+                                    st.markdown(c_info["full_text"][:2000] + "\n\n*(篇幅過長，已截斷預覽，完整全文請點擊上方按鈕下載)*")
+                else:
+                    st.info("目前尚未偵測到任何法學筆記檔案。")
+    
+        with sft_tab3:
+            if not is_developer():
+                st.warning("🔒 【手寫筆記大庫受著作權保護】個人 Samsung Notes 手寫法學筆記檔案僅供開發者授權檢視。請於側邊欄輸入開發者金鑰解鎖。")
             else:
-                st.info("目前尚未有手寫筆記檔案。")
+                from ingest_user_notes_to_sft import get_google_drive_notes_list
+                all_dn = get_google_drive_notes_list()
+                st.subheader(f"📂 SamsungNotes 已永久歸檔之個人法學筆記 ({len(all_dn)} 份)")
+                if all_dn:
+                    st.caption(f"目前已於雲端硬碟永久歸檔 **{len(all_dn)} 份** 手寫與打字法學筆記：")
+                    sub_dict = {}
+                    for n in all_dn:
+                        sub_dict.setdefault(n["subject"], []).append(n)
+    
+                    for s_name, n_list in sub_dict.items():
+                        with st.expander(f"📁 【{s_name}】共 {len(n_list)} 份筆記檔案", expanded=False):
+                            for nf in n_list:
+                                status_str = " | ⚡ 已快取" if nf["is_cached"] else ""
+                                dist_str = f" | 🎯 已提煉 {nf['distilled_count']} 組 SFT" if nf["distilled_count"] > 0 else ""
+                                st.write(f"- 📄 **《{nf['filename']}》** ｜ 大小：`{nf['size_mb']:.2f} MB`{status_str}{dist_str}")
+                else:
+                    st.info("目前尚未有手寫筆記檔案。")
+    
+                # 開發者檔案庫總管快捷展開入口
+                st.markdown("---")
+                c_dev_hub1, c_dev_hub2 = st.columns([2.5, 1.5])
+                with c_dev_hub1:
+                    st.markdown("#### 🛠️ 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名)")
+                    st.caption("您已獲開發者授權，可直接於下方展開全功能檔案總管：支援在線 PDF / 圖片預覽閱讀、考科體系組織與依據內文爭點一鍵 AI 智慧重命名。")
+                with c_dev_hub2:
+                    toggle_dev_hub = st.toggle("📂 展開檔案庫總管與重命名面板", value=False, key="toggle_sft_dev_hub")
+    
+                if toggle_dev_hub:
+                    from developer_file_manager import render_developer_file_manager
+                    render_developer_file_manager()
+    
+                st.divider()
+                st.subheader("📝 目前個人筆記 SFT 庫提煉精華 (law_exam_user_notes_sft.jsonl)")
+                user_sft_file = Path(DATA_DIR) / "training_data" / "law_exam_user_notes_sft.jsonl"
+                if user_sft_file.exists():
+                    try:
+                        user_samples = []
+                        with open(user_sft_file, "r", encoding="utf-8") as f_us:
+                            for line in f_us:
+                                l = line.strip()
+                                if l:
+                                    user_samples.append(json.loads(l))
+                        st.caption(f"已提煉 **{len(user_samples)} 組** 手寫筆記專屬微調題解：")
+                        for u_idx, us in enumerate(user_samples[:10], 1):
+                            with st.expander(f"📌 【筆記題解 {u_idx}】{us.get('input', '')[:40]}..."):
+                                st.caption(f"**指令**：{us.get('instruction')}")
+                                st.write(f"**題目**：\n{us.get('input')}")
+                                st.info(f"**解答**：\n{us.get('output')}")
+                    except Exception as ue:
+                        st.error(f"讀取筆記微調資料失敗: {ue}")
+                else:
+                    st.info("目前尚未生成個人筆記 SFT 檔案。")
+    
+            with sft_tab4:
+                st.subheader("📊 SFT 微調資料庫總覽與規格")
+    
+                ver_file = Path(DATA_DIR) / "training_data" / "law_exam_verified_sft.jsonl"
+                mas_file = Path(DATA_DIR) / "training_data" / "law_exam_master_sft_unified.jsonl"
+                bal_file = Path(DATA_DIR) / "training_data" / "law_exam_balanced_weighted_sft.jsonl"
+    
+                c1, c2, c3 = st.columns(3)
+                c1.metric("純核實核心庫 (100% 真跡)", f"{5082:,} 筆" if ver_file.exists() else "建構中")
+                c2.metric("混合加權平衡庫 (推薦)", f"{118650:,} 筆" if bal_file.exists() else "已精簡 (節省空間)")
+                c3.metric("全量百萬統一大庫", f"{1005082:,} 筆" if mas_file.exists() else "已精簡 (節省空間)")
+    
+                st.markdown("""
+                #### 🛡️ Hugging Face Arrow 綱要相容保證：
+                每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕訓練資料載入與分詞之型別異常：
+                - `id`: 樣本唯一識別碼
+                - `source_type`: 資料來源識別（手寫筆記 / 真實判決 / 憲法法庭 / 名師講義 / 模擬題庫 / 合成推理底模）
+                - `instruction`: 任務系統指令（IRAC 申論、一試單選、評分診斷）
+                - `input`: 案例情境或題目題幹
+                - `output`: 上位卷完整解答或標準試題解析
+    
+                #### ⚖️ 資料庫組成比例與實證透明度 (Synthesis Ratio Disclosure)：
+                - **純核實核心庫 (5,082 筆)**：100% 取自真實實質裁判、憲法法庭判決、歷年司律真題及考生個人手寫筆記，無合成樣本。
+                - **混合加權平衡庫 (118,650 筆)**：
+                  - **78,650 筆 (66.3%)**：真實高價值核心資料科學過採樣（手寫筆記 500x、真題 50x、名師學說 20x、裁判憲法 10x）。
+                  - **40,000 筆 (33.7%)**：司法論證結構模板 (`synthesized_judicial_reasoning`)，作為三段論法語法底模以避免顯存過擬合。
+                - **全量百萬統一大庫 (1,005,082 筆)**：5,082 筆核實真跡 (0.5%) + 1,000,000 筆司法推理語法模板基準庫 (99.5%)。非百萬篇真實判決，使用者應依 `source_type` 欄位區隔真實裁判（`verified_*`）與模板（`synthetic_*`）。
+                - **標籤語意說明**：`source_type` 欄位以 `verified_` 前綴標記，係指資料來自非合成之真實政府裁判或考題採集管道（相對於模板生成資料），非代表每筆法學論述經由國家考試閱卷委員逐字人工法學公證。
+    
+                #### 🔄 兩種「續訓」技術模式之嚴謹區別：
+                1. **同環境 Checkpoint 斷點續訓 (In-Session Resumption)**：
+                   - 透過 `RESUME_FROM_CHECKPOINT=True`；
+                   - **完整恢復**：模型權重 + AdamW 優化器狀態矩陣 + 學習率排程步數 + 亂數種子，無損接續前次中斷點。
+                2. **跨 Session LoRA 熱啟動微調 (Cross-Session Continual Warm Start)**：
+                   - 透過 `EXISTING_LORA_PATH` 指定已導出之 LoRA 目錄或 Zip 檔；
+                   - **僅繼承權重**：優化器與學習率會重新初始化，展開第二階段增量遷移微調。
+    
+                #### 📜 資料性質與著作權遵循界限 (Legal & Copyright Boundaries)：
+                - **公開公務資訊 (公共領域)**：實務裁判書、憲法裁判、公報、法規命令及考選部公務真題，依《著作權法》第 9 條第 1 項規定依法不得為著作權之標的，屬開放公務資訊。
+                - **私人研析與學術文獻**：個人手寫筆記為考生著作，名師講義學說為著作人版權；依《著作權法》第 52 條及第 65 條，合理使用（Fair Use）之成立須視具體利用之目的、性質、所利用之質與量及其對潛在市場之影響個案審酌，本專案聲明僅為內部工程用途與限制提示，非授權判定，亦不具法律豁免效力；未獲權利人授權嚴禁將受保護教材進行公開傳輸、發布或商業營利。
+                - **用途與免責聲明**：本資料集與微調模型純屬內部學術研究與個人自律解題訓練，使用者應自負資料來源之合法性責任；模型產生之推論亦不得取代合格律師之正式法律諮詢。
+    
+                #### 🚀 Google Colab / Kaggle 雲端微調執行指南：
+                1. **Colab 訓練**：開啟專案目錄下 `train_colab.ipynb`，直接掛載 Google Drive 讀取資料集；
+                2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，支援自訂/官方平衡庫（具備全檔串流校驗與 SHA-256 審計）或推薦使用 Private Dataset 本地掛載；
+                3. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
+                """)
+    
+    # ----------------- 模式: 裁判大庫擴充 (入庫/刪原檔) -----------------
 
-            # 開發者檔案庫總管快捷展開入口
-            st.markdown("---")
-            c_dev_hub1, c_dev_hub2 = st.columns([2.5, 1.5])
-            with c_dev_hub1:
-                st.markdown("#### 🛠️ 開發者檔案庫總管 (在線檢視・體系組織・依內容智慧重命名)")
-                st.caption("您已獲開發者授權，可直接於下方展開全功能檔案總管：支援在線 PDF / 圖片預覽閱讀、考科體系組織與依據內文爭點一鍵 AI 智慧重命名。")
-            with c_dev_hub2:
-                toggle_dev_hub = st.toggle("📂 展開檔案庫總管與重命名面板", value=False, key="toggle_sft_dev_hub")
-
-            if toggle_dev_hub:
-                from developer_file_manager import render_developer_file_manager
-                render_developer_file_manager()
-
-            st.divider()
-            st.subheader("📝 目前個人筆記 SFT 庫提煉精華 (law_exam_user_notes_sft.jsonl)")
-            user_sft_file = Path(DATA_DIR) / "training_data" / "law_exam_user_notes_sft.jsonl"
-            if user_sft_file.exists():
-                try:
-                    user_samples = []
-                    with open(user_sft_file, "r", encoding="utf-8") as f_us:
-                        for line in f_us:
-                            l = line.strip()
-                            if l:
-                                user_samples.append(json.loads(l))
-                    st.caption(f"已提煉 **{len(user_samples)} 組** 手寫筆記專屬微調題解：")
-                    for u_idx, us in enumerate(user_samples[:10], 1):
-                        with st.expander(f"📌 【筆記題解 {u_idx}】{us.get('input', '')[:40]}..."):
-                            st.caption(f"**指令**：{us.get('instruction')}")
-                            st.write(f"**題目**：\n{us.get('input')}")
-                            st.info(f"**解答**：\n{us.get('output')}")
-                except Exception as ue:
-                    st.error(f"讀取筆記微調資料失敗: {ue}")
-            else:
-                st.info("目前尚未生成個人筆記 SFT 檔案。")
-
-        with sft_tab4:
-            st.subheader("📊 SFT 微調資料庫總覽與規格")
-
-            ver_file = Path(DATA_DIR) / "training_data" / "law_exam_verified_sft.jsonl"
-            mas_file = Path(DATA_DIR) / "training_data" / "law_exam_master_sft_unified.jsonl"
-            bal_file = Path(DATA_DIR) / "training_data" / "law_exam_balanced_weighted_sft.jsonl"
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("純核實核心庫 (100% 真跡)", f"{5082:,} 筆" if ver_file.exists() else "建構中")
-            c2.metric("混合加權平衡庫 (推薦)", f"{118650:,} 筆" if bal_file.exists() else "已精簡 (節省空間)")
-            c3.metric("全量百萬統一大庫", f"{1005082:,} 筆" if mas_file.exists() else "已精簡 (節省空間)")
-
-            st.markdown("""
-            #### 🛡️ Hugging Face Arrow 綱要相容保證：
-            每一筆 SFT 樣本均嚴格標準化為 5 大核心欄位，徹底杜絕訓練資料載入與分詞之型別異常：
-            - `id`: 樣本唯一識別碼
-            - `source_type`: 資料來源識別（手寫筆記 / 真實判決 / 憲法法庭 / 名師講義 / 模擬題庫 / 合成推理底模）
-            - `instruction`: 任務系統指令（IRAC 申論、一試單選、評分診斷）
-            - `input`: 案例情境或題目題幹
-            - `output`: 上位卷完整解答或標準試題解析
-
-            #### ⚖️ 資料庫組成比例與實證透明度 (Synthesis Ratio Disclosure)：
-            - **純核實核心庫 (5,082 筆)**：100% 取自真實實質裁判、憲法法庭判決、歷年司律真題及考生個人手寫筆記，無合成樣本。
-            - **混合加權平衡庫 (118,650 筆)**：
-              - **78,650 筆 (66.3%)**：真實高價值核心資料科學過採樣（手寫筆記 500x、真題 50x、名師學說 20x、裁判憲法 10x）。
-              - **40,000 筆 (33.7%)**：司法論證結構模板 (`synthesized_judicial_reasoning`)，作為三段論法語法底模以避免顯存過擬合。
-            - **全量百萬統一大庫 (1,005,082 筆)**：5,082 筆核實真跡 (0.5%) + 1,000,000 筆司法推理語法模板基準庫 (99.5%)。非百萬篇真實判決，使用者應依 `source_type` 欄位區隔真實裁判（`verified_*`）與模板（`synthetic_*`）。
-            - **標籤語意說明**：`source_type` 欄位以 `verified_` 前綴標記，係指資料來自非合成之真實政府裁判或考題採集管道（相對於模板生成資料），非代表每筆法學論述經由國家考試閱卷委員逐字人工法學公證。
-
-            #### 🔄 兩種「續訓」技術模式之嚴謹區別：
-            1. **同環境 Checkpoint 斷點續訓 (In-Session Resumption)**：
-               - 透過 `RESUME_FROM_CHECKPOINT=True`；
-               - **完整恢復**：模型權重 + AdamW 優化器狀態矩陣 + 學習率排程步數 + 亂數種子，無損接續前次中斷點。
-            2. **跨 Session LoRA 熱啟動微調 (Cross-Session Continual Warm Start)**：
-               - 透過 `EXISTING_LORA_PATH` 指定已導出之 LoRA 目錄或 Zip 檔；
-               - **僅繼承權重**：優化器與學習率會重新初始化，展開第二階段增量遷移微調。
-
-            #### 📜 資料性質與著作權遵循界限 (Legal & Copyright Boundaries)：
-            - **公開公務資訊 (公共領域)**：實務裁判書、憲法裁判、公報、法規命令及考選部公務真題，依《著作權法》第 9 條第 1 項規定依法不得為著作權之標的，屬開放公務資訊。
-            - **私人研析與學術文獻**：個人手寫筆記為考生著作，名師講義學說為著作人版權；依《著作權法》第 52 條及第 65 條，合理使用（Fair Use）之成立須視具體利用之目的、性質、所利用之質與量及其對潛在市場之影響個案審酌，本專案聲明僅為內部工程用途與限制提示，非授權判定，亦不具法律豁免效力；未獲權利人授權嚴禁將受保護教材進行公開傳輸、發布或商業營利。
-            - **用途與免責聲明**：本資料集與微調模型純屬內部學術研究與個人自律解題訓練，使用者應自負資料來源之合法性責任；模型產生之推論亦不得取代合格律師之正式法律諮詢。
-
-            #### 🚀 Google Colab / Kaggle 雲端微調執行指南：
-            1. **Colab 訓練**：開啟專案目錄下 `train_colab.ipynb`，直接掛載 Google Drive 讀取資料集；
-            2. **Kaggle 訓練**：開啟 `train_kaggle.ipynb`，支援自訂/官方平衡庫（具備全檔串流校驗與 SHA-256 審計）或推薦使用 Private Dataset 本地掛載；
-            3. **顯卡規格**：Unsloth 4-bit 顯存優化核心限定使用 NVIDIA GPU（T4 / V100 / A100 / L4），不支援 TPU。
-            """)
-
-# ----------------- 模式: 裁判大庫擴充 (入庫/刪原檔) -----------------
 elif (globals().get("MODE_INGEST") and app_mode == globals().get("MODE_INGEST")) or any(k in str(app_mode) for k in ["大庫", "入庫", "judgements", "judgments", "擴充", "刪原檔"]):
     render_judgements_ingest_view()
 
