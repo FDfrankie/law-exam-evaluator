@@ -5424,9 +5424,16 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             curated_amends = legis_data.get("curated_amendments", [])
             timeline_hits = legis_data.get("timeline_hits", [])
             total_amends_display = max(len(curated_amends), len(timeline_hits))
-            is_initial_enactment = (len(timeline_hits) == 0) or (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
-            badge_legis_text = "1 次立法制定對照（制定迄今未曾修法）" if is_initial_enactment else f"{total_amends_display} 次修法對照"
-            legis_tag = "制定未修" if is_initial_enactment else f"{total_amends_display}修"
+            is_initial_enactment = legis_data.get("is_initial_enactment", False) or (total_amends_display == 0) or (total_amends_display == 1 and timeline_hits and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
+            
+            if is_initial_enactment or total_amends_display == 0:
+                badge_legis = " ｜ 🕰️ 制定(未曾修正)"
+                legis_tag = "0修·現行法"
+                badge_legis_text = "制定公布（自制定迄今未曾修法，歷久彌新）"
+            else:
+                badge_legis = f" ｜ 🕰️ 沿革({total_amends_display}修)"
+                legis_tag = f"{total_amends_display}修"
+                badge_legis_text = f"{total_amends_display} 次修法對照"
 
             questions = anno.get("questions", [])
             handouts = anno.get("handouts", [])
@@ -5436,7 +5443,6 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             badge_amend = " ｜ 🆕修法" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️判解({len(precedents)})" if precedents else ""
             badge_orders_rulings = f" ｜ 📋法規({len(key_regulations)})·函釋({len(admin_rulings)})" if (key_regulations or admin_rulings) else ""
-            badge_legis = f" ｜ 🕰️沿革({legis_tag})" if total_amends_display > 0 else ""
             badge_materials = f" ｜ 📘筆記({len(combined_materials)})" if combined_materials else ""
 
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
@@ -5705,9 +5711,19 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                     if summary_reasons:
                         st.info(f"**💡 歷次修正總綱與規範演革重心：**\n\n{summary_reasons}")
 
-                    if curated_amends:
-                        header_legis = "##### 🕰️ 制定立法意旨與條文全文（初次制定至今未曾修法）" if is_initial_enactment else f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)"
-                        st.markdown(header_legis)
+                    if is_initial_enactment or total_amends_display == 0 or not curated_amends:
+                        # 1. 修正對照區：若修正次數為 0，直接以精簡 callout 呈現制定意旨，不列出任何虛假歷史修正版本
+                        st.markdown("##### 🕰️ 條文制定意旨（制定公布迄今未曾修改）")
+                        st.info("💡 **本條於民國 18 年制定公布後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
+                        enact_card = legis_data.get("enactment_card")
+                        if enact_card:
+                            with st.expander(f"📜 查看制定全文與原始立法理由（發布字號：{enact_card.get('gazette', '國民政府令')}）", expanded=True):
+                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', '民國18年05月23日')}")
+                                st.markdown(f"**🏛️ 原始官方制定理由**：\n{enact_card.get('reason', '')}")
+                                if enact_card.get("exam_impact"):
+                                    st.success(f"✍️ **司律國考適用要點**：\n{enact_card.get('exam_impact')}")
+                    else:
+                        st.markdown(f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)")
                         for a_idx, amend in enumerate(curated_amends):
                             with st.expander(f"📅 【{amend.get('date')}】{amend.get('gazette', '')} ｜ 🌟 {amend.get('key_changes', '條文修正')}", expanded=(a_idx == 0)):
                                 p_text = amend.get("previous_text", "")
@@ -5726,27 +5742,31 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 st.markdown("**📜 立法院三讀官方修正理由全文（官方公報照抄）：**")
                                 st.info(amend.get('reason', ''))
                                 if amend.get("exam_impact"):
-                                    st.success(f"✍️ **司律國考新舊法適用要點：**\n{amend.get('exam_impact')}")
+                                    st.success(f"✍️ **司律國考新舊法適用要點**：\n{amend.get('exam_impact')}")
                                 st.markdown("---")
-                    elif not intent and not summary_reasons:
-                        st.info(f"💡 目前本地精選庫中暫無針對【{lname} {ano}】之預載深度立法理由。您可以查看下方官方公報沿革，或點擊下方按鈕由 AI 智慧萃取歷次修正理由與新舊條文對照！")
 
                     if timeline_hits:
-                        is_single_enact = (len(timeline_hits) == 1 and ("制定" in timeline_hits[0].get("action", "") or timeline_hits[0].get("seq") == 1))
-                        header_tag = "制定公布發布令（初次制定至今未曾修法）" if is_single_enact else f"歷次修正發布令（共 {len(timeline_hits)} 次）"
-                        st.markdown(f"##### 🏛️ 本條於全法沿革中之{header_tag}")
-                        with st.container(height=260):
+                        with st.expander(f"🏛️ 查看本條於全法沿革中之歷次修正發布令（共 {len(timeline_hits)} 次）", expanded=False):
+                            st.caption("以下為本條於法規歷次修正公報中直接列入修正之公布令：")
                             for h in timeline_hits:
                                 seq_tag = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
                                 st.markdown(f"**🏷️ 【{seq_tag}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
                                 st.caption(h['content'])
-                                if is_single_enact:
-                                    st.info("💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為私法核心法規準據！")
                                 st.markdown("---")
-                    elif is_initial_enactment:
-                        st.markdown(f"##### 🏛️ 本條於全法沿革中之制定公布發布令")
-                        first_amend = curated_amends[0] if curated_amends else {}
-                        st.info(f"💡 **本條法制沿革說明**：本條於民國初次制定公布後，文字歷久彌新未曾修改，始終作為核心法規準據！（發布字號：{first_amend.get('gazette', '現行有效公布令')}）")
+
+                    # 2. 全法發布令列表改為收合展開
+                    with st.expander("🏛️ 查看全法歷次修正發布令背景紀錄（點擊展開/收合）", expanded=False):
+                        st.caption("以下為整部法典歷次修正公布之總統令與院令公報紀錄，供查考修法歷史背景：")
+                        law_hist = get_law_legislative_history(lname)
+                        if law_hist and law_hist.get("timeline"):
+                            for entry in law_hist["timeline"]:
+                                seq_str = f"第 {entry.get('seq', '')} 次修正" if entry.get('seq', 0) > 1 else "制定公布"
+                                st.markdown(f"**🏷️ 【{seq_str}】📅 {entry.get('date', '')} ｜ {entry.get('decree', '')} ｜ `{entry.get('action', '')}`**")
+                                if entry.get('content'):
+                                    st.caption(entry['content'])
+                                st.markdown("---")
+                        else:
+                            st.caption("目前無完整全法沿革公布令紀錄。")
 
                     # AI 智慧萃取/擴充按鈕
                     leg_ai_key = f"ai_legis_{lname}_{ano}"

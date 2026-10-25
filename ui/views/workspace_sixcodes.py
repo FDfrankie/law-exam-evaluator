@@ -242,7 +242,8 @@ def render_workspace():
             legis_data = anno.get("legislative_details", {}) or get_article_legislative_details(lname, ano, content)
             curated_amends = legis_data.get("curated_amendments", [])
             timeline_hits = legis_data.get("timeline_hits", [])
-            total_amends_display = len(curated_amends) if curated_amends else len(timeline_hits)
+            total_amends_display = max(len(curated_amends), len(timeline_hits))
+            is_initial_enactment = legis_data.get("is_initial_enactment", False) or (total_amends_display == 0)
 
             questions = anno.get("questions", [])
             handouts = anno.get("handouts", [])
@@ -252,7 +253,7 @@ def render_workspace():
             badge_amend = " ｜ 🆕 【最新修正施行】" if art.get("is_latest_amendment") else ""
             badge_prec = f" ｜ 🏛️ 【收錄 {len(precedents)} 筆大法庭/憲判字】" if precedents else ""
             badge_orders_rulings = f" ｜ 📋 【{len(key_regulations)} 部法規/細則 ＋ {len(admin_rulings)} 筆主管函釋】" if (key_regulations or admin_rulings) else ""
-            badge_legis = f" ｜ 🕰️ 【{total_amends_display} 次修法對照】" if total_amends_display > 0 else ""
+            badge_legis = " ｜ 🕰️ 制定(未曾修正)" if (total_amends_display == 0 or is_initial_enactment) else f" ｜ 🕰️ 沿革({total_amends_display}修)"
             badge_materials = f" ｜ 📘 【收錄 {len(combined_materials)} 份名師講義與個人讀書筆記】" if combined_materials else ""
 
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
@@ -516,14 +517,38 @@ def render_workspace():
                     elif not intent and not summary_reasons:
                         st.info(f"💡 目前本地精選庫中暫無針對【{lname} {ano}】之預載深度立法理由。您可以查看下方官方公報沿革，或點擊下方按鈕由 AI 智慧萃取歷次修正理由與新舊條文對照！")
 
+                    if is_initial_enactment or total_amends_display == 0 or not curated_amends:
+                        st.markdown("##### 🕰️ 條文制定意旨（制定公布迄今未曾修改）")
+                        st.info("💡 **本條於民國 18 年制定公布後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
+                        enact_card = legis_data.get("enactment_card")
+                        if enact_card:
+                            with st.expander(f"📜 查看制定全文與原始立法理由（發布字號：{enact_card.get('gazette', '國民政府令')}）", expanded=True):
+                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', '民國18年05月23日')}")
+                                st.markdown(f"**🏛️ 原始官方制定理由**：\n{enact_card.get('reason', '')}")
+                                if enact_card.get("exam_impact"):
+                                    st.success(f"✍️ **司律國考適用要點**：\n{enact_card.get('exam_impact')}")
+
                     if timeline_hits:
-                        st.markdown(f"##### 🏛️ 本條於全法沿革中之歷次修正發布令（全國法規資料庫官方紀錄共 {len(timeline_hits)} 次）")
-                        with st.container(height=260):
+                        with st.expander(f"🏛️ 查看本條於全法沿革中之歷次修正發布令（共 {len(timeline_hits)} 次）", expanded=False):
+                            st.caption("以下為本條於法規歷次修正公報中直接列入修正之公布令：")
                             for h in timeline_hits:
                                 seq_tag = f"第 {h['seq']} 次修正" if h['seq'] > 1 else "制定公布"
                                 st.markdown(f"**🏷️ 【{seq_tag}】📅 {h['date']} ｜ {h['decree']} ｜ `{h['action']}`**")
                                 st.caption(h['content'])
                                 st.markdown("---")
+
+                    with st.expander("🏛️ 查看全法歷次修正發布令背景紀錄（點擊展開/收合）", expanded=False):
+                        st.caption("以下為整部法典歷次修正公布之總統令與院令公報紀錄，供查考修法歷史背景：")
+                        law_hist = get_law_legislative_history(lname)
+                        if law_hist and law_hist.get("timeline"):
+                            for entry in law_hist["timeline"]:
+                                seq_str = f"第 {entry.get('seq', '')} 次修正" if entry.get('seq', 0) > 1 else "制定公布"
+                                st.markdown(f"**🏷️ 【{seq_str}】📅 {entry.get('date', '')} ｜ {entry.get('decree', '')} ｜ `{entry.get('action', '')}`**")
+                                if entry.get('content'):
+                                    st.caption(entry['content'])
+                                st.markdown("---")
+                        else:
+                            st.caption("目前無完整全法沿革公布令紀錄。")
 
                     # AI 智慧萃取/擴充按鈕
                     leg_ai_key = f"ai_legis_{lname}_{ano}"

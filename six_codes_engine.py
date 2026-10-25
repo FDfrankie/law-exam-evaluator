@@ -1319,27 +1319,37 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
 
     # 整理歷次修正列表，嚴格依年份倒序（降冪，由新至舊）排列
     raw_amends = curated_data.get("amendments", []) if curated_data else []
+    enactment_card = curated_data.get("enactment_card") if curated_data else None
     
-    # 若有預載沿革卡片
+    # 區分真實修正 (amendments) 與初次制定 (enactment)
     formatted_amends = []
     if raw_amends:
         for idx_a, a in enumerate(raw_amends):
-            is_cur = a.get("is_current", (idx_a == 0))
-            v_tag = a.get("version_tag", "")
-            if not v_tag:
-                date_s = a.get("date", "最新修正")
-                v_tag = f"民國 {date_s} 修正（現行有效條文）" if is_cur else f"民國 {date_s} 修正"
-            formatted_amends.append({
+            is_enact = (
+                ("制定" in a.get("date", "") and "修正" not in a.get("date", ""))
+                or ("初次制定" in a.get("previous_text", ""))
+                or ("未曾修正" in a.get("key_changes", ""))
+                or ("未曾修改" in a.get("key_changes", ""))
+            )
+            card = {
                 "date": a.get("date", ""),
                 "gazette": a.get("gazette", ""),
-                "is_current": is_cur,
-                "version_tag": v_tag,
+                "is_current": a.get("is_current", (idx_a == 0)),
+                "version_tag": a.get("version_tag", ""),
                 "previous_text": a.get("previous_text", ""),
-                "current_text": a.get("current_text", content if is_cur else ""),
+                "current_text": a.get("current_text", content if a.get("is_current", (idx_a == 0)) else ""),
                 "key_changes": a.get("key_changes", ""),
                 "reason": a.get("reason", a.get("summary_reasons", "")),
                 "exam_impact": a.get("exam_impact", "")
-            })
+            }
+            if is_enact:
+                if not enactment_card:
+                    enactment_card = card
+            else:
+                if not card["version_tag"]:
+                    date_s = a.get("date", "最新修正")
+                    card["version_tag"] = f"民國 {date_s} 修正（現行有效條文）" if (len(formatted_amends) == 0) else f"民國 {date_s} 修正"
+                formatted_amends.append(card)
     elif timeline_hits:
         # Step C: 若無專屬理由但有公報紀錄，自動無縫合成歷次沿革卡片，確保前端絕非空白且絕無罐頭廢話
         for idx_t, h in enumerate(reversed(timeline_hits)):
@@ -1358,13 +1368,14 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
                 "reason": f"立法院三讀及總統令公布紀錄：{h.get('content', '')}",
                 "exam_impact": f"生效施行原則：除法律別有規定施行日期外，自{h.get('date', '')}公布或發布日起算至第三日起發生效力。"
             })
-    else:
-        # Step D: 若皆未修法（0次修法，自制定公布施行迄今未曾修正），自動呈現真實制定沿革卡片
-        enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
-        enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
-        first_entry = law_hist.get("timeline", [{}])[0] if law_hist.get("timeline") else {}
-        first_decree = first_entry.get("decree", f"{law_name}制定公布令")
-        formatted_amends.append({
+    
+    # 若為未曾修正之條文（0次修正），自動裝配真實制定沿革卡片，但保持 curated_amendments 為空 ([]) 以確保修正次數為 0
+    enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
+    enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
+    first_entry = law_hist.get("timeline", [{}])[0] if law_hist.get("timeline") else {}
+    first_decree = first_entry.get("decree", f"{law_name}制定公布令")
+    if not enactment_card and len(formatted_amends) == 0:
+        enactment_card = {
             "date": f"{enact_str}制定公布",
             "gazette": first_decree,
             "is_current": True,
@@ -1374,7 +1385,7 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
             "key_changes": "制定公布全文（歷久彌新未曾修正）",
             "reason": f"一、本條自{enact_str}制定公布施行迄今未曾修改，文字歷久彌新，為我國法秩序之基石規範。\n二、司法審判與國考實務適用上，以現行完整法條文字為準，並參酌歷年司法判解與大法庭裁定之實務見解。",
             "exam_impact": "本條施行迄今未曾修正，無新舊法過渡適用問題，直接適用現行有效條文。"
-        })
+        }
 
     default_intent = ""
     default_summary = ""
@@ -1384,11 +1395,10 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
         default_intent = f"🎯 立法意旨：本條歷經立法院修法三讀程序修正通過，最新修正發布於民國 {latest_date}。"
         default_summary = f"本條於立法院沿革中查有 {len(timeline_hits)} 次官方公布/修正紀錄，最新發布令號為：{latest_decree}。"
     else:
-        enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
-        enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
         default_intent = f"🎯 立法意旨：本條於{enact_str}制定公布，文字歷久彌新未曾修改。"
         default_summary = f"本條自{enact_str}制定公布施行迄今未曾修正，維持原制定條文內容完整適用。"
 
+    is_initial = (len(formatted_amends) == 0 and len(timeline_hits) == 0)
     return {
         "law_name": law_name,
         "article_no": clean_no,
@@ -1396,6 +1406,8 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
         "legislative_intent": curated_data.get("legislative_intent", default_intent) if curated_data else default_intent,
         "summary_reasons": curated_data.get("summary_reasons", default_summary) if curated_data else default_summary,
         "curated_amendments": formatted_amends,
+        "enactment_card": enactment_card,
+        "is_initial_enactment": is_initial,
         "timeline_hits": timeline_hits,
         "total_official_hits": len(timeline_hits)
     }
