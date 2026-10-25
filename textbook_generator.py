@@ -20,7 +20,8 @@ import json
 import sqlite3
 import re
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Set
+from datetime import datetime
 
 # 終端編碼防護
 if hasattr(sys.stdout, "reconfigure"):
@@ -131,6 +132,213 @@ def get_topic_by_id(subject: str, topic_id: str) -> Optional[dict]:
 
 
 # ==============================================================================
+
+# ==============================================================================
+# 1.5 講義全域固化快取庫 (Global Materialized Textbook Cache - 0 Token 加載)
+# ==============================================================================
+def _find_textbook_db_path() -> Path:
+    """搜尋或建立教科書固化快取資料庫路徑"""
+    candidates = [
+        DATA_DIR / "judicial_authority.db",
+        PROJECT_ROOT / "data" / "judicial_authority.db",
+        CODE_DIR / "data" / "judicial_authority.db",
+        DATA_DIR / "textbook_cache.db",
+        CODE_DIR / "data" / "textbook_cache.db",
+        Path(r"G:\我的雲端硬碟\LawExamData\data\judicial_authority.db"),
+        Path(r"G:\我的雲端硬碟\LawExamData\judicial_authority.db")
+    ]
+    for p in candidates:
+        if p.exists() and p.is_file():
+            return p
+    # 預設存放位置
+    target = CODE_DIR / "data" / "textbook_cache.db"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _get_json_cache_path() -> Path:
+    """回傳兼顧雲端 Streamlit Cloud 的持久化 JSON 快取路徑"""
+    candidates = [
+        CODE_DIR / "data" / "textbook_cache.json",
+        DATA_DIR / "textbook_cache.json",
+        PROJECT_ROOT / "data" / "textbook_cache.json",
+        Path(r"G:\我的雲端硬碟\LawExamData\code\data\textbook_cache.json")
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    target = CODE_DIR / "data" / "textbook_cache.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def init_textbook_db(conn: sqlite3.Connection):
+    """建立 textbook_chapters 固化表"""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS textbook_chapters (
+            chapter_id TEXT PRIMARY KEY,
+            subject TEXT,
+            unit_title TEXT,
+            topic_title TEXT,
+            content_md TEXT,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            token_cost INTEGER DEFAULT 0
+        );
+    """)
+    conn.commit()
+
+
+def get_cached_chapter(chapter_id: str) -> Optional[Dict[str, Any]]:
+    """
+    查詢是否存在已固化的教科書內文（優先查詢 SQLite，次之查詢 JSON 快取）
+    達成「一人生成，全員受惠；秒讀零消耗」
+    """
+    if not chapter_id:
+        return None
+
+    # 1. 優先查 SQLite
+    db_path = _find_textbook_db_path()
+    if db_path and db_path.exists():
+        try:
+            conn = sqlite3.connect(db_path, timeout=3.0)
+            init_textbook_db(conn)
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT chapter_id, subject, unit_title, topic_title, content_md, generated_at, token_cost
+                FROM textbook_chapters
+                WHERE chapter_id = ?
+            """, (chapter_id,))
+            row = cur.fetchone()
+            conn.close()
+            if row and row[4]:
+                return {
+                    "chapter_id": row[0],
+                    "subject": row[1],
+                    "unit_title": row[2],
+                    "topic_title": row[3],
+                    "content_md": row[4],
+                    "generated_at": str(row[5] or ""),
+                    "token_cost": row[6] or 0
+                }
+        except Exception as e_db:
+            print(f"[TextbookCache] SQLite 讀取失敗: {e_db}")
+
+    # 2. 次之查詢 JSON 快取（支援 Streamlit Cloud 跨平台）
+    json_path = _get_json_cache_path()
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and chapter_id in data:
+                return data[chapter_id]
+        except Exception as e_json:
+            print(f"[TextbookCache] JSON 讀取失敗: {e_json}")
+
+    return None
+
+
+def save_chapter_cache(
+    chapter_id: str,
+    subject: str,
+    unit_title: str,
+    topic_title: str,
+    content_md: str,
+    token_cost: int = 0
+):
+    """固化存入 SQLite 資料庫與持久化 JSON 檔案（一人生成，全員受惠）"""
+    if not chapter_id or not content_md:
+        return
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 1. 寫入 SQLite
+    db_path = _find_textbook_db_path()
+    try:
+        conn = sqlite3.connect(db_path, timeout=5.0)
+        init_textbook_db(conn)
+        conn.execute("""
+            INSERT OR REPLACE INTO textbook_chapters 
+            (chapter_id, subject, unit_title, topic_title, content_md, generated_at, token_cost)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (chapter_id, subject, unit_title, topic_title, content_md, now_str, token_cost))
+        conn.commit()
+        conn.close()
+    except Exception as e_db:
+        print(f"[TextbookCache] SQLite 寫入失敗: {e_db}")
+
+    # 2. 同步寫入 JSON 快取（支援 Streamlit Cloud 與 Git 版本同步）
+    json_paths = [
+        _get_json_cache_path(),
+        CODE_DIR / "data" / "textbook_cache.json",
+        DATA_DIR / "textbook_cache.json"
+    ]
+    seen = set()
+    for jp in json_paths:
+        if str(jp) in seen:
+            continue
+        seen.add(str(jp))
+        try:
+            data = {}
+            if jp.exists():
+                try:
+                    with open(jp, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:
+                    data = {}
+            data[chapter_id] = {
+                "chapter_id": chapter_id,
+                "subject": subject,
+                "unit_title": unit_title,
+                "topic_title": topic_title,
+                "content_md": content_md,
+                "generated_at": now_str,
+                "token_cost": token_cost
+            }
+            jp.parent.mkdir(parents=True, exist_ok=True)
+            with open(jp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception as e_json:
+            print(f"[TextbookCache] JSON 寫入失敗 {jp}: {e_json}")
+
+
+def is_chapter_cached(chapter_id: str) -> bool:
+    """判斷該講次是否已固化於資料庫中"""
+    return get_cached_chapter(chapter_id) is not None
+
+
+def get_all_cached_chapter_ids() -> Set[str]:
+    """極速獲取所有已固化章節 ID 清單，供前端即時標記 🟢 或 ⚪"""
+    cached_ids = set()
+
+    # 1. 查 SQLite
+    db_path = _find_textbook_db_path()
+    if db_path and db_path.exists():
+        try:
+            conn = sqlite3.connect(db_path, timeout=2.0)
+            init_textbook_db(conn)
+            cur = conn.cursor()
+            cur.execute("SELECT chapter_id FROM textbook_chapters")
+            for row in cur.fetchall():
+                if row[0]:
+                    cached_ids.add(row[0])
+            conn.close()
+        except Exception:
+            pass
+
+    # 2. 查 JSON
+    json_path = _get_json_cache_path()
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                cached_ids.update(data.keys())
+        except Exception:
+            pass
+
+    return cached_ids
+
+
 # 2. 上下文自動聯動：條文全文、立法意旨與權威判例高速檢索
 # ==============================================================================
 def _find_authority_db_path() -> Optional[Path]:
@@ -359,6 +567,51 @@ class TextbookGenerator:
     def __init__(self, model_name: str = DEFAULT_GEMINI_MODEL):
         self.model_name = model_name
         self.api_key = get_gemini_api_key()
+
+    def get_or_generate_chapter(
+        self,
+        subject: str,
+        chapter: str,
+        topic: dict,
+        force_regenerate: bool = False,
+        progress_callback: Optional[Callable[[str], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        全域固化快取與零 Token 讀取中樞：
+        1. 若非強制重新生成，優先檢查資料庫快取
+        2. 若命中快取，0秒直接回傳固化內文（0 Token消耗）
+        3. 查無快取或強制覆寫時，調用 Gemini API 生成，並自動固化寫入資料庫
+        """
+        topic_id = topic.get("id", "")
+        if not force_regenerate and topic_id:
+            cached = get_cached_chapter(topic_id)
+            if cached and cached.get("content_md"):
+                if progress_callback:
+                    progress_callback("⚡ 已命中全域固化快取！正在極速載入（0 Token 消耗）...")
+                return {
+                    "success": True,
+                    "subject": subject,
+                    "chapter": chapter,
+                    "topic": topic,
+                    "markdown": cached["content_md"],
+                    "cached": True,
+                    "generated_at": cached.get("generated_at", ""),
+                    "token_cost": cached.get("token_cost", 0)
+                }
+
+        # 查無快取或強制重新生成：調用 AI 生成
+        res = self.generate_chapter(subject, chapter, topic, progress_callback=progress_callback)
+        if res.get("success") and res.get("markdown") and topic_id:
+            save_chapter_cache(
+                chapter_id=topic_id,
+                subject=subject,
+                unit_title=chapter,
+                topic_title=topic.get("title", ""),
+                content_md=res["markdown"],
+                token_cost=0
+            )
+            res["cached"] = False
+        return res
 
     def generate_chapter(
         self,

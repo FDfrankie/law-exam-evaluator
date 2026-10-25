@@ -215,17 +215,26 @@ try:
         get_subject_syllabus,
         get_all_topics_for_subject,
         get_topic_by_id,
-        fetch_topic_context
+        fetch_topic_context,
+        get_cached_chapter,
+        save_chapter_cache,
+        is_chapter_cached,
+        get_all_cached_chapter_ids
     )
 except Exception:
     class TextbookGenerator:
         def __init__(self, *args, **kwargs): pass
-        def generate_chapter(self, *args, **kwargs): return {"markdown": "模組載入中..."}
+        def generate_chapter(self, *args, **kwargs): return {"markdown": "模組載入中...", "cached": False}
+        def get_or_generate_chapter(self, *args, **kwargs): return {"markdown": "模組載入中...", "cached": False}
     def get_available_subjects(): return ["民法", "刑法", "智慧財產權法"]
     def get_subject_syllabus(s): return {}
     def get_all_topics_for_subject(s): return []
     def get_topic_by_id(s, t): return None
     def fetch_topic_context(t): return {}
+    def get_cached_chapter(cid): return None
+    def save_chapter_cache(*args, **kwargs): pass
+    def is_chapter_cached(cid): return False
+    def get_all_cached_chapter_ids(): return set()
 
 try:
     from comprehensive_issues_taxonomy import (
@@ -1309,15 +1318,28 @@ def render_textbook_learning_view():
         st.info("此單元暫無專題講次。")
         return
 
+    # 全域固化快取狀態掃描
+    cached_chapter_ids = get_all_cached_chapter_ids()
+
+    def _fmt_topic(t):
+        tid = t.get("id", "")
+        is_cached = tid in cached_chapter_ids
+        is_done = tid in completed_set
+        done_icon = "✅" if is_done else "📖"
+        cache_badge = "🟢【隨選隨讀·已固化】" if is_cached else "⚪【待首次生成】"
+        return f"{done_icon} {t.get('title', '')}  {cache_badge}"
+
     sel_topic = st.radio(
         "3. 選擇循序講次專題：",
         topics,
-        format_func=lambda t: f"{t['title']}" + (" ✅【已完成】" if t['id'] in completed_set else " 📖【未研讀】"),
+        format_func=_fmt_topic,
         key=f"radio_tb_topic_{sel_subject}_{sel_chapter}"
     )
 
     if not sel_topic:
         return
+
+    is_topic_cached = sel_topic["id"] in cached_chapter_ids
 
     # 即時資訊卡
     st.divider()
@@ -1369,11 +1391,34 @@ def render_textbook_learning_view():
         else:
             st.caption("本講關聯條文之深度判例與大法庭見解將於 AI 生成章節時完整融入。")
 
-    # 開始研讀按鈕
+    # 按鈕行為分流與強制重生保護開關
     content_key = f"tb_content_{sel_topic['id']}"
-    col_btn1, col_btn2 = st.columns([2, 1])
+    col_btn1, col_btn2 = st.columns([2.2, 0.8])
     with col_btn1:
-        start_study_btn = st.button("🚀 開始研讀本講教科書專章（調用 AI 撰寫權威教材）", type="primary", use_container_width=True, key=f"btn_gen_tb_{sel_topic['id']}")
+        if is_topic_cached:
+            start_study_btn = st.button(
+                "📖 立即閱讀本講專題教材（0秒加載）",
+                type="primary",
+                use_container_width=True,
+                key=f"btn_gen_tb_{sel_topic['id']}"
+            )
+        else:
+            start_study_btn = st.button(
+                "🚀 首次編纂並固化本講教材",
+                type="primary",
+                use_container_width=True,
+                key=f"btn_gen_tb_{sel_topic['id']}"
+            )
+
+    with col_btn2:
+        with st.popover("⚙️ 開發者設定", use_container_width=True):
+            force_regen = st.checkbox(
+                "🔒 強制重新生成（除錯·覆寫快取）",
+                value=False,
+                key=f"chk_force_regen_{sel_topic['id']}"
+            )
+            if force_regen:
+                st.caption("⚠️ 勾選後點擊按鈕將重新調用 Gemini API 生成，並消耗 Token 覆寫原有快取。")
 
     if start_study_btn:
         progress_info = st.empty()
@@ -1381,18 +1426,53 @@ def render_textbook_learning_view():
             progress_info.info(f"⏳ {msg}")
         try:
             gen = TextbookGenerator()
-            res = gen.generate_chapter(sel_subject, sel_chapter, sel_topic, progress_callback=_tb_cb)
+            res = gen.get_or_generate_chapter(
+                sel_subject,
+                sel_chapter,
+                sel_topic,
+                force_regenerate=force_regen,
+                progress_callback=_tb_cb
+            )
             st.session_state[content_key] = res["markdown"]
+            st.session_state[f"{content_key}_meta"] = {
+                "cached": res.get("cached", False),
+                "generated_at": res.get("generated_at", ""),
+                "token_cost": res.get("token_cost", 0)
+            }
             progress_info.empty()
-            st.success("🎉 本講教科書專章撰寫完成！")
+            if res.get("cached"):
+                st.toast("⚡ 0秒瞬間加載！已自全域固化快取直接讀取（0 Token 消耗）。", icon="⚡")
+            else:
+                st.success("🎉 本講教科書專章撰寫完成並已全域固化存庫！後續任何人點閱皆享0秒秒讀。")
+                st.rerun()
         except Exception as e_gen:
             progress_info.empty()
-            st.error(f"教材生成失敗: {e_gen}")
+            st.error(f"教材載入/生成失敗: {e_gen}")
 
-    # 渲染教材
+    # 渲染教材（支援已固化章節直接展開）
     rendered_text = st.session_state.get(content_key, "")
+    if not rendered_text and is_topic_cached:
+        cached_doc = get_cached_chapter(sel_topic["id"])
+        if cached_doc and cached_doc.get("content_md"):
+            rendered_text = cached_doc["content_md"]
+            st.session_state[content_key] = rendered_text
+            st.session_state[f"{content_key}_meta"] = {
+                "cached": True,
+                "generated_at": cached_doc.get("generated_at", ""),
+                "token_cost": 0
+            }
+
     if rendered_text:
         st.divider()
+        meta = st.session_state.get(f"{content_key}_meta", {})
+        if meta.get("cached") or is_topic_cached:
+            time_info = f" ｜ 固化時間：{meta.get('generated_at')}" if meta.get('generated_at') else ""
+            st.markdown(
+                f"""<div style="background-color: #f0fdf4; border-left: 4px solid #16a34a; padding: 10px 14px; border-radius: 6px; margin-bottom: 15px; font-size: 0.92rem; color: #15803d;">
+                    ⚡ <b>全域固化快取已生效</b> ｜ 本講教材已成功固化於資料庫中{time_info} ｜ <b>0 Token 消耗（免 API 配額·0秒秒開）</b>
+                </div>""",
+                unsafe_allow_html=True
+            )
         st.markdown(rendered_text)
 
         st.divider()
