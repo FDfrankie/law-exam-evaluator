@@ -33,6 +33,7 @@ from PIL import Image
 
 # 全域導航模式常數（精簡俐落・完全消除側邊欄折行，杜絕 Streamlit Cloud 載入之 NameError）
 MODE_HOME = "🏠 系統首頁"
+MODE_TEXTBOOK = "📖 體系教科書"
 MODE_EVAL = "📝 試卷批改"
 MODE_GEN = "🎯 模擬命題"
 MODE_BANK = "📚 歷年真題"
@@ -206,6 +207,25 @@ except Exception:
     def calculate_marital_property_division(*args, **kwargs): return {}
     def calculate_inheritance_shares(*args, **kwargs): return {}
     def calculate_statutory_interest(*args, **kwargs): return {}
+
+try:
+    from textbook_generator import (
+        TextbookGenerator,
+        get_available_subjects,
+        get_subject_syllabus,
+        get_all_topics_for_subject,
+        get_topic_by_id,
+        fetch_topic_context
+    )
+except Exception:
+    class TextbookGenerator:
+        def __init__(self, *args, **kwargs): pass
+        def generate_chapter(self, *args, **kwargs): return {"markdown": "模組載入中..."}
+    def get_available_subjects(): return ["民法", "刑法", "智慧財產權法"]
+    def get_subject_syllabus(s): return {}
+    def get_all_topics_for_subject(s): return []
+    def get_topic_by_id(s, t): return None
+    def fetch_topic_context(t): return {}
 
 try:
     from comprehensive_issues_taxonomy import (
@@ -1072,6 +1092,7 @@ MODE_DEV_MANAGER = "🛠️ 檔案總管"
 
 mode_options = [
     MODE_HOME,
+    MODE_TEXTBOOK,
     MODE_EVAL,
     MODE_GEN,
     MODE_BANK,
@@ -1099,6 +1120,8 @@ with st.sidebar:
         old_val = str(st.session_state["app_mode"])
         if "首頁" in old_val or "隱私權" in old_val:
             st.session_state["app_mode"] = MODE_HOME
+        elif any(k in old_val for k in ["教科書", "體系教科書", "課表", "專題教科書", "自學"]):
+            st.session_state["app_mode"] = MODE_TEXTBOOK
         elif any(k in old_val for k in ["試卷", "評分", "批改", "手寫"]):
             st.session_state["app_mode"] = MODE_EVAL
         elif any(k in old_val for k in ["模擬", "命題", "出題"]):
@@ -1224,6 +1247,172 @@ with st.sidebar:
             st.cache_resource.clear()
             st.success("快取已清除，已重新掛載最新資料！")
             st.rerun()
+
+
+# ==============================================================================
+# 體系導引式法學教科書自學分頁 (Syllabus-Driven Legal Textbook Engine)
+# ==============================================================================
+def render_textbook_learning_view():
+    st.header("📖 體系導引式法學教科書自學引擎（Syllabus-Driven Legal Textbook）")
+    st.write("拋棄死板的法條背誦，改採「法學體系導引（Syllabus Tree）」循序漸進研讀各科核心講次專題。由 AI 權威法學大模型為您量身撰寫深具教科書深度的專注教材、要件拆解、學說實務爭鳴與 IRAC 實戰擬答。")
+
+    progress_file = Path(DATA_DIR) / "textbook_progress.json"
+    if "textbook_completed_topics" not in st.session_state:
+        completed = set()
+        if progress_file.exists():
+            try:
+                with open(progress_file, "r", encoding="utf-8") as pf:
+                    completed = set(json.load(pf))
+            except Exception:
+                pass
+        st.session_state["textbook_completed_topics"] = completed
+
+    completed_set = st.session_state["textbook_completed_topics"]
+
+    def _save_progress(c_set):
+        try:
+            progress_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(progress_file, "w", encoding="utf-8") as pf:
+                json.dump(list(c_set), pf, ensure_ascii=False)
+        except Exception:
+            pass
+
+    subjects = get_available_subjects()
+    if not subjects:
+        st.warning("⚠️ 目前體系課表載入中或未收錄科目。")
+        return
+
+    # 三階聯動選擇介面
+    col_tb1, col_tb2 = st.columns([1, 1.3])
+    with col_tb1:
+        st.markdown("##### 🏛️ 第一層：選擇學習科目")
+        sel_subject = st.selectbox("1. 選擇學習科目：", subjects, key="sel_tb_subject")
+
+    syllabus_map = get_subject_syllabus(sel_subject)
+    chapters = list(syllabus_map.keys())
+
+    with col_tb2:
+        st.markdown("##### 📚 第二層：選擇體系單元")
+        sel_chapter = st.selectbox("2. 選擇體系單元：", chapters, key=f"sel_tb_chapter_{sel_subject}")
+
+    topics = syllabus_map.get(sel_chapter, [])
+
+    # 科目研讀進度條
+    all_sub_topics = get_all_topics_for_subject(sel_subject)
+    sub_done = sum(1 for t in all_sub_topics if t["id"] in completed_set)
+    total_sub = len(all_sub_topics)
+    ratio = sub_done / total_sub if total_sub > 0 else 0.0
+    st.progress(ratio, text=f"📊 【{sel_subject}】體系學習進度：已研讀 {sub_done} / {total_sub} 講 ({int(ratio * 100)}%)")
+
+    st.markdown("##### 🧭 第三層：選擇循序講次專題")
+    if not topics:
+        st.info("此單元暫無專題講次。")
+        return
+
+    sel_topic = st.radio(
+        "3. 選擇循序講次專題：",
+        topics,
+        format_func=lambda t: f"{t['title']}" + (" ✅【已完成】" if t['id'] in completed_set else " 📖【未研讀】"),
+        key=f"radio_tb_topic_{sel_subject}_{sel_chapter}"
+    )
+
+    if not sel_topic:
+        return
+
+    # 即時資訊卡
+    st.divider()
+    col_card1, col_card2 = st.columns([2, 1])
+    with col_card1:
+        st.subheader(sel_topic["title"])
+        
+        c_tags = " ".join([f":blue-background[`{c}`]" for c in sel_topic.get("core_concepts", [])])
+        st.markdown(f"🎯 **核心概念標籤：** {c_tags}")
+        
+        a_tags = " ".join([f":green-background[`{a}`]" for a in sel_topic.get("articles", [])])
+        st.markdown(f"📜 **關聯法條清單：** {a_tags}")
+    
+    with col_card2:
+        is_topic_done = sel_topic["id"] in completed_set
+        st.write("")
+        if is_topic_done:
+            st.success("✅ **本講已完成學習！**")
+            if st.button("↩️ 取消完成標記", key=f"btn_unmark_{sel_topic['id']}", use_container_width=True):
+                completed_set.discard(sel_topic["id"])
+                _save_progress(completed_set)
+                st.rerun()
+        else:
+            st.info("📖 **本講尚未完成研讀**")
+            if st.button("✅ 標記本講已完成學習", key=f"btn_mark_{sel_topic['id']}", type="secondary", use_container_width=True):
+                completed_set.add(sel_topic["id"])
+                _save_progress(completed_set)
+                st.rerun()
+
+    # 自動預覽關聯條文與司法權威判例要旨
+    with st.expander("🔍 預覽本講關聯法條全文與司法權威判例要旨（即時聯動六法大庫）", expanded=False):
+        with st.spinner("正在聯動六法全書與裁判大庫..."):
+            ctx_preview = fetch_topic_context(sel_topic)
+        
+        st.markdown("#### 📜 【法定條文與立法意旨】")
+        for art_item in ctx_preview.get("articles", []):
+            st.markdown(f"**{art_item.get('title')}**")
+            if art_item.get("content"):
+                st.info(art_item.get("content"))
+            if art_item.get("legislative_reason"):
+                st.caption(f"💡 立法理由：{art_item.get('legislative_reason')}")
+
+        st.markdown("#### 🏛️ 【最高法院經典判例與裁判要旨】")
+        precs = ctx_preview.get("precedents", [])
+        if precs:
+            for p in precs:
+                st.markdown(f"**[{p.get('source')}] {p.get('case_no')}**")
+                st.write(p.get("holding"))
+        else:
+            st.caption("本講關聯條文之深度判例與大法庭見解將於 AI 生成章節時完整融入。")
+
+    # 開始研讀按鈕
+    content_key = f"tb_content_{sel_topic['id']}"
+    col_btn1, col_btn2 = st.columns([2, 1])
+    with col_btn1:
+        start_study_btn = st.button("🚀 開始研讀本講教科書專章（調用 AI 撰寫權威教材）", type="primary", use_container_width=True, key=f"btn_gen_tb_{sel_topic['id']}")
+
+    if start_study_btn:
+        progress_info = st.empty()
+        def _tb_cb(msg):
+            progress_info.info(f"⏳ {msg}")
+        try:
+            gen = TextbookGenerator()
+            res = gen.generate_chapter(sel_subject, sel_chapter, sel_topic, progress_callback=_tb_cb)
+            st.session_state[content_key] = res["markdown"]
+            progress_info.empty()
+            st.success("🎉 本講教科書專章撰寫完成！")
+        except Exception as e_gen:
+            progress_info.empty()
+            st.error(f"教材生成失敗: {e_gen}")
+
+    # 渲染教材
+    rendered_text = st.session_state.get(content_key, "")
+    if rendered_text:
+        st.divider()
+        st.markdown(rendered_text)
+
+        st.divider()
+        col_down, col_fin = st.columns([1, 1])
+        with col_down:
+            st.download_button(
+                label="📥 匯出本講為 Markdown 教材",
+                data=rendered_text,
+                file_name=f"{sel_topic['title'].replace('：', '_').replace(' ', '_')}.md",
+                mime="text/markdown",
+                use_container_width=True,
+                key=f"btn_dl_tb_{sel_topic['id']}"
+            )
+        with col_fin:
+            if sel_topic["id"] not in completed_set:
+                if st.button("🎉 研讀完畢！點此標記完成", type="primary", use_container_width=True, key=f"btn_fin_{sel_topic['id']}"):
+                    completed_set.add(sel_topic["id"])
+                    _save_progress(completed_set)
+                    st.rerun()
+
 
 def render_judgements_ingest_view():
     st.header("📦 司法院裁判資料夾極速入庫與實質爭點分析 (data/judgements)")
@@ -1727,6 +1916,9 @@ if app_mode == MODE_HOME:
         """)
 
 # ----------------- 模式 1: 試卷批改 -----------------
+elif app_mode == MODE_TEXTBOOK or any(k in str(app_mode) for k in ["教科書", "體系教科書", "專題教科書", "自學"]):
+    render_textbook_learning_view()
+
 elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "批改", "手寫"]):
     st.header("📝 司律申論試卷 - 多模態 AI 批改與診斷")
     st.write("上傳考生的手寫試卷照片、PDF 檔或 Word 電子稿，系統將自動進行 OCR 辨識、爭點比對與四大維度評分。")
