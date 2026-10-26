@@ -9,6 +9,7 @@
 """
 import streamlit as st
 import os
+import urllib.request
 import sys
 from pathlib import Path
 
@@ -1899,6 +1900,66 @@ def render_judgements_ingest_view():
                                 st.warning("裁判資料已下載，但欄位格式解析異常。")
                         else:
                             st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
+
+# GitHub Release 實體資料庫直連網址與標籤頁
+RELEASE_DB_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/download/v1.0.0-18196/judicial_authority.db"
+RELEASE_TAG_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/tag/v1.0.0-18196"
+
+@st.cache_resource(show_spinner=False)
+def ensure_database_assets():
+    """
+    檢查實體 SQLite 資料庫是否存在；若在雲端環境（無實體庫），
+    自動從 GitHub Release 下載至 PROJECT_ROOT/data/ 目錄。
+    """
+    base_dir = Path(__file__).resolve().parent
+    data_dir = base_dir.parent / "data" if (base_dir.parent / "data").exists() else base_dir / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    db_target = data_dir / "judicial_authority.db"
+
+    # 若檔案已存在且大小正常（> 1MB），直接返回
+    if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+        return True
+
+    # 檢查其他常見候選路徑是否存在現成資料庫（避免本機環境重複下載）
+    try:
+        from config import DATA_DIR
+        cands = [
+            Path(DATA_DIR) / "judicial_authority.db",
+            base_dir.parent / "data" / "judicial_authority.db",
+            Path("G:/我的雲端硬碟/LawExamData/data/judicial_authority.db"),
+            Path("data/judicial_authority.db")
+        ]
+        for c in cands:
+            if c.exists() and c.stat().st_size > 1024 * 1024:
+                return True
+    except Exception:
+        pass
+
+    # 開始自 Release 串流下載
+    download_urls = [
+        RELEASE_DB_URL,
+        RELEASE_TAG_URL.replace("/releases/tag/", "/releases/download/") + "/judicial_authority.db"
+    ]
+
+    for url in download_urls:
+        try:
+            with st.spinner("📦 首次啟動：正在自 GitHub Release 安全下載全量權威裁判大庫 (約 115MB)，請稍候..."):
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                )
+                with urllib.request.urlopen(req, timeout=180) as resp, open(db_target, "wb") as f_out:
+                    while chunk := resp.read(1024 * 1024):  # 每次讀取 1MB
+                        f_out.write(chunk)
+                if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+                    st.toast("✅ 權威裁判大庫下載並載入完成！", icon="🎉")
+                    return True
+        except Exception as e:
+            continue
+
+    st.warning("⚠️ 自 GitHub Release 自動載入資料庫失敗（將啟用雲端唯讀快取備份）")
+    return False
+
 
 def get_realtime_database_stats() -> dict:
     """
