@@ -358,24 +358,49 @@ def _build_file_metadata(p: Path, cache_dir: Path, existing_caches: set, is_comm
     }
 
 
-def read_file_text_cached(file_path: Path, max_pages: int = 5, auto_extract: bool = True) -> str:
+def read_file_text_cached(file_path: Any, max_pages: int = 5, auto_extract: bool = True) -> str:
     """
     高速讀取筆記文字：優先自 _cache/ 讀取；若無快取則自動調用文字解析或 OCR 並寫入快取。
+    若實體檔案不存在（例如 Streamlit Cloud 環境），嚴禁引發 [Errno 2]，平滑回傳空字串或快取文字。
     """
-    samsung_dir = Path(DATA_DIR) / "SamsungNotes"
-    cache_dir = samsung_dir / "_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    if not file_path:
+        return ""
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
 
-    cache_file = cache_dir / f"{file_path.name}.txt"
-    if cache_file.exists() and cache_file.stat().st_size > 0:
-        try:
-            return cache_file.read_text(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+    samsung_dirs = [
+        Path(DATA_DIR) / "SamsungNotes",
+        Path(DATA_DIR).parent / "SamsungNotes",
+        Path(__file__).resolve().parent / "data" / "SamsungNotes",
+        Path(__file__).resolve().parent.parent / "SamsungNotes"
+    ]
+
+    # 1. 優先在多個快取目錄尋找既有快取
+    for s_dir in samsung_dirs:
+        c_dir = s_dir / "_cache"
+        if c_dir.exists():
+            for c_name in [f"{file_path.name}.txt", f"{file_path.stem}.txt"]:
+                cf = c_dir / c_name
+                if cf.exists() and cf.is_file() and cf.stat().st_size > 0:
+                    try:
+                        return cf.read_text(encoding="utf-8", errors="replace")
+                    except Exception:
+                        pass
 
     # 若未要求自動提取則返回空字串
     if not auto_extract:
         return ""
+
+    # 2. 嚴格檢查實體檔案是否存在，若不存在絕不調用 open 或 OCR
+    if not file_path.exists() or not file_path.is_file():
+        return ""
+
+    primary_cache_dir = Path(DATA_DIR) / "SamsungNotes" / "_cache"
+    try:
+        primary_cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    cache_file = primary_cache_dir / f"{file_path.name}.txt"
 
     text = ""
     ext = file_path.suffix.lower()
@@ -969,7 +994,7 @@ def render_developer_file_manager():
 
                 with col_act:
                     # 檔案下載按鈕（3-Tier Delivery Engine）
-                    if resolved_path and resolved_path.exists():
+                    if resolved_path and resolved_path.exists() and resolved_path.is_file():
                         try:
                             with open(resolved_path, "rb") as fp:
                                 file_bytes = fp.read()
@@ -993,10 +1018,12 @@ def render_developer_file_manager():
                             use_container_width=True,
                             key=f"dl_txt_file_{idx}"
                         )
+                    else:
+                        st.button("☁️ 私有儲存庫檔案", disabled=True, key=f"dis_dl_{idx}", help="高解析實體原始檔案存放於私有儲存庫")
 
                 # 在線預覽區塊
                 st.markdown("#### 👁️ 在線多模態檔案檢視器：")
-                if resolved_path and resolved_path.exists():
+                if resolved_path and resolved_path.exists() and resolved_path.is_file():
                     ext_l = resolved_path.suffix.lower()
                     if ext_l == ".pdf":
                         try:
@@ -1020,26 +1047,32 @@ def render_developer_file_manager():
                             st.warning(f"文字讀取提示: {te}")
                 else:
                     # 雲端輕量化模式 (Streamlit Cloud 實體二進位未隨 Git 上傳)
-                    st.info(f"💡 **【雲端輕量化模式提示】**：本講義之高解析原始檔案（{item['size_str']}）存放於開發者私有雲端硬碟；您可直接於下方閱讀【⚡ 已提取之 OCR 結構化文字快取】，並點擊上方或下方按鈕下載 Markdown 文字講義！")
+                    st.info(f"💡 **【☁️ 雲端閱覽模式】**：本講義之高解析原始檔案（容量 {item['size_str']}）存放於開發者私有儲存庫；雲端展示環境無實體二進位檔案。您可直接於下方閱讀【⚡ 已快取的 OCR 結構化全文】，並點擊按鈕下載 Markdown 文字筆記！")
                     if cached_txt:
-                        st.text_area("📄 已快取之結構化講義文字全文：", cached_txt, height=280, key=f"cloud_txt_view_{idx}")
+                        st.markdown(f"##### 📄 《{clean_name}》結構化筆記全文：")
+                        st.text_area("已快取之文字內容：", cached_txt, height=280, key=f"cloud_txt_view_{idx}")
                         st.download_button(
-                            label=f"📥 點此下載《{clean_stem}.md》講義筆記",
+                            label=f"📥 下載結構化筆記《{clean_stem}.md》",
                             data=cached_txt,
                             file_name=f"{clean_stem}.md",
                             mime="text/markdown",
                             key=f"dl_cached_md_{idx}"
                         )
+                    else:
+                        st.warning("⚠️ 該檔案尚未快取 OCR 結構化文字。若需調閱原始高解析檔案，請於本地環境或私有儲存庫中開啟。")
 
                 # 底部即時文字檢視 / 提取按鈕
                 c_btn1, c_btn2 = st.columns(2)
                 with c_btn1:
                     if st.button("📝 展開檢視 / 重新提取 OCR 完整文字", key=f"btn_ocr_view_{idx}"):
                         with st.spinner("正在調閱文字快取或啟動多模態辨識..."):
-                            target_p = resolved_path if (resolved_path and resolved_path.exists()) else item["path"]
-                            full_txt = read_file_text_cached(target_p, max_pages=8, auto_extract=True)
+                            full_txt = ""
+                            if resolved_path and resolved_path.exists() and resolved_path.is_file():
+                                full_txt = read_file_text_cached(resolved_path, max_pages=8, auto_extract=True)
                             if not full_txt and cached_txt:
                                 full_txt = cached_txt
+                            if not full_txt:
+                                full_txt = f"💡 【雲端閱覽模式提示】：筆記《{clean_name}》之高解析原始檔案（{item['size_str']}）存放於私有儲存庫，雲端環境無實體二進位檔。本檔案暫無快取文字。"
                             st.session_state[f"full_txt_view_{idx}"] = full_txt
                             st.rerun()
 

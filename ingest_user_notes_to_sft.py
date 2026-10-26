@@ -719,9 +719,16 @@ def render_pdf_to_images(pdf_path: Path, max_pages: int = 15):
         print(f"  [警示] 渲染 PDF 失敗: {e}")
     return images
 
-def read_note_text(file_path: Path, max_pages: int = 15, auto_ocr: bool = True) -> str:
+def read_note_text(file_path: Any, max_pages: int = 15, auto_ocr: bool = True) -> str:
     """高速讀取筆記文字：優先讀取快取；若無快取則自動直讀數位字或調用 Gemini 多模態 OCR 並寫入快取"""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if not file_path:
+        return ""
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     cache_candidates = [
         CACHE_DIR / f"{file_path.name}.txt",
         CACHE_DIR / f"{file_path.stem}.txt"
@@ -742,7 +749,7 @@ def read_note_text(file_path: Path, max_pages: int = 15, auto_ocr: bool = True) 
     primary_cache_file = CACHE_DIR / f"{file_path.name}.txt"
     
     # 檢查實體檔案是否存在
-    if not file_path.exists():
+    if not file_path.exists() or not file_path.is_file():
         repo_cache = Path(__file__).resolve().parent / "data" / "SamsungNotes" / "_cache" / f"{file_path.name}.txt"
         if repo_cache.exists():
             return repo_cache.read_text(encoding="utf-8")

@@ -14,9 +14,10 @@ import sys
 from pathlib import Path
 
 # 確保當前目錄與專案目錄位於 sys.path 最優先順位，防止 Streamlit Cloud 模組解析遺失
-_cur_dir = str(Path(__file__).resolve().parent)
-if _cur_dir not in sys.path:
-    sys.path.insert(0, _cur_dir)
+_cur_dir = Path(__file__).resolve().parent
+for _p in [str(_cur_dir), str(_cur_dir / "code")]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 # 設定頁面配置（必須為全域首個執行的 Streamlit 指令）
 st.set_page_config(
@@ -120,19 +121,35 @@ except Exception as _err:
 
 try:
     from question_bank_engine import (
-    save_questions_to_pool, render_shared_question_pool_ui,
-    save_community_question, save_community_questions_batch,
-    get_community_questions, get_question_pool_stats,
-    save_user_exam_submission, get_user_exam_submissions,
-    save_author_feedback, render_developer_submission_viewer_ui,
-    infer_subject_from_text
-)
+        save_questions_to_pool, render_shared_question_pool_ui,
+        save_community_question, save_community_questions_batch,
+        get_community_questions, get_question_pool_stats,
+        save_user_exam_submission, get_user_exam_submissions,
+        save_author_feedback, render_developer_submission_viewer_ui,
+        infer_subject_from_text
+    )
 except ImportError:
     try:
-        from code.question_bank_engine import save_questions_to_pool, render_shared_question_pool_ui
+        from code.question_bank_engine import (
+            save_questions_to_pool, render_shared_question_pool_ui,
+            save_community_question, save_community_questions_batch,
+            get_community_questions, get_question_pool_stats,
+            save_user_exam_submission, get_user_exam_submissions,
+            save_author_feedback, render_developer_submission_viewer_ui,
+            infer_subject_from_text
+        )
     except Exception:
         def save_questions_to_pool(*a, **k): return 0
         def render_shared_question_pool_ui(): pass
+        def save_community_question(*a, **k): return ""
+        def save_community_questions_batch(*a, **k): return 0
+        def get_community_questions(*a, **k): return []
+        def get_question_pool_stats(*a, **k): return {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
+        def save_user_exam_submission(*a, **k): return ""
+        def get_user_exam_submissions(*a, **k): return []
+        def save_author_feedback(*a, **k): return 0
+        def render_developer_submission_viewer_ui(): pass
+        def infer_subject_from_text(*a, **k): return "法學綜合"
 
 try:
     from six_codes_updater import update_law_amendments, load_amendments_history
@@ -2101,7 +2118,10 @@ if app_mode == MODE_HOME:
     # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
     db_stats = get_realtime_database_stats()
     total_mcq_cnt = len(load_all_existing_stage1_mcqs())
-    qpool_stats = get_question_pool_stats()
+    try:
+        qpool_stats = get_question_pool_stats()
+    except Exception:
+        qpool_stats = {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
     m_c1.metric("📜 全國法規與命令條文", "2,053 部 / 62,342 條", "支援最新修法自動同步")
