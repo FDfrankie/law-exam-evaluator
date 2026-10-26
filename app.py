@@ -1922,19 +1922,29 @@ def render_judgements_ingest_view():
 RELEASE_DB_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/download/v1.0.0-18196/judicial_authority.db"
 RELEASE_TAG_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/tag/v1.0.0-18196"
 
-@st.cache_resource(show_spinner=False)
-def ensure_database_assets():
+_DB_ASSETS_INITIALIZED = False
+
+def ensure_database_assets() -> bool:
     """
     檢查實體 SQLite 資料庫是否存在；若在雲端環境（無實體庫），
     自動從 GitHub Release 下載至 PROJECT_ROOT/data/ 目錄。
+    使用記憶體標記防止重複執行，杜絕 @st.cache_resource 引發之 CacheReplayClosureError。
     """
+    global _DB_ASSETS_INITIALIZED
+    if _DB_ASSETS_INITIALIZED:
+        return True
+
     base_dir = Path(__file__).resolve().parent
     data_dir = base_dir.parent / "data" if (base_dir.parent / "data").exists() else base_dir / "data"
-    data_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        data_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
     db_target = data_dir / "judicial_authority.db"
 
     # 若檔案已存在且大小正常（> 1MB），直接返回
     if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+        _DB_ASSETS_INITIALIZED = True
         return True
 
     # 檢查其他常見候選路徑是否存在現成資料庫（避免本機環境重複下載）
@@ -1947,7 +1957,8 @@ def ensure_database_assets():
             Path("data/judicial_authority.db")
         ]
         for c in cands:
-            if c.exists() and c.stat().st_size > 1024 * 1024:
+            if c.exists() and c.is_file() and c.stat().st_size > 1024 * 1024:
+                _DB_ASSETS_INITIALIZED = True
                 return True
     except Exception:
         pass
@@ -1960,21 +1971,24 @@ def ensure_database_assets():
 
     for url in download_urls:
         try:
-            with st.spinner("📦 首次啟動：正在自 GitHub Release 安全下載全量權威裁判大庫 (約 115MB)，請稍候..."):
-                req = urllib.request.Request(
-                    url,
-                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-                )
-                with urllib.request.urlopen(req, timeout=180) as resp, open(db_target, "wb") as f_out:
-                    while chunk := resp.read(1024 * 1024):  # 每次讀取 1MB
-                        f_out.write(chunk)
-                if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+            )
+            with urllib.request.urlopen(req, timeout=180) as resp, open(db_target, "wb") as f_out:
+                while chunk := resp.read(1024 * 1024):  # 每次讀取 1MB
+                    f_out.write(chunk)
+            if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+                try:
                     st.toast("✅ 權威裁判大庫下載並載入完成！", icon="🎉")
-                    return True
-        except Exception as e:
+                except Exception:
+                    pass
+                _DB_ASSETS_INITIALIZED = True
+                return True
+        except Exception:
             continue
 
-    st.warning("⚠️ 自 GitHub Release 自動載入資料庫失敗（將啟用雲端唯讀快取備份）")
+    _DB_ASSETS_INITIALIZED = True
     return False
 
 
@@ -1999,7 +2013,10 @@ def get_realtime_database_stats() -> dict:
     動態穿透快取，即時查詢 SQLite 資料庫內的真實判例、憲判裁定與裁判總數。
     包含 precedents 與 authority_records 全量加總，支援雙表計數與雲端基準回退。
     """
-    ensure_database_assets()
+    try:
+        ensure_database_assets()
+    except Exception:
+        pass
     stats = {
         "total_precedents": 18196,
         "total_constitutional": 869,
