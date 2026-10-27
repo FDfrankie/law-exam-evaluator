@@ -14,9 +14,9 @@
    - 精準排除「審裁字」與「統裁字」純罐頭程序不受理雜訊
    - 建立「憲判字直通專屬通道」：直接檢索 111~115 年全量判決，徹底解決分頁中斷破口
    - 封裝 3 次指數退避重試（Retry on 10054 ConnectionResetError / Timeout）
-3. 歷史 803 則司法院大法官解釋（釋字第 1 號至第 803 號）全面注入入庫：
+3. 歷史 813 則司法院大法官解釋（釋字第 1 號至第 813 號）全面注入入庫：
    - 容錯跳過空 JSON 與損壞檔案
-   - 缺額自動對接司法院開放資料平臺 API（Category 052）全量補齊至 803 則
+   - 缺額自動對接司法院開放資料平臺 API（Category 052）與 FINT 端點全量補齊至 813 則
 4. 清洗既有歷史髒資料功能（purge_dirty_constitutional_data）
 5. 支援禮貌延遲與斷點續抓，自動同步 Upsert 寫入 data/judicial_authority.db 與 FTS5
 """
@@ -31,14 +31,14 @@ import ssl
 import zipfile
 import io
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Dict, Any, List, Optional, Set, Tuple
 import urllib.parse
 import urllib.request
 
 # 終端輸出編碼保護
 if hasattr(sys.stdout, "reconfigure"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     except Exception:
         pass
 if hasattr(sys.stderr, "reconfigure"):
@@ -469,12 +469,56 @@ class AuthorityCrawler:
             time.sleep(0.5)
             return None
 
+    def _get_annual_q_hash(self, year: int) -> Optional[Tuple[str, str]]:
+        """
+        向 Default_AD.aspx 送出指定年度查詢，取得獨立之 (ty, q) 雜湊。
+        """
+        ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
+        try:
+            entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+            if not entry_html:
+                self.warmup_session()
+                entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+            if not entry_html:
+                return None
+
+            soup = BeautifulSoup(entry_html, "html.parser")
+            vs = soup.find(id="__VIEWSTATE")
+            vsg = soup.find(id="__VIEWSTATEGENERATOR")
+            ev = soup.find(id="__EVENTVALIDATION")
+            if not (vs and vsg and ev):
+                return None
+
+            payload = [
+                ("__VIEWSTATE", vs["value"]),
+                ("__VIEWSTATEGENERATOR", vsg["value"]),
+                ("__EVENTVALIDATION", ev["value"]),
+                ("cbFJCType", "JC"),
+                ("jctype", "A"),
+                ("txtY1", str(year)),
+                ("txtY2", str(year)),
+                ("ctl00$cp_content$btnQry", "送出查詢")
+            ]
+            headers = dict(HEADERS)
+            headers["Referer"] = ad_url
+            if self.session:
+                resp = self.session.post(ad_url, data=payload, headers=headers, verify=False, timeout=25)
+                resp_text = resp.text if resp else ""
+            else:
+                resp_text = ""
+            m_lst = re.search(r'qryresultlst\.aspx\?ty=([^&]+)&q=([a-f0-9]{32})', resp_text)
+            if m_lst:
+                return m_lst.group(1), m_lst.group(2)
+        except Exception as e:
+            print(f"[!] 獲取 {year} 年度查詢 Hash 失敗: {e}")
+        return None
+
     def crawl_constitutional_orders_endpoint(self, max_pages: int = 5, sub_type_filter: Optional[List[str]] = None) -> int:
         """
         採集憲法法庭官方裁判與裁定端點（ty=JCC）。
         內建雙重通道：
         1. 憲判字直通專屬通道（111~115 年全量判決 100% 採集）
-        2. 最新裁判與實體裁定通道（依指定頁數掃描）
+        2. 按年度分段查詢（111 年至 115 年）實體裁定與最新見解通道，突破單次 500 筆截斷限制
         """
         if not BeautifulSoup:
             print("[!] 未安裝 BeautifulSoup，跳過 HTML 解析。")
@@ -554,49 +598,207 @@ class AuthorityCrawler:
             print(f"[!] 憲判字直通專屬通道異常: {e}")
 
         # =========================================================================
-        # 通道二：憲法法庭最新裁判與實質裁定通道（依指定頁數掃描）
+        # 通道二：按年度分段查詢（111 年至 115 年）實體裁定與最新見解通道（突破 500 筆截斷）
         # =========================================================================
         print("=" * 60)
-        print(f"🏛️ 啟動憲法法庭權威見解一般流端點採集 (預計掃描前 {max_pages} 頁)...")
+        print(f"🏛️ 啟動憲法法庭年度分段查詢（111 年至 115 年，每年度最多 {max_pages} 頁，突破單次截斷限制）...")
         print("=" * 60)
-        entry_html = self._http_get(FINT_QRY_URL)
-        m_q = re.search(r'q=([a-f0-9]{32})', entry_html)
-        q_hash = m_q.group(1) if m_q else "53f93baa3057821107c750323892fa92"
-        print(f"[+] 獲取憲法法庭查詢識別碼 (q): {q_hash}")
 
-        for page in range(1, max_pages + 1):
-            list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty=JCC&q={q_hash}&sort=DS&page={page}"
-            list_html = self._http_get(list_url, referer=FINT_QRY_URL)
-            time.sleep(self.delay_sec)
+        years_to_crawl = [111, 112, 113, 114, 115]
+        for yr in years_to_crawl:
+            print(f"\n📅 正在進行 {yr} 年度分段查詢...")
+            q_res = self._get_annual_q_hash(yr)
+            if not q_res:
+                print(f"[!] 無法取得 {yr} 年度查詢識別碼，嘗試重新預熱 Session 後重試...")
+                self.warmup_session()
+                q_res = self._get_annual_q_hash(yr)
 
-            soup = BeautifulSoup(list_html, "html.parser")
-            data_links = soup.find_all("a", href=lambda h: h and "data.aspx" in h)
-            if not data_links:
-                print(f"  [*] 第 {page} 頁無更多資料，結束掃描。")
-                break
+            if not q_res:
+                print(f"[!] {yr} 年度查詢跳過。")
+                continue
 
-            print(f"[*] 正在處理第 {page}/{max_pages} 頁（本頁發現 {len(data_links)} 筆案件）...")
-            for a_el in data_links:
-                res = self._parse_and_ingest_constitutional_case(a_el, list_url, parsed_cases, sub_type_filter)
-                if res == "added":
-                    added_count += 1
-                elif res == "skipped":
-                    skipped_count += 1
+            ty, q_hash = q_res
+            print(f"[+] 獲取 {yr} 年度查詢識別碼 (ty={ty}, q={q_hash})")
+
+            for page in range(1, max_pages + 1):
+                list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
+                list_html = self._http_get(list_url, referer=f"{FINT_BASE_URL}Default_AD.aspx")
+                time.sleep(self.delay_sec)
+
+                if not list_html:
+                    break
+
+                soup = BeautifulSoup(list_html, "html.parser")
+                has_table = bool(soup.find("table") or soup.find("a", href=lambda h: h and "data.aspx" in h))
+
+                # Session 活化機制：若回傳 HTML 不含表格（Session 逾時），自動調用 warmup_session() 重新獲取新 q
+                if not has_table:
+                    print(f"  [!] {yr} 年度第 {page} 頁未偵測到表格（可能 Session 逾時），重新預熱 Session 活化連線...")
+                    self.warmup_session()
+                    new_q_res = self._get_annual_q_hash(yr)
+                    if new_q_res:
+                        ty, q_hash = new_q_res
+                        list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
+                        list_html = self._http_get(list_url, referer=f"{FINT_BASE_URL}Default_AD.aspx")
+                        if list_html:
+                            soup = BeautifulSoup(list_html, "html.parser")
+
+                data_links = soup.find_all("a", href=lambda h: h and "data.aspx" in h)
+                if not data_links:
+                    print(f"  [*] {yr} 年度於第 {page} 頁無更多資料，結束該年度掃描。")
+                    break
+
+                print(f"[*] [{yr}年度] 正在處理第 {page}/{max_pages} 頁（發現 {len(data_links)} 筆案件）...")
+                for a_el in data_links:
+                    res = self._parse_and_ingest_constitutional_case(a_el, list_url, parsed_cases, sub_type_filter)
+                    if res == "added":
+                        added_count += 1
+                    elif res == "skipped":
+                        skipped_count += 1
 
         print(f"[✓] 憲法法庭端點採集完畢：累計入庫 {added_count} 筆實質裁判，過濾剔除 {skipped_count} 筆純罐頭不受理裁定。")
         return added_count
 
     # =========================================================================
-    # 3. 歷史 803 則司法院大法官解釋（釋字第 1 號至第 803 號）全面注入
+    # 3. 歷史 813 則司法院大法官解釋（釋字第 1 號至第 813 號）全面注入
     # =========================================================================
+    def _fetch_missing_interpretations_fint(self, missing_nums: List[int], target_dir: Path) -> int:
+        """
+        透過司法院 FINT 系統補抓 804~813 號或任何開放資料平臺 Category 052 遺漏之大法官解釋
+        """
+        if not missing_nums:
+            return 0
+        print(f"[*] 啟動 FINT 端點補齊遺漏釋字: {missing_nums}...")
+        self.warmup_session()
+        ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
+        try:
+            entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+            if not entry_html:
+                return 0
+            soup = BeautifulSoup(entry_html, "html.parser")
+            vs = soup.find(id="__VIEWSTATE")
+            vsg = soup.find(id="__VIEWSTATEGENERATOR")
+            ev = soup.find(id="__EVENTVALIDATION")
+            if not (vs and vsg and ev):
+                return 0
+
+            payload = [
+                ("__VIEWSTATE", vs["value"]),
+                ("__VIEWSTATEGENERATOR", vsg["value"]),
+                ("__EVENTVALIDATION", ev["value"]),
+                ("txtCase", "釋"),
+                ("txtY1", "110"),
+                ("txtY2", "110"),
+                ("ctl00$cp_content$btnQry", "送出查詢")
+            ]
+            headers = dict(HEADERS)
+            headers["Referer"] = ad_url
+            resp = self.session.post(ad_url, data=payload, headers=headers, verify=False, timeout=25) if self.session else None
+            resp_text = resp.text if resp else ""
+            m_lst = re.search(r'qryresultlst\.aspx\?ty=([^&]+)&q=([a-f0-9]{32})', resp_text)
+            if not m_lst:
+                return 0
+            list_url = f"{FINT_BASE_URL}{m_lst.group(0)}"
+            list_html = self._http_get(list_url, referer=ad_url)
+            if not list_html:
+                return 0
+            soup_list = BeautifulSoup(list_html, "html.parser")
+            fetched = 0
+            for a in soup_list.find_all("a", href=lambda h: h and "data.aspx" in h):
+                txt = a.text.strip()
+                m_no = re.search(r'(\d+)', txt)
+                if not m_no:
+                    continue
+                no = int(m_no.group(1))
+                if no in missing_nums:
+                    item_url = f"{FINT_BASE_URL}{a['href']}"
+                    r_item_text = self._http_get(item_url, referer=list_url)
+                    if not r_item_text:
+                        continue
+                    soup_item = BeautifulSoup(r_item_text, "html.parser")
+                    issue_div = soup_item.find(id="plCIssue")
+                    full_div = soup_item.find(id="plFull")
+                    issue_text = issue_div.get_text(strip=True) if issue_div else ""
+                    full_text = full_div.get_text() if full_div else ""
+
+                    title_text = soup_item.title.text.strip() if soup_item.title else ""
+                    m_date = re.search(r'\((\d{2,3})\.(\d{2})\.(\d{2})\)', title_text)
+                    if m_date:
+                        roc_y, mm, dd = m_date.groups()
+                        ad_y = int(roc_y) + 1911
+                        inte_date = f"{ad_y}-{mm}-{dd}"
+                    else:
+                        inte_date = "2021-12-01"
+
+                    holding = ""
+                    reasoning = ""
+                    m_hold = re.search(r'解\s*釋\s*文[:：]?(.*?)(?=理\s*由\s*書[:：]|$)', full_text, re.DOTALL)
+                    if m_hold:
+                        holding = m_hold.group(1).strip()
+                    m_reason = re.search(r'理\s*由\s*書[:：]?(.*)', full_text, re.DOTALL)
+                    if m_reason:
+                        reasoning = m_reason.group(1).strip()
+                    if not holding and full_text:
+                        holding = full_text[:500].strip()
+                    if not reasoning and full_text:
+                        reasoning = full_text.strip()
+
+                    case_no = f"釋字第{no}號"
+                    title = f"司法院釋字第{no}號解釋" + (f"【{issue_text[:40]}】" if issue_text else "")
+                    holding_clean = re.sub(r'^[\[\]\s　]+', '', str(holding)).strip()
+                    reasoning_clean = re.sub(r'^[\[\]\s　]+', '', str(reasoning)).strip()
+                    laws = self.extract_laws_cited(holding_clean + " " + reasoning_clean)
+
+                    rec = {
+                        "id": case_no,
+                        "category": "CONSTITUTIONAL",
+                        "sub_type": "司法院大法官解釋",
+                        "case_no": case_no,
+                        "date": inte_date,
+                        "court": "司法院大法官會議",
+                        "title": title,
+                        "holding": holding_clean if holding_clean else f"司法院釋字第{no}號解釋要旨",
+                        "reasoning": reasoning_clean if reasoning_clean else holding_clean,
+                        "laws_cited": laws,
+                        "status": "大法官解釋",
+                        "extra_meta": {
+                            "source": "司法院 FINT 系統",
+                            "source_url": item_url,
+                            "issue": issue_text
+                        }
+                    }
+                    self.engine.upsert_record(rec)
+                    # 存入本地 JSON
+                    local_save_path = target_dir / f"const_釋字第{no}號.json"
+                    data_obj = {
+                        "data": {
+                            "inte_no": str(no),
+                            "inte_no_title": f"釋字第{no}號",
+                            "inte_date": inte_date,
+                            "inte_issue": issue_text,
+                            "inte_desc": holding,
+                            "inte_reason": reasoning,
+                            "data_url": f"https://cons.judicial.gov.tw/docdata.aspx?fid=100&id={no}"
+                        }
+                    }
+                    with open(local_save_path, "w", encoding="utf-8") as out_fp:
+                        json.dump(data_obj, out_fp, ensure_ascii=False, indent=2)
+                    fetched += 1
+                    print(f"  [✓] FINT 補齊釋字入庫: 【{case_no}】 - {title}")
+                    time.sleep(self.delay_sec)
+            return fetched
+        except Exception as e:
+            print(f"[!] FINT 補齊釋字失敗: {e}")
+            return 0
+
     def import_all_interpretations(self) -> int:
         """
         全面讀取本地已收錄的大法官解釋資料集，結構化寫入 judicial_authority.db
         標籤統一標記為：category='CONSTITUTIONAL'、sub_type='司法院大法官解釋'
-        若本地檔案不足 800 筆，自動透過司法院開放資料平臺 API（Category 052）補齊全量 803 則。
+        若本地檔案不足 813 筆，自動透過司法院開放資料平臺 API（Category 052）與 FINT 端點補齊全量 813 則。
         """
         print("=" * 60)
-        print("📜 啟動歷史 803 則司法院大法官解釋（釋字第 1 號至第 803 號）全量入庫")
+        print("📜 啟動歷史 813 則司法院大法官解釋（釋字第 1 號至第 813 號）全量入庫")
         print("=" * 60)
 
         # 鎖定本地目錄
@@ -693,104 +895,115 @@ class AuthorityCrawler:
 
         print(f"[*] 本地釋字有效入庫 {added_cnt} 筆。目前收錄編號數: {len(loaded_numbers)} 則")
 
-        # 2. 缺額自動補抓機制（若不足 800 筆，透過司法院開放資料平臺 Category 052 補齊）
-        if len(loaded_numbers) < 800:
-            missing_numbers = [n for n in range(1, 804) if n not in loaded_numbers]
-            print(f"[!] 本地釋字尚未滿 800 筆 (缺少 {len(missing_numbers)} 則)，啟動司法院開放資料平臺 (Category 052) 自動補齊...")
-            try:
-                op_url = "https://opendata.judicial.gov.tw/data/api/rest/categories/052/resources"
-                headers = {"User-Agent": "Mozilla/5.0"}
-                if self.session:
-                    r_op = self.session.get(op_url, headers=headers, verify=False, timeout=25)
-                    datasets = r_op.json() if r_op.status_code == 200 else []
-                else:
-                    req = urllib.request.Request(op_url, headers=headers)
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    with urllib.request.urlopen(req, timeout=25, context=ctx) as r_op:
-                        datasets = json.loads(r_op.read().decode("utf-8"))
+        # 2. 缺額自動補抓機制（若不足 813 筆，透過開放資料平臺與 FINT 補齊全量 813 則）
+        if len(loaded_numbers) < 813:
+            missing_numbers = [n for n in range(1, 814) if n not in loaded_numbers]
+            print(f"[!] 本地釋字尚未滿 813 筆 (缺少 {len(missing_numbers)} 則: {missing_numbers[:10]}...)，啟動自動補齊...")
 
-                inte_file_map = {}
-                for ds in datasets:
-                    title = ds.get("title", "")
-                    m = re.search(r'釋字第?\s*(\d+)\s*號?', title)
-                    if m:
-                        no = int(m.group(1))
-                        filesets = ds.get("filesets", [])
-                        if filesets:
-                            inte_file_map[no] = filesets[0].get("fileSetId")
+            missing_052 = [n for n in missing_numbers if n <= 803]
+            missing_fint = [n for n in missing_numbers if n > 803]
 
-                fetched_missing = 0
-                for no in missing_numbers:
-                    fid = inte_file_map.get(no)
-                    if not fid:
-                        continue
-                    try:
-                        down_url = f"https://opendata.judicial.gov.tw/api/FilesetLists/{fid}/file"
-                        if self.session:
-                            r_down = self.session.get(down_url, verify=False, timeout=15)
-                            content_bytes = r_down.content
-                        else:
-                            req = urllib.request.Request(down_url, headers=headers)
-                            with urllib.request.urlopen(req, timeout=15, context=ctx) as r_down:
-                                content_bytes = r_down.read()
+            if missing_052:
+                print(f"[*] 針對開放資料平臺 Category 052 補齊 {len(missing_052)} 則釋字...")
+                try:
+                    op_url = "https://opendata.judicial.gov.tw/data/api/rest/categories/052/resources"
+                    headers = {"User-Agent": "Mozilla/5.0"}
+                    if self.session:
+                        r_op = self.session.get(op_url, headers=headers, verify=False, timeout=25)
+                        datasets = r_op.json() if r_op.status_code == 200 else []
+                    else:
+                        req = urllib.request.Request(op_url, headers=headers)
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        with urllib.request.urlopen(req, timeout=25, context=ctx) as r_op:
+                            datasets = json.loads(r_op.read().decode("utf-8"))
 
-                        zf = zipfile.ZipFile(io.BytesIO(content_bytes))
-                        for z_name in zf.namelist():
-                            if z_name.endswith(".json"):
-                                json_raw = zf.read(z_name).decode("utf-8", errors="ignore")
-                                raw_dict = json.loads(json_raw)
-                                data = raw_dict.get("data", raw_dict)
-                                inte_no = str(data.get("inte_no", no)).strip()
-                                case_no = f"釋字第{inte_no}號"
-                                issue = data.get("inte_issue", "")
-                                holding = data.get("inte_desc", "")
-                                reasoning = data.get("inte_reason", "")
-                                date_s = str(data.get("inte_date", "")).split(" ")[0]
-                                url = data.get("data_url", f"https://cons.judicial.gov.tw/docdata.aspx?fid=100&id={inte_no}")
+                    inte_file_map = {}
+                    for ds in datasets:
+                        title = ds.get("title", "")
+                        m = re.search(r'釋字第?\s*(\d+)\s*號?', title)
+                        if m:
+                            no = int(m.group(1))
+                            filesets = ds.get("filesets", [])
+                            if filesets:
+                                inte_file_map[no] = filesets[0].get("fileSetId")
 
-                                title = f"司法院釋字第{inte_no}號解釋" + (f"【{issue[:40]}】" if issue else "")
-                                holding_clean = re.sub(r'^[\[\]\s　]+', '', str(holding)).strip()
-                                reasoning_clean = re.sub(r'^[\[\]\s　]+', '', str(reasoning)).strip()
-                                laws = self.extract_laws_cited(holding_clean + " " + reasoning_clean)
+                    fetched_missing = 0
+                    for no in missing_052:
+                        fid = inte_file_map.get(no)
+                        if not fid:
+                            continue
+                        try:
+                            down_url = f"https://opendata.judicial.gov.tw/api/FilesetLists/{fid}/file"
+                            if self.session:
+                                r_down = self.session.get(down_url, verify=False, timeout=15)
+                                content_bytes = r_down.content
+                            else:
+                                req = urllib.request.Request(down_url, headers=headers)
+                                with urllib.request.urlopen(req, timeout=15, context=ctx) as r_down:
+                                    content_bytes = r_down.read()
 
-                                rec = {
-                                    "id": case_no,
-                                    "category": "CONSTITUTIONAL",
-                                    "sub_type": "司法院大法官解釋",
-                                    "case_no": case_no,
-                                    "date": date_s,
-                                    "court": "司法院大法官會議",
-                                    "title": title,
-                                    "holding": holding_clean if holding_clean else f"司法院釋字第{inte_no}號解釋要旨",
-                                    "reasoning": reasoning_clean if reasoning_clean else holding_clean,
-                                    "laws_cited": laws,
-                                    "status": "大法官解釋",
-                                    "extra_meta": {
-                                        "source": "司法院開放資料平臺 (052)",
-                                        "source_url": url,
-                                        "issue": issue
+                            zf = zipfile.ZipFile(io.BytesIO(content_bytes))
+                            for z_name in zf.namelist():
+                                if z_name.endswith(".json"):
+                                    json_raw = zf.read(z_name).decode("utf-8", errors="ignore")
+                                    raw_dict = json.loads(json_raw)
+                                    data = raw_dict.get("data", raw_dict)
+                                    inte_no = str(data.get("inte_no", no)).strip()
+                                    case_no = f"釋字第{inte_no}號"
+                                    issue = data.get("inte_issue", "")
+                                    holding = data.get("inte_desc", "")
+                                    reasoning = data.get("inte_reason", "")
+                                    date_s = str(data.get("inte_date", "")).split(" ")[0]
+                                    url = data.get("data_url", f"https://cons.judicial.gov.tw/docdata.aspx?fid=100&id={inte_no}")
+
+                                    title = f"司法院釋字第{inte_no}號解釋" + (f"【{issue[:40]}】" if issue else "")
+                                    holding_clean = re.sub(r'^[\[\]\s　]+', '', str(holding)).strip()
+                                    reasoning_clean = re.sub(r'^[\[\]\s　]+', '', str(reasoning)).strip()
+                                    laws = self.extract_laws_cited(holding_clean + " " + reasoning_clean)
+
+                                    rec = {
+                                        "id": case_no,
+                                        "category": "CONSTITUTIONAL",
+                                        "sub_type": "司法院大法官解釋",
+                                        "case_no": case_no,
+                                        "date": date_s,
+                                        "court": "司法院大法官會議",
+                                        "title": title,
+                                        "holding": holding_clean if holding_clean else f"司法院釋字第{inte_no}號解釋要旨",
+                                        "reasoning": reasoning_clean if reasoning_clean else holding_clean,
+                                        "laws_cited": laws,
+                                        "status": "大法官解釋",
+                                        "extra_meta": {
+                                            "source": "司法院開放資料平臺 (052)",
+                                            "source_url": url,
+                                            "issue": issue
+                                        }
                                     }
-                                }
-                                self.engine.upsert_record(rec)
-                                added_cnt += 1
-                                fetched_missing += 1
+                                    self.engine.upsert_record(rec)
+                                    added_cnt += 1
+                                    fetched_missing += 1
 
-                                # 同步存回本地磁碟
-                                local_save_path = target_dir / f"const_釋字第{inte_no}號.json"
-                                with open(local_save_path, "w", encoding="utf-8") as out_fp:
-                                    json.dump(raw_dict, out_fp, ensure_ascii=False, indent=2)
+                                    # 同步存回本地磁碟
+                                    local_save_path = target_dir / f"const_釋字第{inte_no}號.json"
+                                    with open(local_save_path, "w", encoding="utf-8") as out_fp:
+                                        json.dump(raw_dict, out_fp, ensure_ascii=False, indent=2)
 
-                        if fetched_missing % 50 == 0:
-                            print(f"  [+] 司法院開放資料平臺補齊進度: 已補入 {fetched_missing} 則釋字...")
-                        time.sleep(0.05)
-                    except Exception as e:
-                        print(f"  [!] 補抓釋字第 {no} 號失敗: {e}")
+                            if fetched_missing % 50 == 0:
+                                print(f"  [+] 司法院開放資料平臺補齊進度: 已補入 {fetched_missing} 則釋字...")
+                            time.sleep(0.05)
+                        except Exception as e:
+                            print(f"  [!] 補抓釋字第 {no} 號失敗: {e}")
 
-                print(f"[✓] 釋字缺額補抓完成，累計自開放資料平臺補充 {fetched_missing} 則！")
-            except Exception as e:
-                print(f"[!] 司法院開放資料平臺補齊流程異常: {e}")
+                    print(f"[✓] 釋字 1~803 缺額補抓完成，累計自開放資料平臺補充 {fetched_missing} 則！")
+                except Exception as e:
+                    print(f"[!] 司法院開放資料平臺補齊流程異常: {e}")
+
+            if missing_fint:
+                print(f"[*] 針對 FINT 系統補齊 804~813 號釋字 (缺少 {len(missing_fint)} 則)...")
+                fetched_fint = self._fetch_missing_interpretations_fint(missing_fint, target_dir)
+                added_cnt += fetched_fint
 
         print(f"\n[✓] 歷史司法院大法官解釋全量入庫完成！累計結構化注入 {added_cnt} 則權威釋字。")
         return added_cnt
@@ -851,9 +1064,9 @@ class AuthorityCrawler:
         # 2. 採集憲法法庭（憲判字全量、憲裁字，排除無實體爭點審裁）
         results["constitutional_orders"] = self.crawl_constitutional_orders_endpoint(max_pages=constitutional_pages)
 
-        # 3. 歷史 803 則大法官解釋全面注入
+        # 3. 歷史 813 則大法官解釋全面注入
         if import_interpretations:
-            results["interpretations_803"] = self.import_all_interpretations()
+            results["interpretations_813"] = self.import_all_interpretations()
 
         # 4. 資料庫髒資料清洗
         results["purged_canned_rulings"] = self.purge_dirty_constitutional_data()
@@ -863,10 +1076,10 @@ class AuthorityCrawler:
 
 def main():
     parser = argparse.ArgumentParser(description="司法院高階權威見解全量採集與過濾管線 2.0")
-    parser.add_argument("--all", action="store_true", help="執行完整採集管線（含大法庭、憲法裁判、803釋字與雜訊清洗）")
+    parser.add_argument("--all", action="store_true", help="執行完整採集管線（含大法庭、憲法裁判、813釋字與雜訊清洗）")
     parser.add_argument("--constitutional-only", action="store_true", help="僅採集憲法法庭裁判與審裁端點（含智慧過濾）")
     parser.add_argument("--tps-only", action="store_true", help="僅採集最高法院大法庭端點")
-    parser.add_argument("--import-interpretations", action="store_true", help="僅執行歷史 803 則司法院大法官解釋全量注入")
+    parser.add_argument("--import-interpretations", action="store_true", help="僅執行歷史 813 則司法院大法官解釋全量注入")
     parser.add_argument("--purge", action="store_true", help="僅執行資料庫純套版不受理罐頭裁定清洗")
     parser.add_argument("--pages", type=int, default=5, help="憲法法庭採集頁數（每頁 20 筆，預設 5 頁）")
     parser.add_argument("--delay", type=float, default=1.0, help="禮貌延遲秒數（預設 1.0 秒）")
