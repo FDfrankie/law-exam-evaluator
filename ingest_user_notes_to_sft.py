@@ -748,11 +748,47 @@ def read_note_text(file_path: Any, max_pages: int = 15, auto_ocr: bool = True) -
 
     primary_cache_file = CACHE_DIR / f"{file_path.name}.txt"
     
-    # 檢查實體檔案是否存在
+    # 檢查實體檔案是否存在（若為 Streamlit Cloud 或檔案未落地，依序從快取 JSON 與 SQLite 資料庫讀取）
     if not file_path.exists() or not file_path.is_file():
+        # 1. 檢查本機與 repo 內 _cache 目錄
         repo_cache = Path(__file__).resolve().parent / "data" / "SamsungNotes" / "_cache" / f"{file_path.name}.txt"
-        if repo_cache.exists():
+        if repo_cache.exists() and repo_cache.stat().st_size > 0:
             return repo_cache.read_text(encoding="utf-8")
+
+        # 2. 檢查全量雲端同步快取 JSON (samsung_notes_cache.json)
+        json_candidates = [
+            Path(DATA_DIR) / "samsung_notes_cache.json",
+            Path(__file__).resolve().parent / "data" / "samsung_notes_cache.json",
+            Path(__file__).resolve().parent.parent / "data" / "samsung_notes_cache.json"
+        ]
+        for jc in json_candidates:
+            if jc.exists():
+                try:
+                    with open(jc, "r", encoding="utf-8") as jf:
+                        c_dict = json.load(jf)
+                        if file_path.name in c_dict:
+                            item = c_dict[file_path.name]
+                            txt = item.get("text", "") if isinstance(item, dict) else str(item)
+                            if txt and len(txt.strip()) > 50:
+                                return txt
+                except Exception:
+                    pass
+
+        # 3. 檢查 SQLite 資料庫 user_notes 資料表
+        try:
+            db_file = Path(DATA_DIR) / "judicial_authority.db"
+            if db_file.exists():
+                import sqlite3
+                conn = sqlite3.connect(str(db_file), timeout=5.0)
+                cur = conn.cursor()
+                cur.execute("SELECT extracted_text FROM user_notes WHERE filename = ? OR note_id = ?", (file_path.name, file_path.name))
+                row = cur.fetchone()
+                conn.close()
+                if row and row[0] and len(row[0].strip()) > 50:
+                    return row[0]
+        except Exception:
+            pass
+
         return f"[筆記《{file_path.name}》已收錄於 Google Drive 雲端庫]"
 
     ext = file_path.suffix.lower()
