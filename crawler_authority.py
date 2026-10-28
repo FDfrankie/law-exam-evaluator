@@ -246,27 +246,43 @@ class AuthorityCrawler:
         憲法裁判價值嚴格過濾閥：
         - 憲判字（判決）：100% 保留
         - 暫時處分裁定（憲暫裁）：100% 保留
-        - 審查庭裁定（審裁字、統裁字、或內文載明審查庭者，含 111 年掛憲裁字之審查庭裁定）：100% 阻絕剔除！
-        - 憲裁字中純程序「不受理」裁定：阻絕剔除
+        - 112~115 年憲裁字：全部納入（由全體大法官合議做成之憲裁字裁定，100% 保留）
+        - 111 年憲裁字：因當時尚未獨立「審裁字」，審查庭純程序駁回亦掛憲裁字，故 111 年須嚴格排除審查庭駁回裁定
+        - 審裁字、統裁字：100% 阻絕剔除！
         """
         # 1. 判決（憲判字）與全體大法官合議暫時處分（憲暫裁）：絕對 100% 保留！
         if any(k in case_no for k in ["憲判", "憲暫裁", "暫時處分"]) or "暫時處分" in holding:
             return True
 
-        # 2. 審查庭程序裁定（審裁、統裁、或內文載明由審查庭做成者）：100% 阻絕剔除！
+        # 2. 審查庭程序裁定（審裁、統裁）：100% 阻絕剔除！
         if any(k in case_no for k in ["審裁", "統裁"]):
             return False
-        if "審查庭" in full_text or "審查庭" in reasoning:
-            return False
 
-        # 3. 憲裁字：若明確為主文不受理且理由無深層法理闡述，予以剔除
+        # 提取案號年度（民國年）
+        m_yr = re.search(r'(\d+)\s*年', case_no)
+        case_year = int(m_yr.group(1)) if m_yr else None
+
+        # 3. 憲裁字分流：
+        # 112~115 年：審查庭已全面改用「審裁字」，所有掛「憲裁字」者皆為全體大法官合議做成之憲裁字裁定，全部納入！
+        # 111 年：審查庭駁回亦掛「憲裁字」，故僅 111 年需要過濾審查庭與純程序不受理裁定。
         if "憲裁" in case_no:
+            # 112 年至 115 年（含以後）的憲裁字，全部納入，不予排除！
+            if case_year and case_year >= 112:
+                return True
+
+            # 111 年（或未識別年份非 112+）：排除審查庭與純程序駁回
+            if "審查庭" in full_text or "審查庭" in reasoning:
+                return False
             if "不受理" in holding:
                 if any(w in reasoning for w in ["不生牴觸憲法", "未具體指摘", "認事用法", "憲法訴訟法第15條", "尚難謂"]):
                     return False
                 if len(reasoning.strip()) < 300:
                     return False
             return True
+
+        # 4. 其他案號若明載審查庭亦排除
+        if "審查庭" in full_text or "審查庭" in reasoning:
+            return False
 
         return True
 
@@ -429,18 +445,28 @@ class AuthorityCrawler:
                 return "skipped"
 
             # 6. 裁判類型分類
+            m_yr = re.search(r'(\d+)\s*年', case_no)
+            case_year = int(m_yr.group(1)) if m_yr else None
+
             if "憲判字" in case_no or "判決" in link_text:
                 sub_type = "憲法法庭判決"
                 status = "實體確定判決"
             elif "憲暫裁" in case_no or "暫時處分" in case_no:
                 sub_type = "憲法法庭暫時處分裁定"
                 status = "暫時處分裁定"
-            elif "審裁字" in case_no or "審查庭" in full_text:
+            elif "審裁字" in case_no:
                 sub_type = "憲法法庭審裁"
                 status = "審查庭裁定"
             elif "憲裁字" in case_no or "裁定" in link_text:
-                sub_type = "憲法法庭實體裁定"
-                status = "實體裁定"
+                if case_year == 111 and "審查庭" in full_text:
+                    sub_type = "憲法法庭審裁"
+                    status = "審查庭裁定"
+                else:
+                    sub_type = "憲法法庭實體裁定"
+                    status = "實體裁定"
+            elif "審查庭" in full_text:
+                sub_type = "憲法法庭審裁"
+                status = "審查庭裁定"
             else:
                 sub_type = "憲法法庭裁判"
                 status = "一般裁判"
@@ -1035,10 +1061,12 @@ class AuthorityCrawler:
                 WHERE case_no LIKE '%審裁%' 
                    OR case_no LIKE '%統裁%'
                    OR sub_type LIKE '%審裁%'
-                   OR status LIKE '%審查庭%'
-                   OR holding LIKE '%審查庭%'
-                   OR reasoning LIKE '%審查庭%'
-                   OR (category = 'CONSTITUTIONAL' AND holding LIKE '%不受理%' AND (reasoning LIKE '%未具體指摘%' OR reasoning LIKE '%不生牴觸憲法%' OR reasoning LIKE '%認事用法%'));
+                   OR (category = 'CONSTITUTIONAL' AND case_no LIKE '%111%憲裁%' AND (
+                       status LIKE '%審查庭%'
+                       OR holding LIKE '%審查庭%'
+                       OR reasoning LIKE '%審查庭%'
+                       OR (holding LIKE '%不受理%' AND (reasoning LIKE '%未具體指摘%' OR reasoning LIKE '%不生牴觸憲法%' OR reasoning LIKE '%認事用法%'))
+                   ));
             """)
             deleted_cnt = cur.rowcount
             conn.commit()
