@@ -238,17 +238,36 @@ class AuthorityCrawler:
         return laws
 
     # =========================================================================
-    # 智慧裁判價值判定（定向穿透後全面入庫）
+    # 智慧裁判價值判定（定向穿透與審查庭雜訊過濾閥）
     # =========================================================================
     @staticmethod
-    def is_substantive_ruling(case_no: str, holding: str, reasoning: str) -> bool:
+    def is_substantive_ruling(case_no: str, holding: str, reasoning: str, full_text: str = "") -> bool:
         """
-        憲法裁判價值判定：
-        改採「字別精準定向穿透」後，定向採集目標（憲判字、憲暫裁、憲裁字）皆為大法官實體裁判成果，
-        非純程序雜訊，全面判定為有效裁判入庫。僅對明確之審查庭程序字別（審裁、統裁）作安全阻絕。
+        憲法裁判價值嚴格過濾閥：
+        - 憲判字（判決）：100% 保留
+        - 暫時處分裁定（憲暫裁）：100% 保留
+        - 審查庭裁定（審裁字、統裁字、或內文載明審查庭者，含 111 年掛憲裁字之審查庭裁定）：100% 阻絕剔除！
+        - 憲裁字中純程序「不受理」裁定：阻絕剔除
         """
+        # 1. 判決（憲判字）與全體大法官合議暫時處分（憲暫裁）：絕對 100% 保留！
+        if any(k in case_no for k in ["憲判", "憲暫裁", "暫時處分"]) or "暫時處分" in holding:
+            return True
+
+        # 2. 審查庭程序裁定（審裁、統裁、或內文載明由審查庭做成者）：100% 阻絕剔除！
         if any(k in case_no for k in ["審裁", "統裁"]):
             return False
+        if "審查庭" in full_text or "審查庭" in reasoning:
+            return False
+
+        # 3. 憲裁字：若明確為主文不受理且理由無深層法理闡述，予以剔除
+        if "憲裁" in case_no:
+            if "不受理" in holding:
+                if any(w in reasoning for w in ["不生牴觸憲法", "未具體指摘", "認事用法", "憲法訴訟法第15條", "尚難謂"]):
+                    return False
+                if len(reasoning.strip()) < 300:
+                    return False
+            return True
+
         return True
 
     # =========================================================================
@@ -404,9 +423,9 @@ class AuthorityCrawler:
             if not reasoning:
                 reasoning = full_text
 
-            # 🛑 僅對明確之審裁/統裁審查庭程序案件做安全阻絕；定向採集之憲判、憲暫裁、憲裁均非雜訊，全數實體入庫
-            if not self.is_substantive_ruling(case_no, holding, reasoning):
-                print(f"  [⏩ 跳過程序案件] 審查庭案件: 【{case_no}】")
+            # 🛑 掛載智慧爭點價值過濾閥（阻絕審查庭程序裁定與純程序不受理罐頭）
+            if not self.is_substantive_ruling(case_no, holding, reasoning, full_text):
+                print(f"  [⏩ 跳過程序雜訊] 審查庭或純程序駁回裁定: 【{case_no}】")
                 return "skipped"
 
             # 6. 裁判類型分類
@@ -502,10 +521,10 @@ class AuthorityCrawler:
             print(f"[!] 獲取 {year} 年度查詢 Hash 失敗: {e}")
         return None
 
-    def _get_case_type_q_hash(self, case_type: str, y_start: int = 111, y_end: int = 115) -> Optional[Tuple[str, str]]:
+    def _get_case_type_q_hash(self, case_type: str, y_start: int = 111, y_end: int = 115, kw: str = "") -> Optional[Tuple[str, str]]:
         """
         向 Default_AD.aspx 送出指定案號字別（txtCase="憲判"、"憲裁"、"憲暫裁"）查詢，
-        取得專屬之 (ty, q) 雜湊。精準穿透實質裁判，徹底阻絕「審裁」與「統裁」純程序雜訊。
+        取得專屬之 (ty, q) 雜湊。精準穿透實質裁判，支援 txtKW 關鍵字排除（如 "-審查庭"）。
         """
         ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
         try:
@@ -527,7 +546,7 @@ class AuthorityCrawler:
                 ("__VIEWSTATE", vs["value"]),
                 ("__VIEWSTATEGENERATOR", vsg["value"]),
                 ("__EVENTVALIDATION", ev["value"]),
-                ("txtKW", ""),
+                ("txtKW", kw),
                 ("txtKT", ""),
                 ("txtYear", ""),
                 ("txtCase", case_type),  # 精準指定 "憲判"、"憲暫裁" 或 "憲裁"
@@ -557,10 +576,12 @@ class AuthorityCrawler:
     def crawl_constitutional_orders_endpoint(self, max_pages: int = 5, sub_type_filter: Optional[List[str]] = None) -> int:
         """
         採集憲法法庭官方裁判與裁定端點（ty=JCC）。
-        採「字別精準定向穿透（Targeted Case Type Crawling）」架構：
-        依序定向輪詢 TARGET_CASE_TYPES = ["憲判", "憲暫裁", "憲裁"]，
-        徹底阻絕成千上萬件審查庭「審裁字」與「統裁字」純程序雜訊，
-        並規避司法院 FINT 單次檢索 500 筆（第 26 頁）強制截斷限制。
+        採「字別精準定向穿透與 111 年審查庭排除」架構：
+        1. 憲判字 (111~115 年全量實體確定判決，共 59 筆，3 頁)
+        2. 憲暫裁字 (111~115 年全量合議暫時處分裁定，共 3 筆，1 頁)
+        3. 憲裁字 112~115 年全體合議實體裁定（此時期審查庭已獨立為審裁字，憲裁字總量僅 279 筆，14 頁）
+        4. 憲裁字 111 年全體合議實體裁定（以 txtKW="-審查庭" 排除 1,661 筆審查庭純程序駁回，僅採集實質裁判 28 筆，2 頁）
+        徹底規避司法院 FINT 單次檢索 500 筆（第 26 頁）強制截斷限制，並杜絕審查庭程序雜訊入庫。
         """
         if not BeautifulSoup:
             print("[!] 未安裝 BeautifulSoup，跳過 HTML 解析。")
@@ -571,22 +592,29 @@ class AuthorityCrawler:
         skipped_count = 0
         parsed_cases = set()
 
-        TARGET_CASE_TYPES = ["憲判", "憲暫裁", "憲裁"]
+        TARGET_TASKS = [
+            ("憲判", 111, 115, "", "111~115 年全量實體確定判決"),
+            ("憲暫裁", 111, 115, "", "111~115 年全體大法官合議暫時處分裁定"),
+            ("憲裁", 112, 115, "", "112~115 年全體大法官實體裁定"),
+            ("憲裁", 111, 111, "-審查庭", "111 年全體大法官實體裁定（精準排除審查庭程序駁回）")
+        ]
+
         print("=" * 60)
         print("🏛️ 啟動憲法法庭「字別精準定向穿透」採集機制 (111 年至 115 年)...")
-        print(f"🎯 目標實體字別: {', '.join(TARGET_CASE_TYPES)}")
+        print("🎯 目標任務: 憲判 (111~115) ｜ 憲暫裁 (111~115) ｜ 憲裁 (112~115) ｜ 憲裁 (111, 排除審查庭)")
         print("=" * 60)
 
-        for case_type in TARGET_CASE_TYPES:
-            print(f"\n⚖️ 正在定向檢索【{case_type}】字別裁判清單 (111~115 年)...")
-            q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
+        for case_type, y_start, y_end, kw, desc in TARGET_TASKS:
+            kw_info = f" (排除關鍵字: {kw})" if kw else ""
+            print(f"\n⚖️ 正在定向檢索【{case_type}】{desc}{kw_info}...")
+            q_res = self._get_case_type_q_hash(case_type, y_start=y_start, y_end=y_end, kw=kw)
             if not q_res:
-                print(f"[!] 無法取得【{case_type}】查詢識別碼，嘗試重新預熱 Session 後重試...")
+                print(f"[!] 無法取得【{case_type}】({y_start}~{y_end}) 查詢識別碼，嘗試重新預熱 Session 後重試...")
                 self.warmup_session()
-                q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
+                q_res = self._get_case_type_q_hash(case_type, y_start=y_start, y_end=y_end, kw=kw)
 
             if not q_res:
-                print(f"[!] 【{case_type}】查詢失敗，跳過該字別。")
+                print(f"[!] 【{case_type}】({y_start}~{y_end}) 查詢失敗，跳過該任務。")
                 continue
 
             ty, q_hash = q_res
@@ -595,7 +623,7 @@ class AuthorityCrawler:
             page = 1
             while True:
                 if max_pages and max_pages > 0 and page > max_pages:
-                    print(f"  [*] 【{case_type}】已達到指定最大頁數 ({max_pages} 頁)，結束該字別掃描。")
+                    print(f"  [*] 【{case_type}】已達到指定最大頁數 ({max_pages} 頁)，結束該任務掃描。")
                     break
 
                 list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
@@ -603,7 +631,7 @@ class AuthorityCrawler:
                 time.sleep(self.delay_sec)
 
                 if not list_html:
-                    print(f"  [*] 【{case_type}】第 {page} 頁無回應，結束該字別掃描。")
+                    print(f"  [*] 【{case_type}】第 {page} 頁無回應，結束該任務掃描。")
                     break
 
                 soup = BeautifulSoup(list_html, "html.parser")
@@ -613,7 +641,7 @@ class AuthorityCrawler:
                 if not has_table:
                     print(f"  [!] 【{case_type}】第 {page} 頁未偵測到表格（可能 Session 逾時），重新預熱 Session 活化連線...")
                     self.warmup_session()
-                    new_q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
+                    new_q_res = self._get_case_type_q_hash(case_type, y_start=y_start, y_end=y_end, kw=kw)
                     if new_q_res:
                         ty, q_hash = new_q_res
                         list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
@@ -623,7 +651,7 @@ class AuthorityCrawler:
 
                 data_links = soup.find_all("a", href=lambda h: h and "data.aspx" in h)
                 if not data_links:
-                    print(f"  [*] 【{case_type}】於第 {page} 頁無更多資料，結束該字別掃描。")
+                    print(f"  [*] 【{case_type}】({y_start}~{y_end}) 於第 {page} 頁無更多資料，結束該任務掃描。")
                     break
 
                 page_info = f"第 {page}/{max_pages} 頁" if (max_pages and max_pages > 0) else f"第 {page} 頁"
@@ -637,7 +665,7 @@ class AuthorityCrawler:
 
                 page += 1
 
-        print(f"\n[✓] 憲法法庭字別定向穿透採集完畢：累計入庫 {added_count} 筆實質裁判。")
+        print(f"\n[✓] 憲法法庭字別定向穿透採集完畢：累計入庫 {added_count} 筆實質裁判，過濾剔除 {skipped_count} 筆審查庭程序雜訊。")
         return added_count
 
     # =========================================================================
@@ -1004,7 +1032,13 @@ class AuthorityCrawler:
             cur = conn.cursor()
             cur.execute("""
                 DELETE FROM authority_records 
-                WHERE case_no LIKE '%審裁%' OR case_no LIKE '%統裁%';
+                WHERE case_no LIKE '%審裁%' 
+                   OR case_no LIKE '%統裁%'
+                   OR sub_type LIKE '%審裁%'
+                   OR status LIKE '%審查庭%'
+                   OR holding LIKE '%審查庭%'
+                   OR reasoning LIKE '%審查庭%'
+                   OR (category = 'CONSTITUTIONAL' AND holding LIKE '%不受理%' AND (reasoning LIKE '%未具體指摘%' OR reasoning LIKE '%不生牴觸憲法%' OR reasoning LIKE '%認事用法%'));
             """)
             deleted_cnt = cur.rowcount
             conn.commit()
