@@ -238,32 +238,18 @@ class AuthorityCrawler:
         return laws
 
     # =========================================================================
-    # 智慧爭點價值過濾閥（Dispute Value Filter）
+    # 智慧裁判價值判定（定向穿透後全面入庫）
     # =========================================================================
     @staticmethod
     def is_substantive_ruling(case_no: str, holding: str, reasoning: str) -> bool:
         """
-        憲法裁判價值嚴格過濾閥：
-        - 憲判字（判決）：100% 保留
-        - 暫時處分裁定：100% 保留
-        - 憲裁字（全體大法官合議裁定）：保留（排除純不受理）
-        - 審裁字、統裁字：原則 100% 阻絕剔除（審查庭程序雜訊）！
+        憲法裁判價值判定：
+        改採「字別精準定向穿透」後，定向採集目標（憲判字、憲暫裁、憲裁字）皆為大法官實體裁判成果，
+        非純程序雜訊，全面判定為有效裁判入庫。僅對明確之審查庭程序字別（審裁、統裁）作安全阻絕。
         """
-        # 1. 審查庭審裁字、統裁字：一律 100% 阻絕跳過（純程序審查庭雜訊）
         if any(k in case_no for k in ["審裁", "統裁"]):
             return False
-
-        # 2. 憲判字（判決）與全體大法官合議暫時處分（憲暫裁）：絕對 100% 保留
-        if any(k in case_no for k in ["憲判", "憲暫裁", "暫時處分"]) or "暫時處分" in holding:
-            return True
-
-        # 3. 憲裁字：若明確為主文不受理且理由無深層闡述，予以剔除
-        if "憲裁" in case_no:
-            if "不受理" in holding and any(w in reasoning for w in ["不生牴觸憲法", "未具體指摘", "認事用法"]):
-                return False
-            return True
-
-        return False
+        return True
 
     # =========================================================================
     # 1. 最高法院（TPS）大法庭與重要裁定全量收錄（含 108 年起大字與徵字）
@@ -418,9 +404,9 @@ class AuthorityCrawler:
             if not reasoning:
                 reasoning = full_text
 
-            # 🛑 掛載智慧爭點價值過濾閥
+            # 🛑 僅對明確之審裁/統裁審查庭程序案件做安全阻絕；定向採集之憲判、憲暫裁、憲裁均非雜訊，全數實體入庫
             if not self.is_substantive_ruling(case_no, holding, reasoning):
-                print(f"  [⏩ 跳過雜訊] 純程序罐頭駁回: 【{case_no}】({len(reasoning.strip())} 字)")
+                print(f"  [⏩ 跳過程序案件] 審查庭案件: 【{case_no}】")
                 return "skipped"
 
             # 6. 裁判類型分類
@@ -651,7 +637,7 @@ class AuthorityCrawler:
 
                 page += 1
 
-        print(f"\n[✓] 憲法法庭字別定向穿透採集完畢：累計入庫 {added_count} 筆實質裁判，過濾剔除 {skipped_count} 筆純罐頭不受理裁定。")
+        print(f"\n[✓] 憲法法庭字別定向穿透採集完畢：累計入庫 {added_count} 筆實質裁判。")
         return added_count
 
     # =========================================================================
