@@ -253,8 +253,8 @@ class AuthorityCrawler:
         if any(k in case_no for k in ["審裁", "統裁"]):
             return False
 
-        # 2. 憲判字（判決）與全體大法官合議暫時處分：絕對 100% 保留
-        if "憲判" in case_no or "暫時處分" in case_no or "暫時處分" in holding:
+        # 2. 憲判字（判決）與全體大法官合議暫時處分（憲暫裁）：絕對 100% 保留
+        if any(k in case_no for k in ["憲判", "憲暫裁", "暫時處分"]) or "暫時處分" in holding:
             return True
 
         # 3. 憲裁字：若明確為主文不受理且理由無深層闡述，予以剔除
@@ -427,6 +427,9 @@ class AuthorityCrawler:
             if "憲判字" in case_no or "判決" in link_text:
                 sub_type = "憲法法庭判決"
                 status = "實體確定判決"
+            elif "憲暫裁" in case_no or "暫時處分" in case_no:
+                sub_type = "憲法法庭暫時處分裁定"
+                status = "暫時處分裁定"
             elif "審裁字" in case_no or "審查庭" in full_text:
                 sub_type = "憲法法庭審裁"
                 status = "審查庭裁定"
@@ -513,12 +516,65 @@ class AuthorityCrawler:
             print(f"[!] 獲取 {year} 年度查詢 Hash 失敗: {e}")
         return None
 
+    def _get_case_type_q_hash(self, case_type: str, y_start: int = 111, y_end: int = 115) -> Optional[Tuple[str, str]]:
+        """
+        向 Default_AD.aspx 送出指定案號字別（txtCase="憲判"、"憲裁"、"憲暫裁"）查詢，
+        取得專屬之 (ty, q) 雜湊。精準穿透實質裁判，徹底阻絕「審裁」與「統裁」純程序雜訊。
+        """
+        ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
+        try:
+            entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+            if not entry_html:
+                self.warmup_session()
+                entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
+            if not entry_html:
+                return None
+
+            soup = BeautifulSoup(entry_html, "html.parser")
+            vs = soup.find(id="__VIEWSTATE")
+            vsg = soup.find(id="__VIEWSTATEGENERATOR")
+            ev = soup.find(id="__EVENTVALIDATION")
+            if not (vs and vsg and ev):
+                return None
+
+            payload = [
+                ("__VIEWSTATE", vs["value"]),
+                ("__VIEWSTATEGENERATOR", vsg["value"]),
+                ("__EVENTVALIDATION", ev["value"]),
+                ("txtKW", ""),
+                ("txtKT", ""),
+                ("txtYear", ""),
+                ("txtCase", case_type),  # 精準指定 "憲判"、"憲暫裁" 或 "憲裁"
+                ("txtNo", ""),
+                ("txtY1", str(y_start)),
+                ("txtM1", ""),
+                ("txtD1", ""),
+                ("txtY2", str(y_end)),
+                ("txtM2", ""),
+                ("txtD2", ""),
+                ("ctl00$cp_content$btnQry", "送出查詢")
+            ]
+            headers = dict(HEADERS)
+            headers["Referer"] = ad_url
+            if self.session:
+                resp = self.session.post(ad_url, data=payload, headers=headers, verify=False, timeout=25)
+                resp_text = resp.text if resp else ""
+            else:
+                resp_text = ""
+            m_lst = re.search(r'qryresultlst\.aspx\?ty=([^&]+)&q=([a-f0-9]{32})', resp_text)
+            if m_lst:
+                return m_lst.group(1), m_lst.group(2)
+        except Exception as e:
+            print(f"[!] 獲取【{case_type}】字別查詢 Hash 失敗: {e}")
+        return None
+
     def crawl_constitutional_orders_endpoint(self, max_pages: int = 5, sub_type_filter: Optional[List[str]] = None) -> int:
         """
         採集憲法法庭官方裁判與裁定端點（ty=JCC）。
-        內建雙重通道：
-        1. 憲判字直通專屬通道（111~115 年全量判決 100% 採集）
-        2. 按年度分段查詢（111 年至 115 年）實體裁定與最新見解通道，突破單次 500 筆截斷限制
+        採「字別精準定向穿透（Targeted Case Type Crawling）」架構：
+        依序定向輪詢 TARGET_CASE_TYPES = ["憲判", "憲暫裁", "憲裁"]，
+        徹底阻絕成千上萬件審查庭「審裁字」與「統裁字」純程序雜訊，
+        並規避司法院 FINT 單次檢索 500 筆（第 26 頁）強制截斷限制。
         """
         if not BeautifulSoup:
             print("[!] 未安裝 BeautifulSoup，跳過 HTML 解析。")
@@ -529,103 +585,39 @@ class AuthorityCrawler:
         skipped_count = 0
         parsed_cases = set()
 
-        # =========================================================================
-        # 通道一：憲判字（判決）直通專屬通道 (111~115 年全量判決 100% 抓齊)
-        # =========================================================================
+        TARGET_CASE_TYPES = ["憲判", "憲暫裁", "憲裁"]
         print("=" * 60)
-        print("⚖️ 啟動憲判字（判決）直通專屬通道 (111 年至 115 年全量判決全面掃描)...")
-        print("=" * 60)
-        try:
-            ad_url = f"{FINT_BASE_URL}Default_AD.aspx"
-            entry_html = self._http_get(ad_url, referer=FINT_BASE_URL)
-            if entry_html:
-                soup = BeautifulSoup(entry_html, "html.parser")
-                vs = soup.find(id="__VIEWSTATE")
-                vsg = soup.find(id="__VIEWSTATEGENERATOR")
-                ev = soup.find(id="__EVENTVALIDATION")
-
-                if vs and vsg and ev:
-                    payload = [
-                        ("__VIEWSTATE", vs["value"]),
-                        ("__VIEWSTATEGENERATOR", vsg["value"]),
-                        ("__EVENTVALIDATION", ev["value"]),
-                        ("txtKW", ""),
-                        ("txtKT", ""),
-                        ("txtYear", ""),
-                        ("txtCase", "憲判"),  # 案號字別指定「憲判」
-                        ("txtNo", ""),
-                        ("txtY1", "111"),
-                        ("txtM1", ""),
-                        ("txtD1", ""),
-                        ("txtY2", "115"),
-                        ("txtM2", ""),
-                        ("txtD2", ""),
-                        ("sdate", ""),
-                        ("edate", ""),
-                        ("ctl00$cp_content$btnQry", "送出查詢")
-                    ]
-                    headers = dict(HEADERS)
-                    headers["Referer"] = ad_url
-                    resp = self.session.post(ad_url, data=payload, headers=headers, verify=False, timeout=25) if self.session else None
-                    resp_text = resp.text if resp else ""
-                    m_lst = re.search(r'qryresultlst\.aspx\?ty=([^&]+)&q=([a-f0-9]{32})', resp_text)
-                    if m_lst:
-                        ty, q_judg = m_lst.group(1), m_lst.group(2)
-                        print(f"[+] 成功取得憲判字專屬查詢 Hash (q={q_judg})，開始遍歷判決清單...")
-                        p = 1
-                        while True:
-                            list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_judg}&page={p}"
-                            list_html = self._http_get(list_url, referer=ad_url)
-                            time.sleep(self.delay_sec)
-                            if not list_html:
-                                break
-                            soup_lst = BeautifulSoup(list_html, "html.parser")
-                            data_links = soup_lst.find_all("a", href=lambda h: h and "data.aspx" in h)
-                            if not data_links:
-                                print(f"  [*] 憲判字清單於第 {p-1} 頁遍歷完畢。")
-                                break
-                            print(f"[*] 憲判字通道：正在處理第 {p} 頁 (發現 {len(data_links)} 則憲判決)...")
-                            for a_el in data_links:
-                                res = self._parse_and_ingest_constitutional_case(a_el, list_url, parsed_cases, sub_type_filter)
-                                if res == "added":
-                                    added_count += 1
-                                elif res == "skipped":
-                                    skipped_count += 1
-                            p += 1
-                    else:
-                        print("[!] 憲判字專屬查詢未匹配到重導向 URL。")
-        except Exception as e:
-            print(f"[!] 憲判字直通專屬通道異常: {e}")
-
-        # =========================================================================
-        # 通道二：按年度分段查詢（111 年至 115 年）實體裁定與最新見解通道（突破 500 筆截斷）
-        # =========================================================================
-        print("=" * 60)
-        print(f"🏛️ 啟動憲法法庭年度分段查詢（111 年至 115 年，每年度最多 {max_pages} 頁，突破單次截斷限制）...")
+        print("🏛️ 啟動憲法法庭「字別精準定向穿透」採集機制 (111 年至 115 年)...")
+        print(f"🎯 目標實體字別: {', '.join(TARGET_CASE_TYPES)}")
         print("=" * 60)
 
-        years_to_crawl = [111, 112, 113, 114, 115]
-        for yr in years_to_crawl:
-            print(f"\n📅 正在進行 {yr} 年度分段查詢...")
-            q_res = self._get_annual_q_hash(yr)
+        for case_type in TARGET_CASE_TYPES:
+            print(f"\n⚖️ 正在定向檢索【{case_type}】字別裁判清單 (111~115 年)...")
+            q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
             if not q_res:
-                print(f"[!] 無法取得 {yr} 年度查詢識別碼，嘗試重新預熱 Session 後重試...")
+                print(f"[!] 無法取得【{case_type}】查詢識別碼，嘗試重新預熱 Session 後重試...")
                 self.warmup_session()
-                q_res = self._get_annual_q_hash(yr)
+                q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
 
             if not q_res:
-                print(f"[!] {yr} 年度查詢跳過。")
+                print(f"[!] 【{case_type}】查詢失敗，跳過該字別。")
                 continue
 
             ty, q_hash = q_res
-            print(f"[+] 獲取 {yr} 年度查詢識別碼 (ty={ty}, q={q_hash})")
+            print(f"[+] 成功取得【{case_type}】專屬查詢識別碼 (ty={ty}, q={q_hash})，開始逐頁遍歷...")
 
-            for page in range(1, max_pages + 1):
+            page = 1
+            while True:
+                if max_pages and max_pages > 0 and page > max_pages:
+                    print(f"  [*] 【{case_type}】已達到指定最大頁數 ({max_pages} 頁)，結束該字別掃描。")
+                    break
+
                 list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
                 list_html = self._http_get(list_url, referer=f"{FINT_BASE_URL}Default_AD.aspx")
                 time.sleep(self.delay_sec)
 
                 if not list_html:
+                    print(f"  [*] 【{case_type}】第 {page} 頁無回應，結束該字別掃描。")
                     break
 
                 soup = BeautifulSoup(list_html, "html.parser")
@@ -633,9 +625,9 @@ class AuthorityCrawler:
 
                 # Session 活化機制：若回傳 HTML 不含表格（Session 逾時），自動調用 warmup_session() 重新獲取新 q
                 if not has_table:
-                    print(f"  [!] {yr} 年度第 {page} 頁未偵測到表格（可能 Session 逾時），重新預熱 Session 活化連線...")
+                    print(f"  [!] 【{case_type}】第 {page} 頁未偵測到表格（可能 Session 逾時），重新預熱 Session 活化連線...")
                     self.warmup_session()
-                    new_q_res = self._get_annual_q_hash(yr)
+                    new_q_res = self._get_case_type_q_hash(case_type, y_start=111, y_end=115)
                     if new_q_res:
                         ty, q_hash = new_q_res
                         list_url = f"{FINT_BASE_URL}qryresultlst.aspx?ty={ty}&q={q_hash}&sort=DS&page={page}"
@@ -645,10 +637,11 @@ class AuthorityCrawler:
 
                 data_links = soup.find_all("a", href=lambda h: h and "data.aspx" in h)
                 if not data_links:
-                    print(f"  [*] {yr} 年度於第 {page} 頁無更多資料，結束該年度掃描。")
+                    print(f"  [*] 【{case_type}】於第 {page} 頁無更多資料，結束該字別掃描。")
                     break
 
-                print(f"[*] [{yr}年度] 正在處理第 {page}/{max_pages} 頁（發現 {len(data_links)} 筆案件）...")
+                page_info = f"第 {page}/{max_pages} 頁" if (max_pages and max_pages > 0) else f"第 {page} 頁"
+                print(f"[*] 【{case_type}】正在處理 {page_info}（發現 {len(data_links)} 筆案件）...")
                 for a_el in data_links:
                     res = self._parse_and_ingest_constitutional_case(a_el, list_url, parsed_cases, sub_type_filter)
                     if res == "added":
@@ -656,7 +649,9 @@ class AuthorityCrawler:
                     elif res == "skipped":
                         skipped_count += 1
 
-        print(f"[✓] 憲法法庭端點採集完畢：累計入庫 {added_count} 筆實質裁判，過濾剔除 {skipped_count} 筆純罐頭不受理裁定。")
+                page += 1
+
+        print(f"\n[✓] 憲法法庭字別定向穿透採集完畢：累計入庫 {added_count} 筆實質裁判，過濾剔除 {skipped_count} 筆純罐頭不受理裁定。")
         return added_count
 
     # =========================================================================
@@ -1081,7 +1076,7 @@ def main():
     parser.add_argument("--tps-only", action="store_true", help="僅採集最高法院大法庭端點")
     parser.add_argument("--import-interpretations", action="store_true", help="僅執行歷史 813 則司法院大法官解釋全量注入")
     parser.add_argument("--purge", action="store_true", help="僅執行資料庫純套版不受理罐頭裁定清洗")
-    parser.add_argument("--pages", type=int, default=5, help="憲法法庭採集頁數（每頁 20 筆，預設 5 頁）")
+    parser.add_argument("--pages", type=int, default=5, help="憲法法庭採集頁數（每字別頁數上限，預設 5 頁，設為 0 則不限頁數）")
     parser.add_argument("--delay", type=float, default=1.0, help="禮貌延遲秒數（預設 1.0 秒）")
     parser.add_argument("--status", action="store_true", help="顯示目前權威裁判庫最新分類統計")
 
