@@ -80,6 +80,8 @@ try:
         get_law_legislative_history,
         get_article_legislative_details,
         synthesize_article_legislative_details,
+        fetch_and_cache_article_legislative_details,
+        get_moj_article_url,
         clear_six_codes_cache,
         load_six_codes_data,
         format_legal_article_text,
@@ -107,6 +109,10 @@ except Exception as _err:
     def get_law_legislative_history(*args, **kwargs): return {}
     def get_article_legislative_details(*args, **kwargs): return {}
     def synthesize_article_legislative_details(*args, **kwargs): return {}
+    def fetch_and_cache_article_legislative_details(law_name, article_no, content="", force_refresh=False):
+        return False, "六法引擎暫時離線", f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={urllib.parse.quote(str(law_name))}"
+    def get_moj_article_url(law_name, article_no):
+        return f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={urllib.parse.quote(str(law_name))}"
     def clear_six_codes_cache(*args, **kwargs): pass
     def load_six_codes_data(*args, **kwargs): return [], {}, {}
     def format_legal_article_text(t):
@@ -6304,25 +6310,34 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                     st.markdown("#### 📜 立法理由與修法沿革")
                     st.caption("立法院公報與總統令三讀修正理由、立法意旨與新舊條文對照：")
 
+                    moj_art_url = get_moj_article_url(lname, ano)
+
                     intent = legis_data.get("legislative_intent", "")
                     summary_reasons = legis_data.get("summary_reasons", "")
 
                     if intent:
-                        st.success(f"**🎯 原始立法意旨與核心保護法益：**\n\n{intent}")
+                        st.success(f"""**🎯 原始立法意旨與核心保護法益：**
+
+{intent}""")
                     if summary_reasons:
-                        st.info(f"**💡 歷次修正總綱與規範演革重心：**\n\n{summary_reasons}")
+                        st.info(f"""**💡 歷次修正總綱與規範演革重心：**
+
+{summary_reasons}""")
 
                     if is_initial_enactment or total_amends_display == 0 or not curated_amends:
                         # 1. 修正對照區：若修正次數為 0，直接以精簡 callout 呈現制定意旨，不列出任何虛假歷史修正版本
+                        enact_card = legis_data.get("enactment_card") or {}
+                        enact_date = enact_card.get('date', '初次制定公布')
                         st.markdown("##### 🕰️ 條文制定意旨（制定公布迄今未曾修改）")
-                        st.info("💡 **本條於民國 18 年制定公布後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
-                        enact_card = legis_data.get("enactment_card")
+                        st.info(f"💡 **本條於{enact_date}後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
                         if enact_card:
-                            with st.expander(f"📜 查看制定全文與原始立法理由（發布字號：{enact_card.get('gazette', '國民政府令')}）", expanded=True):
-                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', '民國18年05月23日')}")
-                                st.markdown(f"**🏛️ 原始官方制定理由**：\n{enact_card.get('reason', '')}")
+                            with st.expander(f"📜 查看制定全文與原始立法理由（發布字號：{enact_card.get('gazette', '官方公布令')}）", expanded=True):
+                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', enact_date)}")
+                                st.markdown(f"""**🏛️ 原始官方制定理由**：
+{enact_card.get('reason', '')}""")
                                 if enact_card.get("exam_impact"):
-                                    st.success(f"✍️ **司律國考適用要點**：\n{enact_card.get('exam_impact')}")
+                                    st.success(f"""✍️ **司律國考適用要點**：
+{enact_card.get('exam_impact')}""")
                     else:
                         st.markdown(f"##### 🕰️ 修法理由與新舊條文對照 ({len(curated_amends)}次)")
                         for a_idx, amend in enumerate(curated_amends):
@@ -6343,7 +6358,8 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 st.markdown("**📜 立法院三讀官方修正理由全文（官方公報照抄）：**")
                                 st.info(amend.get('reason', ''))
                                 if amend.get("exam_impact"):
-                                    st.success(f"✍️ **司律國考新舊法適用要點**：\n{amend.get('exam_impact')}")
+                                    st.success(f"""✍️ **司律國考新舊法適用要點**：
+{amend.get('exam_impact')}""")
                                 st.markdown("---")
 
                     if timeline_hits:
@@ -6369,31 +6385,62 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         else:
                             st.caption("目前無完整全法沿革公布令紀錄。")
 
-                    # AI 智慧萃取/擴充按鈕
-                    leg_ai_key = f"ai_legis_{lname}_{ano}"
-                    if not curated_amends:
-                        if st.button(f"✨ 啟動 AI 深度萃取立法理由與歷次新舊條文對照", key=f"btn_ai_legis_{idx}"):
-                            with st.spinner(f"正在連線 Gemini 為【{lname} {ano}】萃取立法院三讀修正理由、修法背景與新舊法對照表..."):
-                                try:
-                                    synthesized = synthesize_article_legislative_details(lname, ano, content)
-                                    st.session_state[leg_ai_key] = synthesized
-                                    st.success("🎉 成功提煉並更新本條立法理由與新舊法對照表！已同步持久化保存。")
-                                    st.rerun()
-                                except Exception as le_err:
-                                    st.error(f"立法理由提煉失敗: {le_err}")
+                    # =========================================================================
+                    # 立法理由即時線上擷取與校對覆寫專區（系統無資料或使用者發現明顯錯誤時一鍵直抓並固化存庫）
+                    # =========================================================================
+                    st.markdown("---")
+                    st.markdown("##### 🔄 立法理由即時線上擷取與校對覆寫")
+                    if not curated_amends and not intent:
+                        st.caption("💡 目前本地資料庫尚無本條之專屬立法院逐條三讀理由紀錄。您可以點擊下方按鈕進行線上自動檢索與入庫；或直接前往全國法規資料庫查看官方條文。")
+                    else:
+                        st.caption("💡 若現有立法理由內容有所缺漏，或使用者發現有明顯錯誤，可勾選「強制覆寫」並點擊按鈕，由系統直接線上重新擷取立法院官方公報三讀理由並同步固化存入本地資料庫。")
 
-                    if leg_ai_key in st.session_state:
-                        ai_res = st.session_state[leg_ai_key]
-                        if ai_res.get("legislative_intent") and not intent:
-                            st.success(f"**🎯 原始立法意旨：**\n{ai_res['legislative_intent']}")
-                        if ai_res.get("curated_amendments") and not curated_amends:
-                            for a in ai_res["curated_amendments"]:
-                                st.markdown(f"**📅 【{a.get('date')}】{a.get('gazette', '')}**")
-                                st.info(f"**修正理由：**\n{a.get('reason')}")
-                                if a.get("previous_text"):
-                                    st.caption(f"**舊條文：**\n{a.get('previous_text')}")
-                                if a.get("exam_impact"):
-                                    st.success(f"**新舊法適用要點：**\n{a.get('exam_impact')}")
+                    leg_col1, leg_col2 = st.columns([3, 2])
+                    leg_btn_key = f"btn_fetch_legis_{lname}_{ano}_{idx}"
+                    force_chk_key = f"chk_force_legis_{lname}_{ano}_{idx}"
+                    
+                    with leg_col1:
+                        btn_txt = "🔄 立即擷取/重新抓取此條文官方立法理由" if curated_amends else "✨ 線上即時擷取此條文立法理由與修法對照"
+                        btn_leg_clicked = st.button(btn_txt, key=leg_btn_key, use_container_width=True)
+                    with leg_col2:
+                        force_leg_refresh = st.checkbox("強制重新擷取並覆寫現有快取（內容有誤時打勾）", value=False, key=force_chk_key)
+
+                    fetch_msg_key = f"legis_fetch_result_{lname}_{ano}"
+                    if btn_leg_clicked:
+                        with st.spinner(f"正在為【{lname} {ano}】連線檢索立法院公報與法規資料庫，擷取官方三讀理由、修正對照與立法意旨..."):
+                            is_force = force_leg_refresh or (not curated_amends and not intent)
+                            succ, result_payload, target_moj_url = fetch_and_cache_article_legislative_details(
+                                law_name=lname,
+                                article_no=ano,
+                                content=content,
+                                force_refresh=is_force
+                            )
+                            if succ:
+                                st.session_state[fetch_msg_key] = {
+                                    "success": True,
+                                    "msg": f"🎉 成功擷取【{lname} {ano}】之立法院官方立法理由！已同步固化寫入資料庫，下次調閱將直接秒速載入，無需重複爬取。"
+                                }
+                                clear_six_codes_cache()
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.session_state[fetch_msg_key] = {
+                                    "success": False,
+                                    "msg": f"⚠️ 線上查無本條文之專屬立法理由或擷取失敗（原因：{result_payload}）。",
+                                    "url": target_moj_url
+                                }
+
+                    if fetch_msg_key in st.session_state:
+                        f_res = st.session_state[fetch_msg_key]
+                        if f_res.get("success"):
+                            st.success(f_res["msg"])
+                        else:
+                            st.error(f_res["msg"])
+                            st.warning("🏛️ 系統已為您鎖定該條文於《全國法規資料庫》之官方單一條文網址，您可直接點擊前往查證：")
+                            st.link_button(f"🌐 前往全國法規資料庫查看《{lname} {ano}》官方條文", f_res.get("url", moj_art_url), use_container_width=True)
+
+                    st.markdown("---")
+                    st.caption(f"🔗 官方條文參照：[{lname} {ano} 全國法規資料庫官方頁面]({moj_art_url}) ｜ 查考母法全量修正請參考上方沿革紀錄")
 
                 with tab_materials:
                     st.markdown(render_formatted_article_quote(content, "📜 條文全文"))

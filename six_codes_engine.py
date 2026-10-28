@@ -14,7 +14,8 @@ import sys
 import json
 import re
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple, Union
+import urllib.parse
 
 try:
     from google import genai
@@ -36,6 +37,9 @@ __all__ = [
     "get_law_legislative_history",
     "get_article_legislative_details",
     "synthesize_article_legislative_details",
+    "save_article_legislative_details",
+    "fetch_and_cache_article_legislative_details",
+    "get_moj_article_url",
     "clear_six_codes_cache",
     "load_six_codes_data",
     "format_legal_article_text",
@@ -205,12 +209,13 @@ def load_six_codes_data() -> tuple:
 
 def clear_six_codes_cache():
     """清除六法條文與標註快取，強制重新載入最新資料庫"""
-    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE
+    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS
     _CACHED_ARTICLES = None
     _CACHED_META = None
     _CACHED_LAW_MAP = None
     _CACHED_HISTORIES = None
     _CACHED_LEGISLATIVE = None
+    _CACHED_STATUTE_REASONS = None
 
 def get_laws_in_branch(branch_name: str) -> List[str]:
     """獲取指定法學門類下的所有法規名稱（核心主法優先，法規命令隨後，涵蓋全部典藏庫）"""
@@ -1233,14 +1238,43 @@ def is_article_in_history_entry(art_no: str, entry_text: str) -> bool:
 # 設置別名以支援多模組呼叫
 is_article_targeted_in_decree = is_article_in_history_entry
 
+COMMON_LAW_ALIASES: Dict[str, str] = {
+    "刑法": "中華民國刑法",
+    "憲法": "中華民國憲法",
+    "民訴": "民事訴訟法",
+    "刑訴": "刑事訴訟法",
+    "行訴": "行政訴訟法",
+    "行程法": "行政程序法",
+    "強執": "強制執行法",
+    "國賠法": "國家賠償法",
+    "消保法": "消費者保護法",
+    "智財法": "智慧財產案件審理法",
+    "家事法": "家事事件法",
+    "勞基法": "勞動基準法",
+    "證交法": "證券交易法",
+    "保險法": "保險法",
+    "公司法": "公司法",
+    "票據法": "票據法",
+    "海商法": "海商法"
+}
+
 def get_law_legislative_history(law_name: str) -> Dict[str, Any]:
     """獲取指定法規（法律、法規命令、施行細則）之完整官方立法沿革與歷次修正公報"""
     hist_cat = load_law_histories()
     item = hist_cat.get(law_name)
     matched_name = law_name
+
+    # 1. 常見簡稱與別名查核 (例如 '刑法' -> '中華民國刑法', '憲法' -> '中華民國憲法')
+    if not item and law_name in COMMON_LAW_ALIASES:
+        alias_name = COMMON_LAW_ALIASES[law_name]
+        item = hist_cat.get(alias_name)
+        if item:
+            matched_name = alias_name
+
+    # 2. 雙向包含查核
     if not item:
         for k, v in hist_cat.items():
-            if k == law_name or (len(law_name) >= 3 and law_name in k):
+            if k == law_name or (len(law_name) >= 2 and (law_name in k or k in law_name)):
                 item = v
                 matched_name = k
                 break
@@ -1266,6 +1300,25 @@ def get_law_legislative_history(law_name: str) -> Dict[str, Any]:
         "timeline": timeline,
         "total_amendments": len(timeline)
     }
+
+def get_moj_article_url(law_name: str, article_no: str) -> str:
+    """
+    產生指定法規與條號在《全國法規資料庫 (law.moj.gov.tw)》之官方單一條文直接檢索連結。
+    若具備 PCode 與條號，直通 LawSingle.aspx?pcode=...&flno=...
+    若無特定條號，前往該部法規全文 LawAll.aspx?pcode=...
+    若無 PCode，導向法規關鍵字檢索頁面 LawSearchLaw.aspx?keyword=...
+    """
+    clean_no = normalize_article_no(article_no)
+    hist_info = get_law_legislative_history(law_name)
+    pcode = hist_info.get("pcode", "").strip()
+
+    if pcode and clean_no:
+        return f"https://law.moj.gov.tw/LawClass/LawSingle.aspx?pcode={pcode}&flno={clean_no}"
+    elif pcode:
+        return f"https://law.moj.gov.tw/LawClass/LawAll.aspx?pcode={pcode}"
+    else:
+        encoded_name = urllib.parse.quote(law_name)
+        return f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={encoded_name}"
 
 def get_article_legislative_details(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """
@@ -1412,7 +1465,62 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
         "total_official_hits": len(timeline_hits)
     }
 
-def synthesize_article_legislative_details(law_name: str, article_no: str, content: str) -> Dict[str, Any]:
+def save_article_legislative_details(law_name: str, article_no: str, data: Dict[str, Any]) -> bool:
+    """
+    將立法理由與修法沿革資料持久化固化存入本地快取資料庫（statute_reasons_cache.json 與 article_legislative_catalog.json），
+    供日後秒速讀取，達成 0 秒載入、0 Token 消耗。
+    """
+    clean_no = normalize_article_no(article_no)
+    if not clean_no:
+        return False
+
+    candidate_keys = [
+        f"{law_name}_第{clean_no}條",
+        f"{law_name}_{clean_no}",
+        f"{law_name}_第{clean_no}條文"
+    ]
+    if "中華民國刑法" in law_name or law_name == "刑法":
+        candidate_keys.extend([
+            f"中華民國刑法_第{clean_no}條", f"中華民國刑法_{clean_no}",
+            f"刑法_第{clean_no}條", f"刑法_{clean_no}"
+        ])
+    elif "中華民國憲法" in law_name or law_name == "憲法":
+        candidate_keys.extend([
+            f"中華民國憲法_第{clean_no}條", f"中華民國憲法_{clean_no}",
+            f"憲法_第{clean_no}條", f"憲法_{clean_no}"
+        ])
+
+    # 1. 寫入 statute_reasons_cache.json (全路徑)
+    statute_cache = load_statute_reasons_cache()
+    for k in candidate_keys:
+        statute_cache[k] = data
+
+    for p in DATA_PATHS_REASONS_CACHE:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(statute_cache, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # 2. 寫入 article_legislative_catalog.json (全路徑)
+    leg_cat = load_article_legislative_catalog()
+    for k in candidate_keys:
+        leg_cat[k] = data
+
+    for p in DATA_PATHS_LEGISLATIVE:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(leg_cat, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    # 3. 立即活化 in-memory 快取
+    clear_six_codes_cache()
+    return True
+
+def synthesize_article_legislative_details(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """
     呼叫 Gemini 3.8 / 2.0 Flash 即時提煉深度立法理由、新舊條文對照與修法沿革，
     並自動存入本地持久化 catalog 供日後秒級調閱。
@@ -1420,7 +1528,26 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
     clean_no = normalize_article_no(article_no)
     api_key = get_gemini_api_key()
     if not api_key:
-        raise ValueError("未檢測到 GEMINI_API_KEY！")
+        raise ValueError("未檢測到 GEMINI_API_KEY！無法啟動線上擷取。")
+
+    # 檢索全法沿革中對應本條文之真實官方公布令資訊，作為 Prompt 依據，杜絕幻覺
+    law_hist = get_law_legislative_history(law_name)
+    timeline_hits = []
+    for entry in law_hist.get("timeline", []):
+        if is_article_in_history_entry(clean_no, entry.get("content", "")):
+            timeline_hits.append(entry)
+
+    timeline_lines = []
+    if timeline_hits:
+        timeline_lines.append("【官方公報歷史沿革紀錄（本條文曾經歷以下公布修正）】：")
+        for h in timeline_hits:
+            timeline_lines.append(f"- 📅 {h.get('date', '')} ｜ {h.get('decree', '')} ｜ {h.get('action', '')}：{h.get('content', '')}")
+    else:
+        enact_year = parse_enactment_year_from_text(law_hist.get("histories_raw", ""))
+        enact_str = f"民國 {enact_year} 年" if enact_year else "初次制定公布"
+        timeline_lines.append(f"【官方沿革狀態】：本法規於 {enact_str} 制定公布。本條文自制定迄今查無後續修正紀錄（維持初次制定條文完整適用）。")
+
+    timeline_context = chr(10).join(timeline_lines)
 
     prompt = f"""
 你是一位司律典試委員兼立法院法制局法學專家。
@@ -1429,22 +1556,38 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
 【條文內容】：
 {content}
 
-請嚴謹產出 JSON 格式，包含以下欄位：
+{timeline_context}
+
+請嚴謹產出標準 JSON 格式，包含以下欄位：
 {{
-  "legislative_intent": "原始立法意旨與規範目的（說明立法院立法時所欲保護之法益與制度設計）",
-  "summary_reasons": "歷次修正總說明與核心法理演變",
+  "legislative_intent": "原始立法意旨與核心保護法益（說明立法院立法時所欲保護之法益與制度設計）",
+  "summary_reasons": "歷次修正總綱與規範演革重心（說明各時期修法背景與新舊思維轉換）",
   "amendments": [
     {{
       "date": "修正公布日期（例如：107年08月01日）",
       "gazette": "總統令/部會令號（例如：總統華總一經字第 10700083291 號令）",
-      "reason": "詳細立法修正理由（官方立法院公報/提案部會說明理由）",
+      "is_current": true,
+      "version_tag": "民國 107 年 08 月 01 日修正（現行有效條文）",
+      "reason": "詳細立法修正理由全文（官方立法院公報/提案部會說明理由）",
       "previous_text": "本次修正前之歷史舊條文內容（若為初次制定請註明「制定公布全文」）",
       "current_text": "本次修正後之條文內容",
       "key_changes": "核心修法要點與條文文字變更說明",
       "exam_impact": "國考實務影響與新舊法適用要點（如不溯及既往、程序從新實體從舊）"
     }}
-  ]
+  ],
+  "enactment_card": {{
+    "date": "初次制定公布日期（例如：民國18年05月23日）",
+    "gazette": "制定公布字號或令號",
+    "is_current": true,
+    "version_tag": "現行有效條文（制定公布迄今未曾修改）",
+    "previous_text": "（初次制定公布全文）",
+    "current_text": "現行完整條文",
+    "key_changes": "制定公布全文（歷久彌新未曾修改）",
+    "reason": "初次制定之官方理由與法意旨",
+    "exam_impact": "國考適用指示"
+  }}
 }}
+*說明：若本條文曾經修正，請在 amendments 填寫真實歷次修正理由（依年份由新至舊排列）；若本條自初次制定迄今從未修正，amendments 請留空陣列 []，並務必填寫完整的 enactment_card。
 請僅輸出標準 JSON，不得包含 Markdown 程式碼區塊外多餘說明。
 """
     models_to_try = get_gemini_models_to_try(DEFAULT_GEMINI_MODEL)
@@ -1479,27 +1622,52 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
         raise ValueError("Gemini 未返回合規 JSON 格式")
     
     parsed = json.loads(m.group(0))
-    key = f"{law_name}_第{clean_no}條"
-    
-    leg_cat = load_article_legislative_catalog()
-    leg_cat[key] = {
+    record = {
         "law_name": law_name,
         "article_no": clean_no,
+        "current_title": f"{law_name}第{clean_no}條",
         "current_article_text": content,
         "legislative_intent": parsed.get("legislative_intent", ""),
         "summary_reasons": parsed.get("summary_reasons", ""),
-        "amendments": parsed.get("amendments", [])
+        "amendments": parsed.get("amendments", []),
+        "enactment_card": parsed.get("enactment_card")
     }
     
-    for p in DATA_PATHS_LEGISLATIVE:
-        try:
-            p.parent.mkdir(parents=True, exist_ok=True)
-            with open(p, "w", encoding="utf-8") as f:
-                json.dump(leg_cat, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+    # 存入快取與持久化 catalog (同步寫入 statute_reasons_cache.json 與 article_legislative_catalog.json)
+    save_article_legislative_details(law_name, clean_no, record)
+    return record
 
-    return get_article_legislative_details(law_name, clean_no, content)
+def fetch_and_cache_article_legislative_details(
+    law_name: str,
+    article_no: str,
+    content: str = "",
+    force_refresh: bool = False
+) -> Tuple[bool, Any, str]:
+    """
+    抓取並固化指定條文之立法理由：
+    1. 計算該條文於《全國法規資料庫》之官方直通網址 (moj_url)
+    2. 若非強制重抓，先檢驗本地快取是否已有實質內容；有則秒速返回
+    3. 若無或強制重抓，調用線上擷取/深度提煉機制
+    4. 抓取成功則持久化存入資料庫，返回 (True, details, moj_url)
+    5. 若抓不到或發生異常，返回 (False, error_reason, moj_url)
+    """
+    clean_no = normalize_article_no(article_no)
+    moj_url = get_moj_article_url(law_name, article_no)
+
+    if not force_refresh:
+        existing = get_article_legislative_details(law_name, clean_no, content)
+        if existing.get("has_curated_data") and (existing.get("curated_amendments") or existing.get("legislative_intent")):
+            return True, existing, moj_url
+
+    try:
+        record = synthesize_article_legislative_details(law_name, clean_no, content)
+        if not record or not (record.get("legislative_intent") or record.get("amendments") or record.get("enactment_card")):
+            return False, "立法院官方系統與法規公報查無本條文之專屬逐條修正理由文字", moj_url
+        
+        details = get_article_legislative_details(law_name, clean_no, content)
+        return True, details, moj_url
+    except Exception as e:
+        return False, str(e), moj_url
 
 
 class SixCodesDeepAnnotator:
