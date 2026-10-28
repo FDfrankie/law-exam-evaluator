@@ -1925,8 +1925,10 @@ def render_judgements_ingest_view():
                             st.error(f"調閱失敗：{doc_res.get('error')}（提示：官方 API 開放時段為每日凌晨 0 時至 6 時）")
 
 # GitHub Release 實體資料庫直連網址與標籤頁
-RELEASE_DB_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/download/v1.0.0-18196/judicial_authority.db"
-RELEASE_TAG_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/tag/v1.0.0-18196"
+RELEASE_DB_VERSION = "v1.0.1-11991"
+RELEASE_DB_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/download/v1.0.1-11991/judicial_authority.db"
+RELEASE_TAG_URL = "https://github.com/FDfrankie/law-exam-evaluator/releases/tag/v1.0.1-11991"
+MIN_VALID_DB_SIZE = 120 * 1024 * 1024  # 120MB 閥值（全量釋字813+憲判+萬則判例為 147MB+，小於 120MB 為舊版或殘檔）
 
 _DB_ASSETS_INITIALIZED = False
 
@@ -1948,8 +1950,16 @@ def ensure_database_assets() -> bool:
         pass
     db_target = data_dir / "judicial_authority.db"
 
-    # 若檔案已存在且大小正常（> 1MB），直接返回
-    if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+    # 若檔案已存在且大小正常（>= 120MB 且版本相符），直接返回
+    version_file = data_dir / "judicial_authority.version"
+    # 安全快取與強制重刷機制：若小於 120MB 或版本號不符，自動刪除舊檔重新拉取
+    if db_target.exists() and (db_target.stat().st_size < MIN_VALID_DB_SIZE or (version_file.exists() and version_file.read_text(encoding="utf-8").strip() != RELEASE_DB_VERSION)):
+        try:
+            db_target.unlink(missing_ok=True)
+            version_file.unlink(missing_ok=True)
+        except Exception:
+            pass
+    elif db_target.exists() and db_target.stat().st_size >= MIN_VALID_DB_SIZE:
         _DB_ASSETS_INITIALIZED = True
         return True
 
@@ -1963,7 +1973,7 @@ def ensure_database_assets() -> bool:
             Path("data/judicial_authority.db")
         ]
         for c in cands:
-            if c.exists() and c.is_file() and c.stat().st_size > 1024 * 1024:
+            if c.exists() and c.is_file() and c.stat().st_size >= MIN_VALID_DB_SIZE:
                 _DB_ASSETS_INITIALIZED = True
                 return True
     except Exception:
@@ -1984,9 +1994,13 @@ def ensure_database_assets() -> bool:
             with urllib.request.urlopen(req, timeout=180) as resp, open(db_target, "wb") as f_out:
                 while chunk := resp.read(1024 * 1024):  # 每次讀取 1MB
                     f_out.write(chunk)
-            if db_target.exists() and db_target.stat().st_size > 1024 * 1024:
+            if db_target.exists() and db_target.stat().st_size >= MIN_VALID_DB_SIZE:
                 try:
-                    st.toast("✅ 權威裁判大庫下載並載入完成！", icon="🎉")
+                    version_file.write_text(RELEASE_DB_VERSION, encoding="utf-8")
+                except Exception:
+                    pass
+                try:
+                    st.toast("✅ 權威裁判大庫（813 釋字 + 憲判 + 萬則判例）下載並載入完成！", icon="🎉")
                 except Exception:
                     pass
                 _DB_ASSETS_INITIALIZED = True
