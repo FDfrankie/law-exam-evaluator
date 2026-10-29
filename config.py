@@ -130,7 +130,11 @@ def get_judgements_dir() -> Path:
     if repo_j.exists():
         return repo_j
 
-    j_data.mkdir(parents=True, exist_ok=True)
+    try:
+        if not j_data.exists():
+            j_data.mkdir(parents=True, exist_ok=True)
+    except (FileExistsError, OSError):
+        pass
     return j_data
 
 JUDGEMENTS_DIR = get_judgements_dir()
@@ -147,7 +151,8 @@ def init_directories():
             folder_str = str(folder)
             if sys.platform != "win32" and (folder_str.startswith(("G:", "g:", "C:", "c:", "D:", "d:")) or ":" in folder_str[:3]):
                 continue
-            folder.mkdir(parents=True, exist_ok=True)
+            if not folder.exists():
+                folder.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             print(f"[DIR ERROR] Failed creating {folder}: {e}")
 
