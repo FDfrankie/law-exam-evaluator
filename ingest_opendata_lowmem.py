@@ -29,6 +29,14 @@ from config import DATA_DIR, RAW_DATA_DIR, OPENDATA_INBOX_DIR, JUDGEMENTS_DIR
 from build_million_judgments_db import get_million_db_engine, MillionJudgmentsSQLiteEngine
 from legal_judgment_analyzer import evaluate_judgment_substance, extract_instance_history
 
+# Windows cp950 編碼防護：強制終端 stdout/stderr 採用 utf-8 輸出
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 def stream_json_from_zip(zip_path: Path) -> Generator[Dict[str, Any], None, None]:
     """
