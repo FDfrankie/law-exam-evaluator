@@ -23,7 +23,7 @@ import argparse
 import gc
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Generator
+from typing import Dict, Any, List, Optional, Generator, Set
 
 from config import DATA_DIR, RAW_DATA_DIR, OPENDATA_INBOX_DIR, JUDGEMENTS_DIR
 from build_million_judgments_db import get_million_db_engine, MillionJudgmentsSQLiteEngine
@@ -134,14 +134,23 @@ def _log_ingest_metrics(target_name: str, added_count: int, total_db_count: int)
             pass
 
 
-def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def process_record_to_db_payload(
+    raw_item: Dict[str, Any],
+    existing_case_ids: Optional[Set[str]] = None
+) -> Optional[Dict[str, Any]]:
     """
     將司法院標準 JSON 紀錄轉換為大庫結構，並掛載實質法律爭點檢定與歷審脈絡鏈。
     【嚴格過濾情境 A / 純事實爭點排除】：
     若為純程序性駁回 (is_procedural_dismissal)、純事實爭點 (is_pure_factual_dispute)
     或無實質法律爭點 (has_legal_issue == False)，一律回傳 None 剔除不入庫！
+    【斷點快速略過】：若案號已存在於 existing_case_ids，立即回傳 None 避免耗時之正則與爭點分析。
     """
     if not isinstance(raw_item, dict):
+        return None
+
+    # 第一道防線：若原始 JSON 已帶 case_id 或 JID 且已入庫，直接跳過
+    raw_id = raw_item.get("case_id") or raw_item.get("JID") or raw_item.get("jid")
+    if raw_id and existing_case_ids and raw_id in existing_case_ids:
         return None
 
     try:
@@ -151,6 +160,11 @@ def process_record_to_db_payload(raw_item: Dict[str, Any]) -> Optional[Dict[str,
         parsed = raw_item if raw_item.get("case_id") else None
 
     if not parsed or not parsed.get("case_id"):
+        return None
+
+    # 第二道防線：標準化解析案號後，若已存在大庫，直接略過後續高耗時正則與爭點檢定
+    c_id = parsed.get("case_id")
+    if existing_case_ids and c_id and c_id in existing_case_ids:
         return None
 
     # 確保爭點實質性檢定欄位存在
@@ -219,13 +233,15 @@ def low_memory_ingest(
     batch_size: int = 100,
     max_records: int = 1000000,
     progress_callback = None,
-    delete_source_after_ingest: bool = False
+    delete_source_after_ingest: bool = False,
+    existing_case_ids: Optional[Set[str]] = None
 ) -> Dict[str, Any]:
     """
     超低記憶體裁判匯入主程序：
     - 支援 .zip、.json、.jsonl、.rar、.7z 或包含上述檔案之資料夾 (如 data/judgements)
     - 逐筆串流讀取，累積 batch_size (預設 100) 筆即寫入 SQLite，寫入後立即釋放並回收記憶體
     - 記憶體消耗全程維持在 30MB~50MB 以內！
+    - 支援斷點秒級快速略過 (Fast Resume)：預先載入現存案號集合，已入庫資料零 CPU 消耗直接跳過。
     - 支援 delete_source_after_ingest=True：入庫分析完成後自動刪除原始壓縮包以節省雲端硬碟空間。
     """
     target = Path(target_path)
@@ -244,18 +260,55 @@ def low_memory_ingest(
     deleted_files: List[str] = []
     total_freed_bytes = 0
 
+    # 1. 預先加載現存案號集合（In-Memory ID Set），啟動秒級斷點略過模式
+    if existing_case_ids is None:
+        existing_case_ids = set()
+        try:
+            db_target_path = getattr(engine, "index_db_path", None)
+            if hasattr(engine, "_get_conn"):
+                try:
+                    conn = engine._get_conn(db_target_path) if db_target_path else engine._get_conn()
+                except TypeError:
+                    conn = engine._get_conn()
+            else:
+                import sqlite3
+                conn = sqlite3.connect(str(db_target_path or "judicial_1m_index.db"), timeout=30)
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT case_id FROM judgments_meta")
+                existing_case_ids = {row[0] for row in cur.fetchall() if row[0]}
+            except Exception:
+                cur.execute("SELECT case_id FROM judgments")
+                existing_case_ids = {row[0] for row in cur.fetchall() if row[0]}
+            try:
+                cur.execute("SELECT jid FROM judgments_meta WHERE jid IS NOT NULL AND jid != ''")
+                existing_case_ids.update(row[0] for row in cur.fetchall() if row[0])
+            except Exception:
+                pass
+            conn.close()
+            print(f"[*] 已載入庫內現存 {len(existing_case_ids):,} 筆案號，啟動斷點秒級快速略過模式。")
+        except Exception as e_load:
+            print(f"[!] 載入現存案號集合失敗 (以空集合啟動): {e_load}")
+            existing_case_ids = set()
+
     def _flush_buffer():
         nonlocal batch_buffer, total_added
         if batch_buffer:
             n = engine.batch_upsert_records(batch_buffer, batch_size=len(batch_buffer))
             total_added += n
+            if existing_case_ids is not None:
+                existing_case_ids.update(r["case_id"] for r in batch_buffer if r.get("case_id"))
             batch_buffer.clear()
             gc.collect()
 
     # 1. 單一 ZIP 檔串流處理 (最佳低記憶體路徑)
     if target.is_file() and target.suffix.lower() == ".zip":
         for raw_doc in stream_json_from_zip(target):
-            rec = process_record_to_db_payload(raw_doc)
+            # 若該案號已存在於資料庫中，直接跳過，不進行耗時的法律實質檢定與正則萃取
+            raw_case_id = raw_doc.get("case_id") or raw_doc.get("JID") or raw_doc.get("jid")
+            if raw_case_id and raw_case_id in existing_case_ids:
+                continue
+            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
             if rec:
                 batch_buffer.append(rec)
                 if len(batch_buffer) >= batch_size:
@@ -282,7 +335,11 @@ def low_memory_ingest(
     # 2. 單一 JSON / JSONL 處理
     if target.is_file() and target.suffix.lower() in (".json", ".jsonl"):
         for raw_doc in stream_json_from_file(target):
-            rec = process_record_to_db_payload(raw_doc)
+            # 若該案號已存在於資料庫中，直接跳過，不進行耗時的法律實質檢定與正則萃取
+            raw_case_id = raw_doc.get("case_id") or raw_doc.get("JID") or raw_doc.get("jid")
+            if raw_case_id and raw_case_id in existing_case_ids:
+                continue
+            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
             if rec:
                 batch_buffer.append(rec)
                 if len(batch_buffer) >= batch_size:
@@ -329,7 +386,10 @@ def low_memory_ingest(
                     low_fn = fn.lower()
                     if low_fn.endswith(".zip"):
                         for raw_doc in stream_json_from_zip(sf):
-                            rec = process_record_to_db_payload(raw_doc)
+                            raw_case_id = raw_doc.get("case_id") or raw_doc.get("JID") or raw_doc.get("jid")
+                            if raw_case_id and raw_case_id in existing_case_ids:
+                                continue
+                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
                             if rec:
                                 batch_buffer.append(rec)
                                 if len(batch_buffer) >= batch_size:
@@ -340,7 +400,10 @@ def low_memory_ingest(
                                 break
                     elif low_fn.endswith(".json"):
                         for raw_doc in stream_json_from_file(sf):
-                            rec = process_record_to_db_payload(raw_doc)
+                            raw_case_id = raw_doc.get("case_id") or raw_doc.get("JID") or raw_doc.get("jid")
+                            if raw_case_id and raw_case_id in existing_case_ids:
+                                continue
+                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
                             if rec:
                                 batch_buffer.append(rec)
                                 if len(batch_buffer) >= batch_size:
@@ -386,7 +449,8 @@ def low_memory_ingest(
                 batch_size=batch_size,
                 max_records=(max_records - total_added),
                 progress_callback=progress_callback,
-                delete_source_after_ingest=delete_source_after_ingest
+                delete_source_after_ingest=delete_source_after_ingest,
+                existing_case_ids=existing_case_ids
             )
             total_added += res_sub.get("added", 0)
             deleted_files.extend(res_sub.get("deleted_files", []))
