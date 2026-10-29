@@ -57,7 +57,10 @@ except ImportError:
         NEW_SDK = False
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
-from merge_all_sft_datasets import merge_datasets
+try:
+    from merge_all_sft_datasets import merge_datasets
+except ImportError:
+    merge_datasets = None
 
 SAMSUNG_NOTES_DIR = Path(DATA_DIR) / "SamsungNotes"
 CACHE_DIR = SAMSUNG_NOTES_DIR / "_cache"
@@ -719,7 +722,7 @@ def render_pdf_to_images(pdf_path: Path, max_pages: int = 15):
         print(f"  [警示] 渲染 PDF 失敗: {e}")
     return images
 
-def read_note_text(file_path: Any, max_pages: int = 15, auto_ocr: bool = True) -> str:
+def read_note_text(file_path: Any, max_pages: int = 60, auto_ocr: bool = True) -> str:
     """高速讀取筆記文字：優先讀取快取；若無快取則自動直讀數位字或調用 Gemini 多模態 OCR 並寫入快取"""
     if not file_path:
         return ""
@@ -843,6 +846,72 @@ def read_note_text(file_path: Any, max_pages: int = 15, auto_ocr: bool = True) -
             pass
             
     return text
+
+
+def get_full_drive_note_content(note_info_or_path: Any, max_chars: int = 100000, auto_ocr: bool = True) -> Dict[str, Any]:
+    """
+    深度提取 Google Drive 講義與筆記實體檔案之全文內容（真實 RAG 核心）：
+    支援 PDF（自動多頁文字萃取 + 視覺 OCR）、Word、TXT、Markdown 與圖片。
+    回傳具備完整檔名、考科、作者、總字數與真實全文之字典，保證 100% 傳送給 Gemini API。
+    """
+    if not note_info_or_path:
+        return {"filename": "", "subject": "其他", "author": "", "char_count": 0, "text": "", "path": None}
+
+    fname = ""
+    subject = "其他"
+    author = ""
+    resolved_path = None
+
+    if isinstance(note_info_or_path, dict):
+        fname = note_info_or_path.get("filename", "")
+        subject = note_info_or_path.get("subject", "其他")
+        author = note_info_or_path.get("author", "")
+        raw_p = note_info_or_path.get("path")
+        if raw_p:
+            resolved_path = Path(raw_p) if isinstance(raw_p, str) else raw_p
+    elif isinstance(note_info_or_path, (str, Path)):
+        resolved_path = Path(note_info_or_path)
+        fname = resolved_path.name
+        subject = fname.split("_")[0] if "_" in fname else "其他"
+
+    if not resolved_path or not resolved_path.exists():
+        candidates = [
+            SAMSUNG_NOTES_DIR / fname,
+            Path(DATA_DIR) / "SamsungNotes" / fname,
+            Path(__file__).resolve().parent / "data" / "SamsungNotes" / fname,
+            Path("G:/我的雲端硬碟/LawExamData/SamsungNotes") / fname,
+            Path("G:/我的雲端硬碟/LawExamData/資源") / fname,
+        ]
+        r_dir = get_resources_dir()
+        if r_dir and r_dir.exists():
+            for root, _, files in os.walk(r_dir):
+                if fname in files:
+                    candidates.append(Path(root) / fname)
+                    break
+        for cand in candidates:
+            if cand.exists() and cand.is_file():
+                resolved_path = cand
+                break
+
+    full_text = ""
+    if resolved_path and resolved_path.exists():
+        full_text = read_note_text(resolved_path, max_pages=60, auto_ocr=auto_ocr)
+    elif fname:
+        full_text = read_note_text(fname, max_pages=60, auto_ocr=False)
+
+    if len(full_text) > max_chars:
+        full_text = full_text[:max_chars]
+
+    return {
+        "filename": fname,
+        "subject": subject,
+        "author": author,
+        "char_count": len(full_text),
+        "text": full_text,
+        "path": resolved_path,
+        "is_cached": bool(full_text and not full_text.startswith("["))
+    }
+
 
 def ocr_and_distill_notes(images: List[Image.Image], doc_title: str) -> List[Dict[str, Any]]:
     """調用 Gemini 2.0 Flash 對手寫筆記進行 OCR 並直接蒸餾為標準法學 SFT 訓練樣本"""

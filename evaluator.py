@@ -43,7 +43,8 @@ class LawExamEvaluator:
         images: Optional[List[Image.Image]] = None,
         submission_text: Optional[str] = None,
         question_text: str = "",
-        standard_rubric: Optional[str] = None
+        standard_rubric: Optional[str] = None,
+        lecture_notes: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         評閱考生的作答（可傳入手寫圖片清單，或 Word/PDF 純文字，或兩者混合）
@@ -89,6 +90,18 @@ class LawExamEvaluator:
 只輸出純 JSON，勿添加其他多餘 markdown 程式碼區塊外說明。
 """
 
+        # --- 司法裁判動態 Grounding & 講義真跡檢索注入 ---
+        grounding_block = ""
+        verifier_func = None
+        try:
+            from authority_engine import get_dynamic_legal_grounding, verify_case_citations
+            verifier_func = verify_case_citations
+            g_input = f"{question_text}\n{submission_text or ''}\n{standard_rubric or ''}\n{lecture_notes or ''}"
+            grounding_res = get_dynamic_legal_grounding(g_input, limit=4)
+            grounding_block = grounding_res.get("grounding_prompt_block", "")
+        except Exception:
+            pass
+
         user_content = [
             system_prompt,
             f"【考試題目】：\n{question_text}\n\n",
@@ -96,6 +109,12 @@ class LawExamEvaluator:
 
         if standard_rubric:
             user_content.append(f"【評分要點/參考擬答】：\n{standard_rubric}\n\n")
+
+        if lecture_notes and lecture_notes.strip():
+            user_content.append(f"【權威法學講義與評分法理基準（Grounding Lecture Notes）】：\n\"\"\"\n{lecture_notes.strip()[:60000]}\n\"\"\"\n【極重要】：評閱時必須以此講義之體系架構與學說爭點作為最核心評核準則！\n\n")
+
+        if grounding_block:
+            user_content.append(f"{grounding_block}\n\n")
 
         if submission_text:
             user_content.append(f"【考生的作答文字稿內容】：\n{submission_text}\n\n")
@@ -157,4 +176,10 @@ class LawExamEvaluator:
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(result_json, f, ensure_ascii=False, indent=2)
 
+        if verifier_func and isinstance(result_json, dict) and "suggested_revision" in result_json:
+            try:
+                v_res = verifier_func(result_json["suggested_revision"])
+                result_json["citation_verification"] = v_res
+            except Exception:
+                pass
         return result_json

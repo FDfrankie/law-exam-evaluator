@@ -165,7 +165,7 @@ def safe_requests_get(url: str, session=None, **kwargs):
     """
     import requests
     req = session.get if session else requests.get
-    
+
     allow_insecure = os.getenv("LEGAL_ALLOW_INSECURE_SSL", "0").lower() in ("1", "true", "yes")
 
     try:

@@ -217,7 +217,7 @@ class LawExamGenerator:
             notes_instruction = f"""
 【考生個人學習筆記 / 爭點講義重點】：
 \"\"\"
-{notes_content.strip()[:4500]}
+{notes_content.strip()[:60000]}
 \"\"\"
 【深度結合指令】：請深入提取上述考生筆記所載之爭點論理、肯否兩說、法條構成要件或判決字號，將其轉換為題目情境與選項陷阱！
 """
@@ -253,6 +253,8 @@ class LawExamGenerator:
             prompt = f"""
 你是一位台灣「律師司法官高等考試一試」命題典試委員。
 請針對科目【{subject}】，主題【{topic}】，依據司律一試全真規格，命題第 {start_num} 題至第 {end_num} 題（共 {this_batch_count} 題，四選一單選題）。
+
+{grounding_instruction}
 
 【命題最高準則（比照司法官律師考試標準）】：
 1. {difficulty_spec}
@@ -342,7 +344,7 @@ class LawExamGenerator:
             notes_instruction = f"""
 【考生個人學習筆記 / 爭點講義重點】：
 \"\"\"
-{notes_content.strip()[:4500]}
+{notes_content.strip()[:60000]}
 \"\"\"
 【特別命題指示】：請深入融合上述考生筆記中的核心法條、權威裁判判旨與學者爭點，編織進本題二試實例案件事實中！
 """
@@ -351,6 +353,8 @@ class LawExamGenerator:
 你是一位台灣「律師司法官高等考試二試」命題召集人。
 請針對科目【{subject}】，主題【{topic}】，設計一題標準的司律二試綜合實例申論題（滿分 100 分或 50 分標準題型）。
 {notes_instruction}
+{grounding_instruction}
+
 題目必須具有高度法學深度，融合甲乙丙丁等複雜事實關係、多角法律爭端、最新憲法法庭判決或大法庭重要裁定爭點。
 
 請輸出嚴格的 JSON 格式：
@@ -385,9 +389,22 @@ class LawExamGenerator:
         針對二試申論題，生成具備上位卷（全國前1%錄取高分卷）水準的完美擬答
         包含嚴謹三段論法、各家學說對比、最高法院判決/大法庭裁定字號、事實具體細膩涵攝。
         """
+        # --- 司法裁判動態 Grounding 檢索注入 ---
+        grounding_instruction = ""
+        verifier_func = None
+        try:
+            from authority_engine import get_dynamic_legal_grounding, verify_case_citations
+            verifier_func = verify_case_citations
+            g_res = get_dynamic_legal_grounding(f"{subject} {question}", subject=subject, limit=5)
+            grounding_instruction = g_res.get("grounding_prompt_block", "")
+        except Exception:
+            pass
+
         prompt = f"""
 你是一位司律二試榜首兼法學權威講座名師。
 請針對以下司律題目，撰寫一份足堪作為「全國最高分範本」的極致高分擬答。
+
+{grounding_instruction}
 
 【考試題目】：
 {question}
@@ -413,7 +430,20 @@ class LawExamGenerator:
                 response_mime_type=None
             )
         )
-        return response.text
+        ans_text = response.text
+        if verifier_func:
+            try:
+                v_res = verifier_func(ans_text)
+                if v_res.get("verified") or v_res.get("unverified"):
+                    v_badges = []
+                    if v_res.get("verified"):
+                        v_badges.append(f"✅ **經權威裁判庫核定真跡**：{', '.join([c['citation'] for c in v_res['verified']])}")
+                    if v_res.get("unverified"):
+                        v_badges.append(f"⚠️ **未於權威庫中精確比對之字號（請以法理為準）**：{', '.join(v_res['unverified'])}")
+                    ans_text += "\n\n---\n#### 🛡️ 司法院權威裁判真偽核驗報告：\n" + "\n".join(v_badges)
+            except Exception:
+                pass
+        return ans_text
 
     @staticmethod
     def format_stage1_exam_markdown(exam_data: Dict[str, Any]) -> str:

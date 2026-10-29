@@ -41,17 +41,29 @@ class JudicialAuthorityEngine:
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path else get_authority_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        if not self.db_path.exists() or self.db_path.stat().st_size < 1000:
+            self._init_db()
 
-    def _get_conn(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+    def _get_conn(self, read_only: bool = False) -> sqlite3.Connection:
+        if read_only:
+            try:
+                uri = f"file:///{self.db_path.as_posix()}?mode=ro"
+                conn = sqlite3.connect(uri, uri=True, timeout=10.0)
+            except Exception:
+                conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+        else:
+            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode = WAL;")
-        conn.execute("PRAGMA synchronous = NORMAL;")
+        if not read_only:
+            try:
+                conn.execute("PRAGMA journal_mode = DELETE;")
+                conn.execute("PRAGMA synchronous = NORMAL;")
+            except Exception:
+                pass
         return conn
 
     def _init_db(self):
-        with self._get_conn() as conn:
+        with self._get_conn(read_only=False) as conn:
             # 1. 權威司法裁判與主管法規總表
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS authority_records (
@@ -364,8 +376,8 @@ class JudicialAuthorityEngine:
 
         with self._get_conn() as conn:
             # 檢查目前是否為空，若為空自動預載
-            row_cnt = conn.execute("SELECT COUNT(*) FROM precedents").fetchone()[0]
-            if row_cnt == 0:
+            has_data = conn.execute("SELECT 1 FROM precedents LIMIT 1").fetchone()
+            if not has_data:
                 self.import_precedents_from_catalog()
 
             if keyword:
@@ -424,10 +436,10 @@ class JudicialAuthorityEngine:
         elif law_name == "刑法":
             match_patterns.append(f"%中華民國刑法第{clean_no}條%")
 
-        with self._get_conn() as conn:
+        with self._get_conn(read_only=True) as conn:
             # 確保有資料
-            row_cnt = conn.execute("SELECT COUNT(*) FROM precedents").fetchone()[0]
-            if row_cnt == 0:
+            has_data = conn.execute("SELECT 1 FROM precedents LIMIT 1").fetchone()
+            if not has_data:
                 self.import_precedents_from_catalog()
 
             # 多模式比對
@@ -751,6 +763,171 @@ def search_precedents(keyword: str = "", sys_type: str = "全部", limit: int = 
 def get_precedents_by_law(law_name: str, article_no: str, limit: int = 15) -> List[Dict[str, Any]]:
     """依據法條（如「民法第184條」）精準撈取關聯判例"""
     return get_engine().get_precedents_by_law(law_name=law_name, article_no=article_no, limit=limit)
+
+
+
+
+# =============================================================================
+# 司法裁判動態 Grounding & 防字號幻覺檢索核心
+# =============================================================================
+def get_dynamic_legal_grounding(topic_or_facts: str, subject: str = "", limit: int = 5) -> Dict[str, Any]:
+    """
+    【AI 防字號幻覺動態 Grounding 檢索引擎】
+    依據考題事實、考點或筆記爭點，從權威資料庫（813 則釋字、憲判字、大法庭裁定與萬則精選判例）
+    動態檢索出 Top 3~5 則最相關真實裁判，並格式化為嚴格防偽 Prompt 注入區塊。
+    """
+    if not topic_or_facts or not topic_or_facts.strip():
+        return {"citations": [], "grounding_prompt_block": ""}
+
+    eng = get_engine()
+    citations = []
+    seen_ids = set()
+
+    # 1. 萃取法條關鍵字 (如 民法第184條、刑法第271條、保險法第53條)
+    law_matches = re.findall(r'(民法|刑法|民事訴訟法|刑事訴訟法|行政程序法|公司法|證券交易法|保險法|專利法|商標法|著作權法|憲法)\s*第?\s*(\d+)\s*條', topic_or_facts)
+    for law_name, art_no in law_matches[:3]:
+        try:
+            laws_p = eng.get_precedents_by_law(law_name, art_no, limit=2)
+            for p in laws_p:
+                cid = p.get("case_no") or p.get("id")
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    citations.append({
+                        "case_no": p.get("case_no", ""),
+                        "court": p.get("court", "最高法院"),
+                        "date": p.get("date", ""),
+                        "category": f"最高法院{p.get('status', '裁判')}",
+                        "holding": (p.get("holding") or "")[:260],
+                        "laws_cited": p.get("laws_cited", "")
+                    })
+        except Exception:
+            pass
+
+    # 2. 萃取法律概念關鍵詞
+    common_concepts = [
+        "借名登記", "純經濟損失", "原因自由行為", "通謀虛偽", "表見代理", "無權處分", "善意受讓",
+        "給付不能", "不完全給付", "瑕疵擔保", "危險負擔", "侵權行為", "不當得利", "代位權",
+        "抵押權", "質權", "共有物分割", "夫妻財產", "剩餘財產", "特留分", "代位繼承",
+        "客觀歸責", "正當防衛", "緊急避難", "未遂犯", "共犯", "想像競合", "法條競合",
+        "保險代位", "據實說明", "惡意複保險", "董事責任", "內線交易", "財報不實"
+    ]
+    concept_kw = [c for c in common_concepts if c in topic_or_facts]
+
+    # 3. 搜尋權威庫 (authority_records: 憲法法庭裁判、大法官解釋、大法庭裁定)
+    search_queries = concept_kw[:3]
+    if not search_queries:
+        clean_text = re.sub(r'[^\w\s]', ' ', topic_or_facts).strip()
+        words = [w for w in clean_text.split() if len(w) >= 2 and w not in ["甲向", "乙向", "丙向", "請問", "何者", "下列", "案例"]]
+        search_queries = words[:3]
+
+    for q in search_queries:
+        if len(citations) >= limit:
+            break
+        try:
+            auth_res = eng.search_records(query=q, limit=2)
+            for r in auth_res:
+                cid = r.get("case_no") or r.get("title")
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    citations.append({
+                        "case_no": r.get("case_no", ""),
+                        "court": r.get("court", "憲法法庭/最高法院"),
+                        "date": r.get("date", ""),
+                        "category": r.get("sub_type", "權威裁決"),
+                        "holding": (r.get("holding") or r.get("reasoning", ""))[:260],
+                        "laws_cited": r.get("laws_cited", "")
+                    })
+        except Exception:
+            pass
+
+        try:
+            prec_res = eng.search_precedents(keyword=q, sys_type=subject if subject in ["民事", "刑事", "行政"] else "全部", limit=2)
+            for p in prec_res:
+                cid = p.get("case_no") or p.get("id")
+                if cid and cid not in seen_ids:
+                    seen_ids.add(cid)
+                    citations.append({
+                        "case_no": p.get("case_no", ""),
+                        "court": p.get("court", "最高法院"),
+                        "date": p.get("date", ""),
+                        "category": f"最高法院{p.get('status', '裁判')}",
+                        "holding": (p.get("holding") or p.get("reasoning", ""))[:260],
+                        "laws_cited": p.get("laws_cited", "")
+                    })
+        except Exception:
+            pass
+
+    final_citations = citations[:limit]
+
+    # 組裝成嚴格的 Prompt 防幻覺約束區塊
+    if not final_citations:
+        prompt_block = """
+【實務裁判引用規範與字號防偽禁令（極度重要）】：
+本題目前無特定指定之裁判字號。若本解答論理需引用實務見解，請直接以「實務見解認為...」、「現行通說認為...」直接闡述法理論證！
+【嚴格禁令】：嚴禁自行拼湊、臆測或偽造任何不存在之年度或判決字號（如絕不可自創不存在之「最高法院某年度台上字第某某號」）！凡捏造未經查證之字號一律視為重大瑕疵！
+"""
+    else:
+        lines = [
+            "【官方資料庫已核定真實權威裁判（Grounding Sources - 唯一得引用之實質裁判字號）】：",
+            "本系統已自司法院權威資料庫精準檢索下列真實裁判要旨，供本題作答與論理依據：",
+        ]
+        for idx, c in enumerate(final_citations, 1):
+            lines.append(f"{idx}. 《{c['case_no']}》（{c['category']} ｜ {c['court']} ｜ 日期：{c['date']}）")
+            lines.append(f"   - 核心裁判要旨：{c['holding']}")
+            if c.get("laws_cited"):
+                lines.append(f"   - 適用法條：{c['laws_cited']}")
+        lines.append("\n【嚴格防幻覺遵循指令（極度重要）】：")
+        lines.append("1. 本次論理、題目詳解、擬答或評閱中凡提及具體裁判字號者，必須【百分之百嚴格僅限引用上述真實裁判清單】！")
+        lines.append("2. 嚴禁自行臆造、捏造或組合任何未包含於上述清單中的案號或字號！")
+        lines.append("3. 若上述清單中無相應特定字號，請直接以「實務見解有認為...」、「多數實務見解認為...」或「學說見解...」直接敘述法學論述，切勿偽造假字號！")
+        prompt_block = "\n".join(lines)
+
+    return {
+        "citations": final_citations,
+        "grounding_prompt_block": prompt_block
+    }
+
+
+def verify_case_citations(text: str) -> Dict[str, Any]:
+    """
+    【後置防偽校驗】掃描文本中出現的所有判決與解釋字號，對照真實資料庫判定真偽。
+    """
+    if not text:
+        return {"all_citations": [], "verified": [], "unverified": [], "is_authentic": True}
+
+    pattern = r'((?:憲法法庭\s*)?\d{2,3}\s*年(?:度)?\s*(?:憲判|憲裁|憲暫裁|台上|台抗|台上大|台抗大|台上特別|台非|台上破|訴|更|大)?\s*字第\s*\d+\s*號(?:判決|裁定)?|釋字第\s*\d+\s*號(?:解釋)?)'
+    matches = list(set(re.findall(pattern, text)))
+
+    eng = get_engine()
+    verified = []
+    unverified = []
+
+    for m in matches:
+        clean = m.strip()
+        is_found = False
+        try:
+            with eng._get_conn(read_only=True) as conn:
+                r1 = conn.execute("SELECT case_no, title FROM authority_records WHERE case_no LIKE ? OR title LIKE ? LIMIT 1", (f"%{clean}%", f"%{clean}%")).fetchone()
+                if r1:
+                    is_found = True
+                    verified.append({"citation": clean, "db_match": r1[0], "source": "authority_records"})
+                else:
+                    r2 = conn.execute("SELECT case_no, title FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1", (f"%{clean}%", f"%{clean}%")).fetchone()
+                    if r2:
+                        is_found = True
+                        verified.append({"citation": clean, "db_match": r2[0], "source": "precedents"})
+        except Exception:
+            pass
+
+        if not is_found:
+            unverified.append(clean)
+
+    return {
+        "all_citations": matches,
+        "verified": verified,
+        "unverified": unverified,
+        "is_authentic": len(unverified) == 0
+    }
 
 
 if __name__ == "__main__":

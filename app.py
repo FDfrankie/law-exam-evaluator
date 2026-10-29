@@ -900,6 +900,92 @@ def is_developer() -> bool:
     return current_pwd == "brrfdccee"
 
 
+def render_developer_pdf_action_bar(file_item_or_path: Any, unique_key: str = "pdf_bar"):
+    """
+    【開發者專屬】Google Drive 講義與筆記實體連動條：
+    1. 📥 提供直接下載原始 PDF 按鈕 (st.download_button)
+    2. 👁️ 提供在線嵌入式 PDF 預覽檢視器 (iframe / base64)
+    3. 📂 顯示實體 Google Drive 路徑與開啟資料夾按鈕
+    """
+    if not is_developer():
+        return
+
+    resolved_path = None
+    fname = ""
+    if isinstance(file_item_or_path, dict):
+        fname = file_item_or_path.get("filename", "")
+        raw_p = file_item_or_path.get("path")
+        if raw_p:
+            resolved_path = Path(raw_p) if isinstance(raw_p, str) else raw_p
+    elif isinstance(file_item_or_path, (str, Path)):
+        resolved_path = Path(file_item_or_path)
+        fname = resolved_path.name
+
+    if not resolved_path or not resolved_path.exists():
+        candidates = [
+            Path(DATA_DIR) / "SamsungNotes" / fname,
+            Path("G:/我的雲端硬碟/LawExamData/SamsungNotes") / fname,
+            Path("G:/我的雲端硬碟/LawExamData/資源") / fname,
+            Path(__file__).resolve().parent / "data" / "SamsungNotes" / fname,
+        ]
+        try:
+            from ingest_user_notes_to_sft import get_resources_dir
+            r_dir = get_resources_dir()
+            if r_dir and r_dir.exists():
+                for root, _, files in os.walk(r_dir):
+                    if fname in files:
+                        candidates.append(Path(root) / fname)
+                        break
+        except Exception:
+            pass
+        for c in candidates:
+            if c.exists() and c.is_file():
+                resolved_path = c
+                break
+
+    if not resolved_path or not resolved_path.exists():
+        st.caption(f"📁 雲端檔案識別碼：`{fname}`")
+        return
+
+    st.markdown(f"**🔗 Google Drive 實體路徑**：`{resolved_path}`")
+    col_d1, col_d2 = st.columns([1.5, 1.5])
+    with col_d1:
+        try:
+            with open(resolved_path, "rb") as fp:
+                f_bytes = fp.read()
+            mime = "application/pdf" if resolved_path.suffix.lower() == ".pdf" else "application/octet-stream"
+            st.download_button(
+                label=f"📥 下載原始 {resolved_path.suffix.upper()} ({resolved_path.stat().st_size / (1024*1024):.2f} MB)",
+                data=f_bytes,
+                file_name=resolved_path.name,
+                mime=mime,
+                key=f"dl_btn_{unique_key}"
+            )
+        except Exception as e_dl:
+            st.caption(f"下載讀取提示: {e_dl}")
+
+    with col_d2:
+        if st.button("📂 開啟 Google Drive 本地資料夾", key=f"open_folder_{unique_key}"):
+            try:
+                import subprocess
+                subprocess.Popen(f'explorer /select,"{resolved_path}"')
+            except Exception:
+                pass
+
+    if resolved_path.suffix.lower() == ".pdf":
+        with st.expander(f"👁️ 在線檢視《{resolved_path.name}》PDF 講義全文", expanded=False):
+            try:
+                with open(resolved_path, "rb") as f_pdf:
+                    pdf_bytes = f_pdf.read()
+                b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                pdf_html = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="650px" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+                st.markdown(pdf_html, unsafe_allow_html=True)
+            except Exception as pe:
+                st.warning(f"在線 PDF 檢視提示: {pe}")
+
+
+
+
 def get_semantic_file_name(filename: str, subject: str = "", topic_hint: str = "") -> str:
     """依內容與考科進行智慧語義化命名（標註具體章節與核心法學爭點）"""
     base = Path(filename).stem
@@ -2371,6 +2457,26 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
         )
         st.session_state.question_text_content = question_text
 
+        # 開發者專屬：自 Google Drive 講義庫選取評分標準 (真傳講義給 AI 閱卷)
+        chosen_eval_lecture_text = ""
+        if is_developer() and drive_notes:
+            with st.expander("📚 從 Google Drive 講義挑選評分標準 (真傳講義給 AI 閱卷)", expanded=False):
+                st.caption("選取 Google Drive 中的名師講義或手寫筆記，系統將提取其真實全文作為閱卷最高法理標準，杜絕 AI 憑空瞎編！")
+                eval_note_opts = ["(不指定講義，由 AI 自行推導)"] + [f"【{n['subject']}】{n['filename']}" for n in drive_notes]
+                sel_eval_note_str = st.selectbox("挑選評分依據講義：", eval_note_opts, key="sel_eval_drive_note")
+                if sel_eval_note_str != "(不指定講義，由 AI 自行推導)":
+                    chosen_eval_note = drive_notes[eval_note_opts.index(sel_eval_note_str) - 1]
+                    render_developer_pdf_action_bar(chosen_eval_note, unique_key="eval_note_bar")
+                    if st.button("📥 一鍵將此講義全文帶入評分標準", key="btn_apply_eval_note"):
+                        with st.spinner(f"正在自 Google Drive 提取《{chosen_eval_note['filename']}》全文..."):
+                            from ingest_user_notes_to_sft import get_full_drive_note_content
+                            n_info = get_full_drive_note_content(chosen_eval_note)
+                            if n_info.get("text"):
+                                st.session_state["rubric_text_content"] = f"【官方評分標準依據 - 《{chosen_eval_note['filename']}》】：\n" + n_info["text"][:30000]
+                                st.session_state["chosen_eval_lecture_full_text"] = n_info["text"]
+                                st.success(f"已成功提取《{chosen_eval_note['filename']}》全文（{n_info['char_count']:,} 字元）作為評分依據！")
+                                st.rerun()
+
         rubric_text = st.text_area(
             "評分標準 / 參考擬答 (選填，留空則由 AI 自律法學知識庫推導)：",
             value=st.session_state.get("rubric_text_content", ""),
@@ -2429,15 +2535,26 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                 try:
                     evaluator = LawExamEvaluator()
                     combined_text = "\n\n".join(all_texts) if all_texts else None
+                    chosen_lecture_full = st.session_state.get("chosen_eval_lecture_full_text", "")
                     result = evaluator.evaluate_submission(
                         images=all_images if all_images else None,
                         submission_text=combined_text,
                         question_text=question_text,
-                        standard_rubric=rubric_text if rubric_text.strip() else None
+                        standard_rubric=rubric_text if rubric_text.strip() else None,
+                        lecture_notes=chosen_lecture_full if chosen_lecture_full else None
                     )
 
                     st.balloons()
                     st.success("評閱完成！診斷報告已即時同步至 Google Drive！")
+
+                    # 司法裁判字號真偽核驗報告
+                    if result.get("citation_verification"):
+                        cv = result["citation_verification"]
+                        with st.expander("🛡️ 司法院權威裁判庫・字號真偽審查報告", expanded=True):
+                            if cv.get("verified"):
+                                st.success("✅ **經資料庫核定真跡裁判字號**：\n" + "\n".join([f"- 《{v['citation']}》（匹配庫內：`{v['db_match']}`）" for v in cv["verified"]]))
+                            if cv.get("unverified"):
+                                st.warning("⚠️ **未於權威庫中精確比對之字號（請以實務法理為準，切勿盲目書寫）**：\n" + "\n".join([f"- 《{u}》" for u in cv["unverified"]]))
 
                     # 2. 考生作答與診斷報告加密寫入隔離典藏庫（user_exam_submissions 表 - 🔒 嚴格限開發者調閱）
                     try:
@@ -3026,6 +3143,16 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                 if st.button("🎲 開始生成一試全真模擬測驗題卷", type="primary", use_container_width=True):
                     target_topic = topic.strip() if topic.strip() else "核心實務爭點與法規構成要件"
+                    # 自動補齊勾選筆記之真實全文，確保 100% 傳送給 Gemini
+                    if not final_notes and sel_drive_notes_in_session:
+                        from ingest_user_notes_to_sft import get_full_drive_note_content
+                        auto_texts = []
+                        for n_item in sel_drive_notes_in_session:
+                            n_res = get_full_drive_note_content(n_item)
+                            if n_res.get("text"):
+                                auto_texts.append(f"### 《{n_res['filename']}》（考科：{n_res['subject']}）\n{n_res['text']}")
+                        if auto_texts:
+                            final_notes = "\n\n---\n\n".join(auto_texts)
 
                     progress_bar = st.progress(0)
                     status_text = st.empty()
@@ -3709,6 +3836,7 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
                         else:
                             st.markdown(f"**考科領域**：{fsub} ｜ **相對路徑**：`{frel}` ｜ **字元數**：{fchars:,}")
                             st.divider()
+                            render_developer_pdf_action_bar(chosen_item if "chosen_item" in locals() else fname, unique_key=f"m3_cw_{c_idx}")
                             st.markdown("#### 講義核心重點與爭點摘要：")
                             st.write(fprev)
 
@@ -3723,11 +3851,14 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
                                 if st.button(f"🎲 依此爭點生成一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
                                     with st.spinner("正在基於名師講義核心爭點出題中..."):
                                         gen = LawExamGenerator()
+                                        from ingest_user_notes_to_sft import get_full_drive_note_content
+                                        cw_info = get_full_drive_note_content(chosen_item if "chosen_item" in locals() else fname)
+                                        real_cw_text = cw_info.get("text") or fprev
                                         mcq_res = gen.generate_stage1_exam(
                                             subject=fsub,
                                             topic=f"名師講義演練：{fname[:30]}",
                                             count=3,
-                                            notes_content=fprev
+                                            notes_content=real_cw_text
                                         )
                                         st.session_state["stage1_exam_data"] = mcq_res
                                         st.success("一試測驗題生成成功！可至「🎯 司律模擬出題」模式開始作答。")
@@ -3735,10 +3866,13 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
                                 if st.button(f"✍️ 命題二試申論題", key=f"cw_btn_essay_{c_idx}"):
                                     with st.spinner("正在基於名師講義爭點設計實例題..."):
                                         gen = LawExamGenerator()
+                                        from ingest_user_notes_to_sft import get_full_drive_note_content
+                                        cw_info = get_full_drive_note_content(chosen_item if "chosen_item" in locals() else fname)
+                                        real_cw_text = cw_info.get("text") or fprev
                                         essay_res = gen.generate_stage2_exam(
                                             subject=fsub,
                                             topic=f"名師講義案例：{fname[:30]}",
-                                            notes_content=fprev
+                                            notes_content=real_cw_text
                                         )
                                         st.session_state["stage2_exam_data"] = essay_res
                                         st.success("二試實例題生成成功！可至「🎯 司律模擬出題」模式查看或生成擬答。")
