@@ -722,6 +722,36 @@ def render_pdf_to_images(pdf_path: Path, max_pages: int = 15):
         print(f"  [警示] 渲染 PDF 失敗: {e}")
     return images
 
+def save_to_samsung_notes_cache(filename: str, text: str):
+    """將提取或視覺 OCR 解析之筆記內文同時寫入本地 _cache 目錄與 samsung_notes_cache.json"""
+    if not filename or not text or text.startswith("["):
+        return
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        (CACHE_DIR / f"{filename}.txt").write_text(text, encoding="utf-8")
+    except Exception:
+        pass
+
+    try:
+        json_candidates = [
+            Path(DATA_DIR) / "samsung_notes_cache.json",
+            Path(__file__).resolve().parent / "data" / "samsung_notes_cache.json"
+        ]
+        for jp in json_candidates:
+            c_dict = {}
+            if jp.exists():
+                try:
+                    with open(jp, "r", encoding="utf-8") as f:
+                        c_dict = json.load(f)
+                except Exception:
+                    c_dict = {}
+            c_dict[filename] = {"text": text, "char_count": len(text)}
+            jp.parent.mkdir(parents=True, exist_ok=True)
+            with open(jp, "w", encoding="utf-8") as f:
+                json.dump(c_dict, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[快取存檔提示] {e}")
+
 def read_note_text(file_path: Any, max_pages: int = 60, auto_ocr: bool = True) -> str:
     """高速讀取筆記文字：優先讀取快取；若無快取則自動直讀數位字或調用 Gemini 多模態 OCR 並寫入快取"""
     if not file_path:
@@ -800,19 +830,33 @@ def read_note_text(file_path: Any, max_pages: int = 60, auto_ocr: bool = True) -
     if ext == ".pdf":
         try:
             doc = pdfium.PdfDocument(file_path)
+            total_doc_pages = len(doc)
+            scan_pages = min(total_doc_pages, max_pages)
             extracted = []
-            for i in range(min(len(doc), max_pages)):
+            for i in range(scan_pages):
                 t = doc[i].get_textpage().get_text_range()
                 if t and t.strip():
                     extracted.append(t.strip())
             digital_text = "\n\n".join(extracted)
-            if len(digital_text.strip()) > 150:
+            avg_chars = len(digital_text.strip()) / max(1, scan_pages)
+
+            # 若數位文字充足（非手寫、非圖片掃描），直接採用
+            if len(digital_text.strip()) > 150 and avg_chars >= 40:
                 text = digital_text
             elif auto_ocr:
                 from doc_parser import ocr_handwritten_images
                 imgs = render_pdf_to_images(file_path, max_pages=max_pages)
                 if imgs:
-                    text = ocr_handwritten_images(imgs, prompt_hint=file_path.stem)
+                    ocr_res = ocr_handwritten_images(imgs, prompt_hint=file_path.stem)
+                    if ocr_res and not ocr_res.startswith("["):
+                        if digital_text and len(digital_text.strip()) > 40:
+                            text = f"【數位檢定文字】：\n{digital_text}\n\n---\n【視覺手寫OCR解析】：\n{ocr_res}"
+                        else:
+                            text = ocr_res
+                    elif digital_text:
+                        text = digital_text
+            elif digital_text:
+                text = digital_text
         except Exception as e:
             text = f"[PDF 讀取異常: {e}]"
             
@@ -840,10 +884,7 @@ def read_note_text(file_path: Any, max_pages: int = 60, auto_ocr: bool = True) -
                 text = f"[圖片辨識異常: {e}]"
 
     if text and not text.startswith("["):
-        try:
-            primary_cache_file.write_text(text, encoding="utf-8")
-        except Exception:
-            pass
+        save_to_samsung_notes_cache(file_path.name, text)
             
     return text
 

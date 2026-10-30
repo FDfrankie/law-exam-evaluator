@@ -2467,10 +2467,18 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                 if sel_eval_note_str != "(不指定講義，由 AI 自行推導)":
                     chosen_eval_note = drive_notes[eval_note_opts.index(sel_eval_note_str) - 1]
                     render_developer_pdf_action_bar(chosen_eval_note, unique_key="eval_note_bar")
+                    from ingest_user_notes_to_sft import get_full_drive_note_content
+                    n_peek = get_full_drive_note_content(chosen_eval_note, auto_ocr=False)
+                    if n_peek.get("char_count", 0) > 0:
+                        st.caption(f"⚡ 本講義已就緒（收錄 **{n_peek['char_count']:,}** 字元法學精華要旨，點擊下方即可立即套用）")
+                        with st.expander("👁️ 預覽此講義已提取之爭點與精華摘要", expanded=False):
+                            st.text_area("講義摘要預覽：", value=n_peek["text"][:2000] + ("..." if len(n_peek["text"]) > 2000 else ""), height=120, disabled=True)
+                    else:
+                        st.caption("ℹ️ 本講義為手寫或掃描原稿，點擊下方將自動調用 Gemini 多模態視覺 OCR 進行高解析辨識並建立快取。")
+
                     if st.button("📥 一鍵將此講義全文帶入評分標準", key="btn_apply_eval_note"):
                         with st.spinner(f"正在自 Google Drive 提取《{chosen_eval_note['filename']}》全文..."):
-                            from ingest_user_notes_to_sft import get_full_drive_note_content
-                            n_info = get_full_drive_note_content(chosen_eval_note)
+                            n_info = get_full_drive_note_content(chosen_eval_note, auto_ocr=True)
                             if n_info.get("text"):
                                 st.session_state["rubric_text_content"] = f"【官方評分標準依據 - 《{chosen_eval_note['filename']}》】：\n" + n_info["text"][:30000]
                                 st.session_state["chosen_eval_lecture_full_text"] = n_info["text"]
@@ -2504,9 +2512,15 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                 if imgs:
                     all_images.extend(imgs)
 
-            st.success(f"已成功解析：{len(all_images)} 頁影像/試卷圖，以及 {len(all_texts)} 份文字稿。")
+            total_extracted_chars = sum(len(t) for t in all_texts if not t.startswith("["))
+            if total_extracted_chars > 0:
+                st.success(f"已成功解析：{len(all_images)} 頁影像/試卷圖，累計精確萃取 **{total_extracted_chars:,}** 字答題文本！")
+                with st.expander("📝 預覽已辨識出的考生作答內容 (點擊展開核對)", expanded=False):
+                    st.text_area("作答文本：", value="\n\n---\n\n".join(all_texts), height=140, disabled=True)
+            else:
+                st.success(f"已成功解析：{len(all_images)} 頁試卷影像。")
             if all_images:
-                with st.expander("預覽已上傳試卷頁面 (第一頁)"):
+                with st.expander("👁️ 預覽已上傳試卷第一頁", expanded=False):
                     st.image(all_images[0], use_container_width=True)
 
     start_eval = st.button("🚀 開始評閱試卷", type="primary", use_container_width=True)
@@ -2965,7 +2979,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                             "挑選筆記檔案（可複選一至多份）：",
                             options=filtered_notes,
                             default=st.session_state.get("msel_drive_notes_scope", []),
-                            format_func=lambda n: f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ⚡已快取" if n.get('is_cached') else ""),
+                            format_func=lambda n: f"{n.get('tag', '【文檔】')} 【{n['subject']}】{n['filename']} ({n['size_mb']:.2f} MB)" + (" ✅已就緒" if n.get('is_cached') else ""),
                             key="msel_drive_notes_scope"
                         )
 
@@ -2994,7 +3008,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                                     s_key = f"cached_note_text_{fn}"
                                     status_txt.text(f"正在提取 [{idx_n}/{len(selected_drive_notes)}]: 《{fn[:25]}...》")
                                     try:
-                                        t_part = read_note_text(n_item["path"], max_pages=15, auto_ocr=True)
+                                        t_part = read_note_text(n_item["path"], max_pages=60, auto_ocr=True)
                                         if t_part and not t_part.startswith("["):
                                             st.session_state[s_key] = t_part
                                     except Exception:
@@ -3016,7 +3030,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                                 else:
                                     # 嘗試直接快速讀取文字
                                     try:
-                                        t_part = read_note_text(n["path"], max_pages=15, auto_ocr=False)
+                                        t_part = read_note_text(n["path"], max_pages=60, auto_ocr=False)
                                         if t_part and not t_part.startswith("["):
                                             st.session_state[f"cached_note_text_{fn}"] = t_part
                                             all_selected_texts.append(f"### 《{fn}》（考科：{n['subject']}）\n{t_part}")

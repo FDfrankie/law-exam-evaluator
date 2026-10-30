@@ -144,12 +144,25 @@ def parse_document(file_bytes: bytes, filename: str, auto_ocr_handwriting: bool 
                     print(f"PDF 轉影像警示: {e}")
             extracted_text = "\n\n".join(pdf_text_parts)
 
-    # 若純文字長度極少（< 50 字元）而有影像，代表是手寫或掃描檔，自動啟動 Gemini 多模態視覺 OCR
-    if auto_ocr_handwriting and len(extracted_text.strip()) < 50 and len(images) > 0:
+    # 智能判定是否需要手寫/掃描視覺 OCR：
+    # 條件 1：完全無數位文字或極短 (< 60 字元) 且有影像頁面
+    # 條件 2：平均每頁文字量過低 (< 80 字元/頁)，通常為手寫試卷/掃描講義僅含頁首小標
+    needs_ocr = False
+    if len(images) > 0:
+        stripped_len = len(extracted_text.strip())
+        if stripped_len < 60:
+            needs_ocr = True
+        elif len(images) >= 1 and (stripped_len / len(images)) < 80:
+            needs_ocr = True
+
+    if auto_ocr_handwriting and needs_ocr:
         try:
-            ocr_text = ocr_handwritten_images(images)
+            ocr_text = ocr_handwritten_images(images, prompt_hint=f"試卷/筆記檔名：{filename}")
             if ocr_text.strip():
-                extracted_text = ocr_text
+                if len(extracted_text.strip()) > 30:
+                    extracted_text = f"【數位檢定文字】：\n{extracted_text}\n\n---\n【視覺手寫OCR解析】：\n{ocr_text}"
+                else:
+                    extracted_text = ocr_text
         except Exception as e:
             print(f"[OCR 辨識提示] {e}")
 

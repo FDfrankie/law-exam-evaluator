@@ -25,16 +25,16 @@ def get_gemini_api_key() -> str:
     return key
 
 GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 
-# 現代化 Gemini 核心模型後備階梯（依序降級，保證模型 ID 有效，避免 404 重試延遲與預覽版 429 配額為 0 之錯誤）
+# 現行有效之 Google Gemini 官方生產環境模型清單（首選最快最穩定的最新端點，依序故障轉移）
 GEMINI_FALLBACK_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-pro",
     "gemini-flash-latest",
-    "gemini-pro-latest"
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-3.8-flash"
 ]
 
 def get_gemini_models_to_try(primary_model: str = None) -> list:
