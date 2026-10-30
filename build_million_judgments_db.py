@@ -19,6 +19,7 @@ import tempfile
 import subprocess
 import shutil
 import argparse
+import time
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -42,6 +43,19 @@ except ImportError:
     JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db"
     OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox"
     GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
+
+
+class ClosingConnection(sqlite3.Connection):
+    """
+    自定義 SQLite 連線物件，在 with 區塊離開時除了進行 commit/rollback 外，
+    強制呼叫 close() 以立即釋放 Windows / Google Drive 虛擬檔案系統底層的 OS 檔案鎖 (File Handles)。
+    避免多個連線堆疊造成 ERROR_LOCK_VIOLATION 或 disk I/O error。
+    """
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
 
 
 class MillionJudgmentsSQLiteEngine:
@@ -93,15 +107,41 @@ class MillionJudgmentsSQLiteEngine:
             print(f"[MillionJudgmentsDB Init Warning] {e}")
 
     def _get_conn(self, db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path), timeout=30)
+        conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=120000;")
+
+        # 針對 Google Drive 虛擬檔案系統 (CBFS/WinFsp) 與網路硬碟防護：
+        # WAL 模式需要共享記憶體 primitives (.db-shm)，在雲端同步虛擬磁碟上會與 Google Drive 背景同步
+        # 發生鎖定衝突 (Win32 ERROR_LOCK_VIOLATION)，被 SQLite 回報為 disk I/O error。
+        # 在雲端或虛擬磁碟環境下強制採用 TRUNCATE 模式，既有極佳的交易速度，又完全免疫 .db-shm 崩潰問題。
+        path_str = str(db_path).replace(chr(92), "/")
+        is_cloud_sync = any(k in path_str for k in ["我的雲端硬碟", "Google Drive", "G:/", "g:/", "OneDrive"])
+
+        try:
+            cur_m = conn.execute("PRAGMA journal_mode;").fetchone()
+            cur_mode = str(cur_m[0]).lower() if cur_m else ""
+            if is_cloud_sync:
+                if cur_mode != "truncate":
+                    conn.execute("PRAGMA journal_mode=TRUNCATE;")
+            else:
+                if cur_mode != "wal":
+                    conn.execute("PRAGMA journal_mode=WAL;")
+        except Exception:
+            pass
+
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA temp_store=MEMORY;")
         conn.execute("PRAGMA cache_size=-64000;")
         return conn
 
-    def _init_index_db(self):
+    def _init_index_db(self, force: bool = False):
+        if not force and getattr(self, "_index_db_initialized", False):
+            return
+        if not force and self.index_db_path.exists() and self.index_db_path.stat().st_size > 0:
+            self._index_db_initialized = True
+            return
+
         with self._get_conn(self.index_db_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS judgments_meta (
@@ -165,10 +205,16 @@ class MillionJudgmentsSQLiteEngine:
                 );
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_redirect_dismissed ON judgment_redirects(dismissed_case_id);")
+            self._index_db_initialized = True
 
     def _init_shard_db(self, shard_key: str) -> Path:
         clean_key = re.sub(r"[^0-9a-zA-Z_]", "_", shard_key) or "general"
         shard_path = self.shards_dir / f"judgments_{clean_key}.db"
+        if not hasattr(self, "_initialized_shards"):
+            self._initialized_shards = set()
+        if shard_path in self._initialized_shards and shard_path.exists():
+            return shard_path
+
         with self._get_conn(shard_path) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS judgments_blob (
@@ -176,6 +222,7 @@ class MillionJudgmentsSQLiteEngine:
                     full_text_zlib BLOB
                 )
             """)
+        self._initialized_shards.add(shard_path)
         return shard_path
 
     @staticmethod
@@ -320,28 +367,66 @@ class MillionJudgmentsSQLiteEngine:
             if not meta_rows:
                 continue
 
-            with self._get_conn(self.index_db_path) as conn:
-                cur = conn.cursor()
-                cur.executemany("""
-                    INSERT OR REPLACE INTO judgments_meta
-                    (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key, has_legal_issue, history_instances, substantive_prior, history_cases)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, meta_rows)
-                cur.executemany("DELETE FROM judgments_fts WHERE case_id = ?", [(r[0],) for r in fts_rows])
-                cur.executemany("""
-                    INSERT INTO judgments_fts (case_id, title, holding_preview, issue, laws_cited)
-                    VALUES (?, ?, ?, ?, ?)
-                """, fts_rows)
-                conn.commit()
+            # 寫入主索引庫 (帶防護、零 FTS 全表掃描與重試退避機制)
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    with self._get_conn(self.index_db_path) as conn:
+                        cur = conn.cursor()
+                        # 1. 快速判定本批次有哪些案號已存在於資料庫（利用 judgments_meta 主鍵索引 O(1) 快速比對）
+                        # 徹底避免對 UNINDEXED 的 judgments_fts 全表掃描造成硬碟 I/O 阻塞
+                        cids_in_batch = [r[0] for r in fts_rows]
+                        existing_in_db = set()
+                        if cids_in_batch:
+                            placeholders = ",".join("?" for _ in cids_in_batch)
+                            cur.execute(f"SELECT case_id FROM judgments_meta WHERE case_id IN ({placeholders})", cids_in_batch)
+                            existing_in_db = {row[0] for row in cur.fetchall() if row[0]}
 
+                        cur.executemany("""
+                            INSERT OR REPLACE INTO judgments_meta
+                            (case_id, jid, court, level, case_type, subject, jud_year, jud_word, jud_no, date, title, laws_cited, issue, holding_preview, shard_key, has_legal_issue, history_instances, substantive_prior, history_cases)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, meta_rows)
+
+                        # 2. 僅對確定已存在的舊案號執行 FTS 刪除；全新入庫案號完全不進行全表掃描
+                        if existing_in_db:
+                            cur.executemany("DELETE FROM judgments_fts WHERE case_id = ?", [(cid,) for cid in existing_in_db])
+
+                        cur.executemany("""
+                            INSERT INTO judgments_fts (case_id, title, holding_preview, issue, laws_cited)
+                            VALUES (?, ?, ?, ?, ?)
+                        """, fts_rows)
+                        conn.commit()
+                    break
+                except sqlite3.OperationalError as oe:
+                    err_msg = str(oe).lower()
+                    if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and attempt < max_retries - 1:
+                        backoff = (attempt + 1) * 2.0
+                        print(f"[!] 主索引庫寫入遇到暫態異常 ({oe})，等待 {backoff:.1f} 秒後進行第 {attempt + 2}/{max_retries} 次重試...")
+                        time.sleep(backoff)
+                    else:
+                        raise
+
+            # 寫入分片本文 BLOB 庫 (亦帶重試保護)
             for s_key, blob_rows in shard_buckets.items():
                 s_path = self._init_shard_db(s_key)
-                with self._get_conn(s_path) as sconn:
-                    sconn.executemany("""
-                        INSERT OR REPLACE INTO judgments_blob (case_id, full_text_zlib)
-                        VALUES (?, ?)
-                    """, blob_rows)
-                    sconn.commit()
+                for s_attempt in range(max_retries):
+                    try:
+                        with self._get_conn(s_path) as sconn:
+                            sconn.executemany("""
+                                INSERT OR REPLACE INTO judgments_blob (case_id, full_text_zlib)
+                                VALUES (?, ?)
+                            """, blob_rows)
+                            sconn.commit()
+                        break
+                    except sqlite3.OperationalError as soe:
+                        err_msg = str(soe).lower()
+                        if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and s_attempt < max_retries - 1:
+                            backoff = (s_attempt + 1) * 2.0
+                            print(f"[!] 分片庫 ({s_key}) 寫入遇到暫態異常 ({soe})，等待 {backoff:.1f} 秒重試...")
+                            time.sleep(backoff)
+                        else:
+                            raise
 
             total_inserted += len(meta_rows)
 

@@ -21,6 +21,7 @@ import shutil
 import tempfile
 import argparse
 import gc
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Generator, Set
@@ -302,12 +303,23 @@ def low_memory_ingest(
     def _flush_buffer():
         nonlocal batch_buffer, total_added
         if batch_buffer:
-            n = engine.batch_upsert_records(batch_buffer, batch_size=len(batch_buffer))
-            total_added += n
-            if existing_case_ids is not None:
-                existing_case_ids.update(r["case_id"] for r in batch_buffer if r.get("case_id"))
-            batch_buffer.clear()
-            gc.collect()
+            max_flush_retries = 5
+            for attempt in range(max_flush_retries):
+                try:
+                    n = engine.batch_upsert_records(batch_buffer, batch_size=len(batch_buffer))
+                    total_added += n
+                    if existing_case_ids is not None:
+                        existing_case_ids.update(r["case_id"] for r in batch_buffer if r.get("case_id"))
+                    batch_buffer.clear()
+                    gc.collect()
+                    break
+                except sqlite3.OperationalError as oe:
+                    if attempt < max_flush_retries - 1:
+                        backoff = (attempt + 1) * 3.0
+                        print(f"[!] 批次落盤遇到暫態異常 ({oe})，等待 {backoff:.1f} 秒後進行第 {attempt + 2}/{max_flush_retries} 次重試...")
+                        time.sleep(backoff)
+                    else:
+                        raise
 
     # 1. 單一 ZIP 檔串流處理 (最佳低記憶體路徑)
     if target.is_file() and target.suffix.lower() == ".zip":
