@@ -897,6 +897,32 @@ class LegalQAEngine:
                     except Exception:
                         pass
 
+            # (C) 至 authority_engine 核實（涵蓋 813 則釋字、憲判字、大法庭裁定與萬則判例）
+            if not is_verified:
+                try:
+                    from authority_engine import get_engine
+                    a_eng = get_engine()
+                    with a_eng._get_conn(read_only=True) as a_conn:
+                        r_auth = a_conn.execute(
+                            "SELECT case_no, title FROM authority_records WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
+                            (f"%{clean_c}%", f"%{clean_c}%")
+                        ).fetchone()
+                        if r_auth:
+                            is_verified = True
+                            official_case_id = r_auth[0]
+                            match_details = r_auth[1]
+                        else:
+                            r_prec = a_conn.execute(
+                                "SELECT case_no, title FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
+                                (f"%{clean_c}%", f"%{clean_c}%")
+                            ).fetchone()
+                            if r_prec:
+                                is_verified = True
+                                official_case_id = r_prec[0]
+                                match_details = r_prec[1]
+                except Exception:
+                    pass
+
             case_item = {
                 "raw_citation": clean_c,
                 "official_case_id": official_case_id,

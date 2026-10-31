@@ -452,6 +452,7 @@ class MillionJudgmentsSQLiteEngine:
         where_clauses = ["1=1"]
         params = []
         fts_query = query
+        use_fts_join = False
 
         if filter_no_legal_issue:
             where_clauses.append("(m.has_legal_issue IS NULL OR m.has_legal_issue = 1)")
@@ -460,17 +461,13 @@ class MillionJudgmentsSQLiteEngine:
             fts_query = f"{main_holding} {argument_issue}".strip()
 
         if fts_query:
-            clean_fts = re.sub(r'''["';]''', '', fts_query)
+            clean_fts = re.sub(r"""["';]""", "", fts_query)
             tokens = [t.strip() for t in re.split(r'[\s,，、＆＋\+\-&\(\)]+', clean_fts) if t.strip()]
             if tokens:
-                fts_conditions = []
-                for tok in tokens[:4]:
-                    fts_conditions.append(
-                        "(m.case_id IN (SELECT case_id FROM judgments_fts WHERE judgments_fts MATCH ?) "
-                        "OR m.title LIKE ? OR m.holding_preview LIKE ? OR m.issue LIKE ? OR m.laws_cited LIKE ?)"
-                    )
-                    params.extend([f'"{tok}"*', f"%{tok}%", f"%{tok}%", f"%{tok}%", f"%{tok}%"])
-                where_clauses.append(f"({' AND '.join(fts_conditions)})")
+                fts_match = " AND ".join(f'"{tok}"*' for tok in tokens[:4])
+                use_fts_join = True
+                where_clauses.append("judgments_fts MATCH ?")
+                params.append(fts_match)
 
         if jud_year:
             where_clauses.append("m.jud_year = ?")
@@ -501,11 +498,12 @@ class MillionJudgmentsSQLiteEngine:
                     where_clauses.append(f"{col_expr} LIKE ?")
                     params.append(f"%{tok}%")
 
+        table_source = "judgments_fts f JOIN judgments_meta m ON f.case_id = m.case_id" if use_fts_join else "judgments_meta m"
         sql = f"""
             SELECT m.*
-            FROM judgments_meta m
+            FROM {table_source}
             WHERE {' AND '.join(where_clauses)}
-            ORDER BY CAST(m.jud_year AS INTEGER) DESC
+            ORDER BY m.jud_year DESC
             LIMIT ?
         """
         params.append(top_k)
@@ -523,15 +521,22 @@ class MillionJudgmentsSQLiteEngine:
                         "level": r["level"],
                         "case_type": r["case_type"],
                         "subject": r["subject"],
+                        "jud_year": r["jud_year"],
+                        "jud_word": r["jud_word"],
+                        "jud_no": r["jud_no"],
                         "date": r["date"],
                         "title": r["title"],
                         "laws_cited": laws_arr,
                         "issue": r["issue"],
                         "holding": r["holding_preview"],
-                        "shard_key": r["shard_key"]
+                        "shard_key": r["shard_key"],
+                        "has_legal_issue": bool(r["has_legal_issue"]),
+                        "history_instances": json.loads(r["history_instances"]) if r["history_instances"] else [],
+                        "substantive_prior_instance": r["substantive_prior"],
+                        "history_cases": [x.strip() for x in (r["history_cases"] or "").split("、") if x.strip()]
                     })
         except Exception as e:
-            print(f"[MillionJudgmentsDB Query Error] {e}")
+            print(f"[Search FTS Error] {e}")
 
         return results
 
@@ -545,15 +550,30 @@ class MillionJudgmentsSQLiteEngine:
                 row = None
                 if m:
                     y, w, n = m.group(1), m.group(2), m.group(3)
+                    # 優先使用 idx_meta_ywn 複合索引 (0.001s 毫秒級定位)
                     row = conn.execute(
                         "SELECT * FROM judgments_meta WHERE jud_year = ? AND jud_no = ? AND (jud_word LIKE ? OR case_id LIKE ?) LIMIT 1",
                         (y, n, f"%{w}%", f"%{w}%")
                     ).fetchone()
-                if not row:
+                    if not row:
+                        row = conn.execute(
+                            "SELECT * FROM judgments_meta WHERE jud_year = ? AND jud_no = ? LIMIT 1",
+                            (y, n)
+                        ).fetchone()
+                else:
+                    # 主鍵與案號索引查詢 (避免未命中觸發 17 萬列全表掃描)
                     row = conn.execute(
-                        "SELECT * FROM judgments_meta WHERE REPLACE(case_id, ' ', '') LIKE ? OR jid LIKE ? LIMIT 1",
-                        (f"%{q_clean}%", f"%{q_clean}%")
+                        "SELECT * FROM judgments_meta WHERE case_id = ? OR jid = ? LIMIT 1",
+                        (citation.strip(), q_clean)
                     ).fetchone()
+                    if not row:
+                        m_const = re.search(r"(?:釋字第|憲判字第)\s*(\d+)\s*號", q_clean)
+                        if m_const:
+                            c_no = m_const.group(1)
+                            row = conn.execute(
+                                "SELECT * FROM judgments_meta WHERE jud_no = ? AND (jud_word LIKE ? OR case_id LIKE ?) LIMIT 1",
+                                (c_no, "%憲判%", f"%{c_no}%")
+                            ).fetchone()
                 if row:
                     full_txt = self.get_full_text(row["case_id"], row["shard_key"]) or row["holding_preview"]
                     laws_arr = [x.strip() for x in (row["laws_cited"] or "").split("、") if x.strip()]

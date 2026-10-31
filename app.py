@@ -3044,6 +3044,10 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                                 with st.expander(f"🔍 檢視已鎖定之 {len(valid_selected_notes)} 份筆記全文重點與考點爭點", expanded=False):
                                     st.text_area("勾選筆記內容彙整（已鎖定為命題材料）：", value=notes_from_drive, height=200, key="preview_selected_drive_notes")
+                                    if is_developer() and valid_selected_notes:
+                                        st.markdown("##### 📥 開發者模式：原始檔案在線檢視與下載")
+                                        for idx_vn, vn in enumerate(valid_selected_notes[:5]):
+                                            render_developer_pdf_action_bar(vn, unique_key=f"gen_dev_pdf_bar_{idx_vn}")
                             elif uncached_count > 0:
                                 st.info(f"💡 您勾選了 {len(selected_drive_notes)} 份筆記，請點擊上方【🚀 立即載入並提取勾選筆記文字】以啟動文字提取/手寫 OCR。")
                     else:
@@ -6762,6 +6766,8 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                         sel_n_idx = st.selectbox("選擇雲端筆記：", range(len(f_notes)), format_func=lambda i: f"【{f_notes[i]['subject']}】{f_notes[i]['filename']}", key="sft_sel_n_idx")
                     chosen_note = f_notes[sel_n_idx]
                     note_subject_hint = chosen_note["subject"]
+                    if is_developer():
+                        render_developer_pdf_action_bar(chosen_note, unique_key="sft_dev_pdf_bar")
                     if st.button("📥 一鍵載入此份筆記內容", key="btn_load_drive_note"):
                         with st.spinner(f"正在載入《{chosen_note['filename']}》..."):
                             n_txt = read_note_text(chosen_note["path"], max_pages=15, auto_ocr=True)
@@ -6834,7 +6840,10 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
 筆記內容如下：
 """
                         
-                    full_prompt = prompt_instructions + "\n" + note_content_text
+                    from authority_engine import get_dynamic_legal_grounding, verify_case_citations
+                    grounding_res = get_dynamic_legal_grounding(note_content_text[:2000], limit=4)
+                    grounding_block = grounding_res.get("grounding_prompt_block", "")
+                    full_prompt = prompt_instructions + ("\n\n" + grounding_block if grounding_block else "") + "\n\n【筆記內容如下】：\n" + note_content_text
                     output_text = ""
                     if hasattr(ev, "client") and ev.client:
                         from config import get_gemini_models_to_try
@@ -6860,7 +6869,23 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
     if st.session_state.get("sft_last_distill_result"):
         st.divider()
         st.markdown(f"### 🏆 提煉成果：{st.session_state.get('sft_last_distill_mode', '')}")
+        
+        # 顯示真實性核實審計與實體跳轉
+        try:
+            from authority_engine import verify_case_citations
+            v_res = verify_case_citations(st.session_state["sft_last_distill_result"])
+            if v_res and v_res.get("all_citations"):
+                tot_c = len(v_res.get("all_citations", []))
+                ver_c = len(v_res.get("verified", []))
+                if ver_c > 0:
+                    st.success(f"🛡️ 經司法院權威大庫核實：提煉成果中引用之 **{ver_c} / {tot_c}** 則司法裁判均真實無誤！")
+                elif tot_c > 0:
+                    st.info(f"💡 提煉內容中提及 {tot_c} 則實務字號，已啟用司法院直連檢索校驗。")
+        except Exception:
+            pass
+            
         st.markdown(st.session_state["sft_last_distill_result"])
+        render_clickable_legal_entities(st.session_state["sft_last_distill_result"], key_prefix="sft_res_ents")
         
         c_down1, c_down2 = st.columns([1, 1])
         with c_down1:

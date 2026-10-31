@@ -152,7 +152,10 @@ def init_directories():
             if sys.platform != "win32" and (folder_str.startswith(("G:", "g:", "C:", "c:", "D:", "d:")) or ":" in folder_str[:3]):
                 continue
             if not folder.exists():
-                folder.mkdir(parents=True, exist_ok=True)
+                try:
+                    folder.mkdir(parents=True, exist_ok=True)
+                except (FileExistsError, OSError):
+                    pass
         except Exception as e:
             print(f"[DIR ERROR] Failed creating {folder}: {e}")
 

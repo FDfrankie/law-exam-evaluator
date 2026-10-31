@@ -37,6 +37,14 @@ def get_authority_db_path() -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     return target
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
 class JudicialAuthorityEngine:
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path) if db_path else get_authority_db_path()
@@ -48,16 +56,20 @@ class JudicialAuthorityEngine:
         if read_only:
             try:
                 uri = f"file:///{self.db_path.as_posix()}?mode=ro"
-                conn = sqlite3.connect(uri, uri=True, timeout=10.0)
+                conn = sqlite3.connect(uri, uri=True, timeout=60.0, factory=ClosingConnection)
             except Exception:
-                conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+                conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
         else:
-            conn = sqlite3.connect(str(self.db_path), timeout=30.0)
+            conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA busy_timeout = 60000;")
+        except Exception:
+            pass
         if not read_only:
             try:
-                conn.execute("PRAGMA journal_mode = DELETE;")
                 conn.execute("PRAGMA synchronous = NORMAL;")
+                conn.execute("PRAGMA temp_store = MEMORY;")
             except Exception:
                 pass
         return conn
@@ -190,6 +202,8 @@ class JudicialAuthorityEngine:
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (rec_id, case_no, title, holding, reasoning, laws))
 
+    search_records = lambda self, *args, **kwargs: self.search_authority(*args, **kwargs)
+
     def search_authority(
         self,
         query: str = "",
@@ -199,7 +213,7 @@ class JudicialAuthorityEngine:
     ) -> List[Dict[str, Any]]:
         """全方位權威檢索：支援關鍵字 FTS 全文比對、字號、引用法條與領域分類過濾"""
         query = query.strip()
-        with self._get_conn() as conn:
+        with self._get_conn(read_only=True) as conn:
             conditions = []
             params = []
 
@@ -216,8 +230,7 @@ class JudicialAuthorityEngine:
                 sql = f"""
                     SELECT r.*
                     FROM authority_records r
-                    JOIN authority_fts f ON r.id = f.id
-                    WHERE authority_fts MATCH ?
+                    WHERE r.rowid IN (SELECT rowid FROM authority_fts WHERE authority_fts MATCH ?)
                 """
                 fts_query = f'"{clean_q}"'
                 q_params = [fts_query] + params
@@ -366,6 +379,9 @@ class JudicialAuthorityEngine:
         後端查詢介面 1：支援判例字號、要旨與全文檢索，以及審別（民事/刑事/行政）篩選
         """
         keyword = keyword.strip()
+        if not keyword:
+            return []
+
         conditions = []
         params = []
 
@@ -374,49 +390,41 @@ class JudicialAuthorityEngine:
             conditions.append("p.sys_type LIKE ?")
             params.append(f"%{clean_sys}%")
 
-        with self._get_conn() as conn:
-            # 檢查目前是否為空，若為空自動預載
-            has_data = conn.execute("SELECT 1 FROM precedents LIMIT 1").fetchone()
-            if not has_data:
-                self.import_precedents_from_catalog()
+        with self._get_conn(read_only=True) as conn:
+            clean_q = re.sub(r"""['"]""", "", keyword)
+            sql = f"""
+                SELECT p.id, p.precedent_id, p.case_no, p.court, p.year, p.holding, p.laws_cited, p.status, p.sys_type, p.date
+                FROM precedents p
+                WHERE p.rowid IN (SELECT rowid FROM precedents_fts WHERE precedents_fts MATCH ?)
+            """
+            fts_query = f'"{clean_q}"'
+            q_params = [fts_query] + params
+            if conditions:
+                sql += " AND " + " AND ".join(conditions)
+            sql += f" LIMIT {limit}"
 
-            if keyword:
-                clean_q = re.sub(r'[\'"]', '', keyword)
-                sql = f"""
-                    SELECT p.*
-                    FROM precedents p
-                    JOIN precedents_fts f ON p.id = f.id
-                    WHERE precedents_fts MATCH ?
-                """
-                fts_query = f'"{clean_q}"'
-                q_params = [fts_query] + params
-                if conditions:
-                    sql += " AND " + " AND ".join(conditions)
-                sql += f" ORDER BY p.year DESC, p.case_no DESC LIMIT {limit}"
+            try:
+                cur = conn.execute(sql, q_params)
+                rows = cur.fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
+            except Exception:
+                pass
 
-                try:
-                    cur = conn.execute(sql, q_params)
-                    rows = cur.fetchall()
-                    if rows:
-                        return [dict(r) for r in rows]
-                except Exception:
-                    pass
+            # Fast case_no index lookup if keyword looks like a citation (嚴禁無索引全表掃描)
+            if any(k in keyword for k in ["字", "號", "年", "第"]):
+                variants = [keyword, keyword.replace("第", ""), keyword.replace("年度", "年")]
+                norm_v = re.sub(r'字(\d+)號', r'字第\1號', keyword)
+                if norm_v not in variants:
+                    variants.append(norm_v)
+                placeholders = ",".join("?" for _ in variants)
+                c_sql = f"SELECT id, precedent_id, case_no, court, year, holding, laws_cited, status, sys_type, date FROM precedents WHERE case_no IN ({placeholders}) OR precedent_id IN ({placeholders}) LIMIT {limit}"
+                cur = conn.execute(c_sql, variants + variants)
+                rows = cur.fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
 
-                # Fallback LIKE
-                like_conds = list(conditions)
-                like_params = list(params)
-                like_conds.append("(p.case_no LIKE ? OR p.title LIKE ? OR p.holding LIKE ? OR p.laws_cited LIKE ? OR p.reasoning LIKE ?)")
-                like_pat = f"%{keyword}%"
-                like_params.extend([like_pat, like_pat, like_pat, like_pat, like_pat])
-                where_clause = " WHERE " + " AND ".join(like_conds)
-                sql = f"SELECT * FROM precedents p {where_clause} ORDER BY p.year DESC, p.case_no DESC LIMIT {limit}"
-                cur = conn.execute(sql, like_params)
-                return [dict(r) for r in cur.fetchall()]
-            else:
-                where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-                sql = f"SELECT * FROM precedents p {where_clause} ORDER BY p.year DESC, p.case_no DESC LIMIT {limit}"
-                cur = conn.execute(sql, params)
-                return [dict(r) for r in cur.fetchall()]
+            return []
 
     def get_precedents_by_law(self, law_name: str, article_no: str, limit: int = 15) -> List[Dict[str, Any]]:
         """
@@ -824,7 +832,7 @@ def get_dynamic_legal_grounding(topic_or_facts: str, subject: str = "", limit: i
         if len(citations) >= limit:
             break
         try:
-            auth_res = eng.search_records(query=q, limit=2)
+            auth_res = eng.search_authority(query=q, limit=2)
             for r in auth_res:
                 cid = r.get("case_no") or r.get("title")
                 if cid and cid not in seen_ids:
@@ -856,6 +864,29 @@ def get_dynamic_legal_grounding(topic_or_facts: str, subject: str = "", limit: i
                     })
         except Exception:
             pass
+
+        # 4. 檢索百萬裁判大庫 (Million Judgments FTS5 Engine: 171,000+ 實務裁判)
+        if len(citations) < limit:
+            try:
+                from build_million_judgments_db import get_million_db_engine
+                m_engine = get_million_db_engine()
+                m_res = m_engine.search_fts_and_meta(query=q, top_k=2)
+                for mj in m_res:
+                    cid = mj.get("case_id") or mj.get("jid")
+                    if cid and cid not in seen_ids:
+                        seen_ids.add(cid)
+                        laws_val = mj.get("laws_cited", "")
+                        laws_str = "、".join(laws_val) if isinstance(laws_val, list) else str(laws_val or "")
+                        citations.append({
+                            "case_no": mj.get("case_id", ""),
+                            "court": mj.get("court", "最高法院"),
+                            "date": mj.get("date", ""),
+                            "category": f"{mj.get('court', '')}{mj.get('case_type', '裁判')}",
+                            "holding": (mj.get("holding") or mj.get("title", ""))[:260],
+                            "laws_cited": laws_str
+                        })
+            except Exception:
+                pass
 
     final_citations = citations[:limit]
 
@@ -902,25 +933,50 @@ def verify_case_citations(text: str) -> Dict[str, Any]:
     verified = []
     unverified = []
 
-    for m in matches:
-        clean = m.strip()
-        is_found = False
-        try:
-            with eng._get_conn(read_only=True) as conn:
-                r1 = conn.execute("SELECT case_no, title FROM authority_records WHERE case_no LIKE ? OR title LIKE ? LIMIT 1", (f"%{clean}%", f"%{clean}%")).fetchone()
-                if r1:
-                    is_found = True
-                    verified.append({"citation": clean, "db_match": r1[0], "source": "authority_records"})
-                else:
-                    r2 = conn.execute("SELECT case_no, title FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1", (f"%{clean}%", f"%{clean}%")).fetchone()
+    try:
+        from build_million_judgments_db import get_million_db_engine
+        m_engine = get_million_db_engine()
+    except Exception:
+        m_engine = None
+
+    with eng._get_conn(read_only=True) as conn:
+        for m in matches:
+            clean = m.strip()
+            is_found = False
+
+            # 1. 檢索權威庫 (釋字, 憲判字, 大法庭)
+            r1 = conn.execute("SELECT case_no, title FROM authority_records WHERE case_no = ? OR case_no LIKE ? OR title LIKE ? LIMIT 1", (clean, f"%{clean}%", f"%{clean}%")).fetchone()
+            if r1:
+                is_found = True
+                verified.append({"citation": clean, "db_match": r1[0], "source": "authority_records"})
+
+            # 2. 檢索百萬裁判大庫 (171,000+ 實務裁判，透過 idx_meta_ywn 複合索引 O(1) 秒查)
+            if not is_found and m_engine:
+                try:
+                    m_res = m_engine.find_by_citation(clean)
+                    if m_res:
+                        is_found = True
+                        verified.append({"citation": clean, "db_match": m_res.get("case_id", ""), "source": "million_judgments_db"})
+                except Exception:
+                    pass
+
+            # 3. 檢索歷史判例庫 (以 case_no / precedent_id 索引精準命中，嚴禁無索引全表掃描)
+            if not is_found:
+                try:
+                    variants = [clean, clean.replace("第", ""), clean.replace("年度", "年")]
+                    norm_v = re.sub(r'字(\d+)號', r'字第\1號', clean)
+                    if norm_v not in variants:
+                        variants.append(norm_v)
+                    placeholders = ",".join("?" for _ in variants)
+                    r2 = conn.execute(f"SELECT case_no, title FROM precedents WHERE case_no IN ({placeholders}) OR precedent_id IN ({placeholders}) LIMIT 1", variants + variants).fetchone()
                     if r2:
                         is_found = True
                         verified.append({"citation": clean, "db_match": r2[0], "source": "precedents"})
-        except Exception:
-            pass
+                except Exception:
+                    pass
 
-        if not is_found:
-            unverified.append(clean)
+            if not is_found:
+                unverified.append(clean)
 
     return {
         "all_citations": matches,
