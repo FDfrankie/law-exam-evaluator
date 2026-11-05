@@ -375,10 +375,26 @@ except Exception:
     def export_mcq_exam_docx(*args, **kwargs): return b""
 
 try:
-    from judicial_appeal_chain import get_appeal_chain_engine, JudicialAppealChainEngine
-    from legal_cross_reference_engine import get_cross_reference_engine, LegalCrossReferenceEngine
-    from judgment_summarizer import get_judgment_summarizer, JudgmentSummarizer
-    from unified_legal_corpus import get_unified_corpus_engine, UnifiedLegalCorpusEngine
+    from judicial_appeal_chain import get_appeal_chain_engine as _raw_get_appeal_chain_engine, JudicialAppealChainEngine
+    from legal_cross_reference_engine import get_cross_reference_engine as _raw_get_cross_reference_engine, LegalCrossReferenceEngine
+    from judgment_summarizer import get_judgment_summarizer as _raw_get_judgment_summarizer, JudgmentSummarizer
+    from unified_legal_corpus import get_unified_corpus_engine as _raw_get_unified_corpus_engine, UnifiedLegalCorpusEngine
+
+    @st.cache_resource
+    def get_appeal_chain_engine():
+        return _raw_get_appeal_chain_engine()
+
+    @st.cache_resource
+    def get_cross_reference_engine():
+        return _raw_get_cross_reference_engine()
+
+    @st.cache_resource
+    def get_judgment_summarizer():
+        return _raw_get_judgment_summarizer()
+
+    @st.cache_resource
+    def get_unified_corpus_engine():
+        return _raw_get_unified_corpus_engine()
 except Exception as _e_lawsuite:
     class JudicialAppealChainEngine: pass
     def get_appeal_chain_engine(): return None
@@ -536,6 +552,7 @@ from import_judicial_opendata import (
 
 # 全局 SQLite 百萬大庫單例
 _global_million_db_engine = None
+@st.cache_resource
 def get_million_db_engine():
     global _global_million_db_engine
     if _global_million_db_engine is None:
@@ -760,6 +777,21 @@ def load_all_drive_notes():
         return get_google_drive_notes_list()
     except Exception:
         return []
+
+@st.cache_data(ttl=600)
+def get_cached_stage1_mcqs():
+    try:
+        return load_all_existing_stage1_mcqs()
+    except Exception:
+        return []
+
+@st.cache_data(ttl=300)
+def get_cached_question_pool_stats():
+    try:
+        return get_question_pool_stats()
+    except Exception:
+        return {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
+
 
 class _LazyDriveNotes(list):
     """
@@ -1830,6 +1862,16 @@ def render_textbook_learning_view():
             )
         st.markdown(rendered_text)
 
+        # 司法字號防偽核驗與權威判解互動卡片（零字號幻覺把關）
+        try:
+            from case_citation_verifier import get_citation_verifier
+            tb_verifier = get_citation_verifier()
+            tb_cits = tb_verifier.verify_text_citations(rendered_text, auto_badge=False)
+            if tb_cits and tb_cits.get("citations"):
+                render_citation_quick_cards(tb_cits["citations"], key_prefix=f"tb_cit_{sel_topic['id']}")
+        except Exception:
+            pass
+
         st.divider()
         col_down_md, col_down_doc, col_fin = st.columns([1, 1.2, 1])
         with col_down_md:
@@ -2491,11 +2533,8 @@ if app_mode == MODE_HOME:
 
     # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
     db_stats = get_realtime_database_stats()
-    total_mcq_cnt = len(load_all_existing_stage1_mcqs())
-    try:
-        qpool_stats = get_question_pool_stats()
-    except Exception:
-        qpool_stats = {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
+    total_mcq_cnt = len(get_cached_stage1_mcqs())
+    qpool_stats = get_cached_question_pool_stats()
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
     m_c1.metric("📜 全國法規與命令條文", "2,053 部 / 62,342 條", "支援最新修法自動同步")
@@ -4627,11 +4666,11 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
     M5_SUB_ADVANCED_SEARCH = "⚖️ 裁判書多維專業檢索 (支援布林語法)"
     M5_SUB_UNIFIED_CORPUS = "🌐 全方位法學大典藏跨庫檢索 (409萬裁判/判例/釋字/命令/法律)"
-    M5_SUB_HOT_SEARCH = "⚡ 極速全域熱搜 極速熱搜與全國資料庫矩陣"
-    M5_SUB_APPEAL_CHAIN = "🌿 審級更迭與歷審脈絡鏈 (JudgementChain 審級溯源專區)"
-    M5_SUB_ADMIN_ORDERS = "📜 全國行政法規命令與部會要點 (10,452部函釋/要點/行政命令交叉引證)"
-    M5_SUB_ISSUES = "🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典"
-    M5_SUB_DISTINGUISHING = "🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)"
+    M5_SUB_HOT_SEARCH = "⚡ 權威實務裁判與先例即時檢索"
+    M5_SUB_APPEAL_CHAIN = "🌿 審級更迭與歷審脈絡鏈"
+    M5_SUB_ADMIN_ORDERS = "📜 全國行政法規命令與部會要點 (10,452部庫)"
+    M5_SUB_ISSUES = "🤖 司律二試核心爭點與 IRAC 實務法理"
+    M5_SUB_DISTINGUISHING = "🔄 裁判見解分歧與案例橫向比對"
 
     m5_sub_modes = [
         M5_SUB_ADVANCED_SEARCH,
@@ -4667,7 +4706,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
     st.write("")
 
-    # ==================== 子功能 1: ⚖️ 專業級 裁判書多維專業檢索 (LegalDatabase 規格) ====================
+    # ==================== 子功能 1: ⚖️ 實務裁判書多維專業檢索 ====================
     if m5_active_tab == M5_SUB_ADVANCED_SEARCH or m5_active_tab == m5_sub_modes[0]:
         st.subheader("⚖️ 實務裁判書多維進階檢索")
         st.caption("完整比照專業裁判書查詢規格，支援布林邏輯運算（＆、＋、－、( )），與法院審級、裁判年份、裁判字別、裁判案號、裁判案由、主文心證、爭點與法律條文全維度交叉篩選。")
@@ -7135,6 +7174,16 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
     if not matched_articles:
         st.info("查無符合條文，請嘗試更換條號數字或搜尋關鍵字。")
     else:
+        # 效能極速優化：在條文循環外預載法規級別關聯命令與行政函釋，杜絕每次循環重複檢索
+        cached_law_key_regs = get_law_key_regulations(selected_law)
+        cached_law_matching_orders = []
+        try:
+            _cre = get_cross_reference_engine()
+            if _cre:
+                cached_law_matching_orders = _cre.search_administrative_orders(selected_law, limit=5)
+        except Exception:
+            pass
+
         for idx, art in enumerate(matched_articles[:30]):
             lname = art.get("law_name", "")
             ano = art.get("article_no", "")
@@ -7144,8 +7193,8 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
             precedents = anno.get("precedents", [])
             notes = anno.get("notes", [])
 
-            # 整合預載之核心法規命令與六法中所有關聯命令（包含公司登記辦法、公開發行公司董事會議事辦法等）
-            raw_key_regs = get_law_key_regulations(lname)
+            # 整合預載之核心法規命令（優先使用法規級快取）
+            raw_key_regs = cached_law_key_regs if lname == selected_law else get_law_key_regulations(lname)
             raw_mapped_orders = anno.get("orders", [])
 
             key_regulations = []
@@ -7225,19 +7274,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                     st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}_prec")
 
-                    with st.expander("🔍 判解條件篩選 (9大裁判類別・日期區間)", expanded=False):
-                        cat_all_key = f"laws_cat_all_{idx}"
-                        cat_all = st.checkbox("【全選】", value=st.session_state.get(cat_all_key, True), key=cat_all_key)
-                        col_cats = st.columns(9)
-                        categories = ["司法解釋", "憲法法庭", "大法庭", "原判例", "精選裁判", "決議", "法律問題", "行政函釋", "法學論著"]
-                        for c_i, cat_name in enumerate(categories):
-                            with col_cats[c_i]:
-                                st.checkbox(cat_name, value=cat_all, key=f"laws_cat_{cat_name}_{idx}")
-                        d_c1, d_c2 = st.columns(2)
-                        with d_c1:
-                            st.text_input("📅 起始日期：", value=st.session_state.get(f"date_start_{idx}", "100年01月01日"), key=f"date_start_{idx}", placeholder="例：100年01月01日")
-                        with d_c2:
-                            st.text_input("📅 結束日期：", value=st.session_state.get(f"date_end_{idx}", "114年12月31日"), key=f"date_end_{idx}", placeholder="例：114年12月31日")
+                    st.caption(f"🏛️ 已收錄本條關鍵司法判解與大法庭要旨（共 {len(precedents)} 則）：")
                     if precedents:
                         seen_p_cases = set()
                         unique_precedents = []
@@ -7321,10 +7358,8 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     # 📋 全國行政法規命令與作業要點庫 (10,452 部庫中關聯本法之規範)
                     try:
-                        cre_engine = get_cross_reference_engine()
-                        if cre_engine:
-                            matching_orders = cre_engine.search_administrative_orders(lname, limit=5)
-                            if matching_orders:
+                        matching_orders = cached_law_matching_orders if lname == selected_law else (get_cross_reference_engine().search_administrative_orders(lname, limit=5) if get_cross_reference_engine() else [])
+                        if matching_orders:
                                 with st.expander(f"📋 全國行政法規命令庫中關聯部會規範（共 {len(matching_orders)} 部行政命令與要點）", expanded=False):
                                     for mo in matching_orders:
                                         st.markdown(f"**📜 《{mo.get('name')}》** ｜ 主管機關：`{mo.get('category')}` ｜ 最新修正：`{mo.get('date')}`")

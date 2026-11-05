@@ -56,6 +56,7 @@ class LegalCrossReferenceEngine:
         self._orders_name_index: Optional[List[str]] = None
         self._precedents_cache: Optional[List[Dict[str, Any]]] = None
         self._statute_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self._search_orders_cache: Dict[Tuple[str, str, int], List[Dict[str, Any]]] = {}
 
     def _ensure_precedents_loaded(self):
         """加載 4,088 筆最高法院/大法官先例，加速條文判解直連"""
@@ -108,12 +109,17 @@ class LegalCrossReferenceEngine:
     ) -> List[Dict[str, Any]]:
         """
         全文與法規名稱檢索 10,452 部行政命令、要點、標準、辦法與注意事項
+        具備全自動記憶體快取與多級極速篩選機制。
         """
         self._ensure_orders_loaded()
         if not query or not query.strip():
             return []
 
         q_clean = query.strip().lower()
+        cache_key = (q_clean, category.strip(), limit)
+        if cache_key in self._search_orders_cache:
+            return self._search_orders_cache[cache_key]
+
         results = []
 
         for name in self._orders_name_index:
@@ -122,7 +128,7 @@ class LegalCrossReferenceEngine:
             if category and category not in cat:
                 continue
 
-            # 名稱匹配
+            # 名稱匹配（秒級）
             if q_clean in name.lower():
                 results.append({
                     "name": name,
@@ -136,11 +142,15 @@ class LegalCrossReferenceEngine:
                 if len(results) >= limit:
                     break
 
-        # 若依名稱匹配未滿，可進一步檢索條文內文
+        # 若依名稱匹配未滿，可進一步檢索條文內文（僅限前 500 部或命中即停）
         if len(results) < limit:
+            checked_count = 0
             for name in self._orders_name_index:
                 if any(r["name"] == name for r in results):
                     continue
+                checked_count += 1
+                if checked_count > 500:
+                    break
                 order = self._orders_cache.get(name, {})
                 for art in order.get("LawArticles", []):
                     c = art.get("ArticleContent", "")
@@ -159,6 +169,7 @@ class LegalCrossReferenceEngine:
                 if len(results) >= limit:
                     break
 
+        self._search_orders_cache[cache_key] = results
         return results
 
     def get_order_details(self, order_name: str) -> Optional[Dict[str, Any]]:
@@ -307,17 +318,17 @@ class LegalCrossReferenceEngine:
                         if len(results) >= limit:
                             break
 
-        # 2. 若先例庫未滿額且大庫可用，查詢實體裁判庫
+        # 2. 若先例庫未滿額且大庫可用，查詢實體裁判庫（精準限定法律爭點，杜絕無索引全表掃描）
         if len(results) < limit and self.index_db_path.exists():
             target_pattern = f"%{clean_law}%{clean_art}%"
             try:
-                with sqlite3.connect(str(self.index_db_path), timeout=1.5) as conn:
+                with sqlite3.connect(str(self.index_db_path), timeout=0.6) as conn:
                     conn.row_factory = sqlite3.Row
                     query_sql = (
                         "SELECT case_id, court, jud_year, jud_word, jud_no, date, title, "
                         "       holding_preview, laws_cited, substantive_prior "
                         "FROM judgments_meta "
-                        "WHERE court = ? AND laws_cited LIKE ? "
+                        "WHERE court = ? AND has_legal_issue = 1 AND laws_cited LIKE ? "
                         "ORDER BY jud_year DESC LIMIT ?"
                     )
                     rows = conn.execute(query_sql, (court_filter, target_pattern, limit - len(results))).fetchall()

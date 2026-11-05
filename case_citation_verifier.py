@@ -268,6 +268,32 @@ class CaseCitationVerifier:
                 "normalized": f"{court} {y_str} 年度{word}字第 {no_str} 號".strip()
             })
 
+        # Pattern E: 案號縮寫速查相容模式（如 108台上908、108台上908號、108 台上 908 號判決）
+        p_short = re.compile(
+            r'((?:最高法院|最高行政法院|臺灣高等法院|高等法院)?\s*(\d{2,3})\s*(?:年|年度)?\s*(台上大|台抗大|台上|台抗|台非|上更\([一二三四五\d]+\)|上更[一二三四五\d]+|重上更[一二三四五\d]+|重上|上易|上訴|上|訴|重訴|簡上)\s*(?:字)?\s*(?:第)?\s*(\d+)\s*(?:號)?(?:\s*(?:民事|刑事|行政))?(?:\s*(?:判決|裁定|判例))?)'
+        )
+        for m in p_short.finditer(text):
+            span = m.span()
+            if any(s <= span[0] and span[1] <= e for s, e in seen_spans):
+                continue
+            seen_spans.add(span)
+            raw = m.group(1).strip()
+            y_str = m.group(2)
+            word = m.group(3)
+            no_str = m.group(4)
+            court = "最高法院" if any(w in word for w in ["台上", "台抗", "台非", "台大"]) else "臺灣高等法院"
+            category = "GRAND_CHAMBER" if "大" in word else "JUDGMENT"
+            citations.append({
+                "raw": raw,
+                "span": span,
+                "category": category,
+                "court": court,
+                "year": y_str,
+                "word": word,
+                "no": no_str,
+                "normalized": f"{court} {y_str} 年度{word}字第 {no_str} 號"
+            })
+
         return citations
 
     # =========================================================================
@@ -648,3 +674,6 @@ def get_case_verifier() -> CaseCitationVerifier:
     if _global_verifier is None:
         _global_verifier = CaseCitationVerifier()
     return _global_verifier
+
+
+get_citation_verifier = get_case_verifier
