@@ -9,6 +9,7 @@ from pathlib import Path
 - 緊密結合考生手寫或文字筆記進行客製化命題
 """
 import json
+import time
 import re
 import uuid
 from typing import Dict, Any, List, Optional, Callable
@@ -500,7 +501,14 @@ class LawExamGenerator:
 
         return md
 
-def load_all_existing_stage1_mcqs() -> list:
+_CACHED_STAGE1_MCQS = None
+_CACHED_STAGE1_MCQS_TIME = 0
+
+def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
+    global _CACHED_STAGE1_MCQS, _CACHED_STAGE1_MCQS_TIME
+    now = time.time()
+    if not force_refresh and _CACHED_STAGE1_MCQS is not None and (now - _CACHED_STAGE1_MCQS_TIME < 600):
+        return _CACHED_STAGE1_MCQS
     """
     全量載入既有一試全真題庫：
     1. admin_law_300_mcqs.json (行政法 300 題全量題庫)

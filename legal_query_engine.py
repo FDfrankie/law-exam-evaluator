@@ -978,12 +978,13 @@ def search_precedents_advanced(
         if len(final_results) >= top_k:
             break
 
-    # 補充自 SQLite 百萬裁判大庫 (若目錄筆數不足)
-    if len(final_results) < top_k:
-        try:
-            from build_million_judgments_db import get_million_db_engine
-            db_engine = get_million_db_engine()
+    # 整合 SQLite 百萬裁判大庫 / 司律精華子庫 (雙軌智慧穿透與審級脈絡)
+    try:
+        from build_million_judgments_db import get_million_db_engine
+        db_engine = get_million_db_engine()
+        if db_engine.index_db_path.exists():
             db_hits = db_engine.search_fts_and_meta(
+                query=f"{clean_cause} {clean_holding} {clean_issue}".strip(),
                 jud_year=clean_year,
                 jud_word=clean_word,
                 jud_no=clean_no,
@@ -994,31 +995,55 @@ def search_precedents_advanced(
                 case_type=case_type,
                 court_system=court_system,
                 filter_no_legal_issue=filter_no_legal_issue,
-                top_k=(top_k - len(final_results))
+                top_k=top_k
             )
             seen_ids = {x.get("case_id") for x in final_results}
+            # 將 SQLite 大庫命中之標的置於前端 (若為精準案號或高權重爭點)
+            sqlite_items = []
             for dh in db_hits:
                 cid = dh.get("case_id")
                 if cid and cid not in seen_ids:
                     seen_ids.add(cid)
+                    raw_laws = dh.get("laws_cited")
+                    if isinstance(raw_laws, list):
+                        laws_list = raw_laws
+                    elif isinstance(raw_laws, str):
+                        laws_list = [x.strip() for x in raw_laws.split("、") if x.strip()]
+                    else:
+                        laws_list = []
+
                     dh_item = {
                         "case_id": cid,
+                        "jid": dh.get("jid", ""),
                         "court": dh.get("court", ""),
                         "level": dh.get("level", "司法裁判"),
                         "subject": dh.get("subject", "法學專業實務"),
                         "sub_category": dh.get("title", cid),
                         "title": dh.get("title", cid),
-                        "laws_cited": [x.strip() for x in (dh.get("laws_cited") or "").split("、") if x.strip()],
+                        "laws_cited": laws_list,
                         "issue": dh.get("issue", ""),
-                        "holding": dh.get("holding_preview", ""),
-                        "scholarly_views": "",
-                        "exam_application_hint": "",
+                        "holding": dh.get("holding") or dh.get("holding_preview") or "",
+                        "scholarly_views": dh.get("scholarly_views", ""),
+                        "exam_application_hint": dh.get("exam_application_hint", ""),
                         "has_legal_issue": bool(dh.get("has_legal_issue", 1)),
-                        "extracted_history_instances": []
+                        "extracted_history_instances": dh.get("extracted_history_instances") or dh.get("history_instances") or [],
+                        "substantive_prior": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
+                        "substantive_prior_instance": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
+                        "history_cases": dh.get("history_cases") or [],
+                        "shard_key": dh.get("shard_key", ""),
+                        "official_url": dh.get("official_url") or db_engine.get_official_url(cid, dh.get("jid", "")),
+                        "source": "million_judgments_db"
                     }
-                    final_results.append(dh_item)
-        except Exception:
-            pass
+                    sqlite_items.append(dh_item)
+
+            # 若有指定案號或關鍵字，優先呈現 SQLite 命中
+            if clean_year or clean_no or clean_cause or clean_holding or clean_issue:
+                final_results = sqlite_items + final_results
+            else:
+                final_results = final_results + sqlite_items
+            final_results = final_results[:top_k]
+    except Exception as e_sql:
+        print(f"[SQLite Merge Warning] {e_sql}")
 
     return final_results
 

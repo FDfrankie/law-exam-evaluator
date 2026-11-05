@@ -1,16 +1,12 @@
 @echo off
+title Git Push Sync
 echo ========================================================
-echo        Syncing and Pushing Updates to GitHub...
+echo        Git Commit & Push Auto Sync
 echo ========================================================
 
 cd /d "%~dp0"
-
 git add -A
-git commit -m "Auto update: %date% %time%"
-git push origin main
+git commit -m "Auto update project files"
+git push
 
-echo.
-echo ========================================================
-echo Push complete! Streamlit Cloud will auto-redeploy!
-echo ========================================================
 pause

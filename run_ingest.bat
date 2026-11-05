@@ -1,18 +1,23 @@
 @echo off
-chcp 65001 >nul
+title ¥qªk°|µô§P¸ê®Æ®w§C°O¾ĞÅé¦ê¬y¶×¤J
 echo ========================================================
-echo    ğŸš€ å¸æ³•é™¢è£åˆ¤é–‹æ”¾è³‡æ–™ä¸²æµä½è¨˜æ†¶é«”åŒ¯å…¥ (ä¸€éµå•Ÿå‹•)
+echo    ¥qªk°|µô§P¸ê®Æ®w§C°O¾ĞÅé¤J®w¤ŞÀº (Â_ÂIÄò¶Ç)
 echo ========================================================
 echo.
-echo æ­£åœ¨å•Ÿå‹• PowerShell ä¸²æµåŒ¯å…¥å¼•æ“...
-echo è‡ªå‹•æƒæ: G:\æˆ‘çš„é›²ç«¯ç¡¬ç¢Ÿ\LawExamData\data\judgements åŠ opendata_inbox
+echo Python ª½Ä¶¾¹ : C:\Users\mis\miniconda3\python.exe
+echo µ{¦¡¸}¥»¸ô®| : G:\§Úªº¶³ºİµwºĞ\LawExamData\code\ingest_opendata_lowmem.py
+echo.
+echo [´£¥Ü] ¨ã³Æ§¹¥şÂ_ÂIÄò¶Ç¥\¯à¡A¥ô¦ó®É­ÔÃö³¬µøµ¡³£¤£·|¿ò¥¢¶i«×¡C
+echo.
+echo ========================================================
+echo [¶}©l°õ¦æ¦ê¬y¤J®w...]
+echo ========================================================
 echo.
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0schedule_ingest.ps1"
+"C:\Users\mis\miniconda3\python.exe" -u "G:\§Úªº¶³ºİµwºĞ\LawExamData\code\ingest_opendata_lowmem.py"
 
 echo.
 echo ========================================================
-echo åŸ·è¡Œå®Œç•¢ã€‚è«‹æŸ¥çœ‹æ—¥èªŒæˆ–é–‹å•Ÿ Streamlit æŸ¥çœ‹åŒ¯å…¥ç¸½ç­†æ•¸ã€‚
+echo °õ¦æµ²§ô¡C
 echo ========================================================
 pause
-

@@ -7,6 +7,7 @@ Outputs to: G:\\我的雲端硬碟\\LawExamData\\national_laws\\
 import os
 import sys
 import json
+import re
 import zipfile
 import urllib3
 import requests

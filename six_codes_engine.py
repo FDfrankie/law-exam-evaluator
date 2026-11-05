@@ -1,3 +1,4 @@
+import time
 """
 智慧六法全書與條文爭點判解註記引擎 (Annotated Six Codes & Judicial Interpretations Engine)
 收錄全台 61 部核心司律考科法規、10,183 條法定條文，全面打通：
@@ -534,7 +535,14 @@ def classify_document_nature(filename: str, path: str = "") -> Dict[str, Any]:
     }
 
 
+_CACHED_UNIFIED_MATERIALS = None
+_CACHED_UNIFIED_MATERIALS_TIME = 0
+
 def get_unified_materials_catalog(meta_notes_cat: dict = None) -> Dict[str, List[Dict[str, Any]]]:
+    global _CACHED_UNIFIED_MATERIALS, _CACHED_UNIFIED_MATERIALS_TIME
+    now = time.time()
+    if _CACHED_UNIFIED_MATERIALS is not None and (now - _CACHED_UNIFIED_MATERIALS_TIME < 600):
+        return _CACHED_UNIFIED_MATERIALS
     """
     動態整合六法標註目錄與 Google Drive 最新 580+ 份講義、筆記與試題大庫
     並將檔案依考科分流建立索引
@@ -590,6 +598,8 @@ def get_unified_materials_catalog(meta_notes_cat: dict = None) -> Dict[str, List
                         "size_kb": round(float(item.get("size_mb", 0.0)) * 1024, 1)
                     })
 
+    _CACHED_UNIFIED_MATERIALS = unified
+    _CACHED_UNIFIED_MATERIALS_TIME = time.time()
     return unified
 
 

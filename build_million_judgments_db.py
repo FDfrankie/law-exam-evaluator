@@ -9,6 +9,16 @@
 """
 import os
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+if hasattr(sys.stderr, 'reconfigure'):
+    try:
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
 import json
 import re
 import glob
@@ -70,6 +80,7 @@ class MillionJudgmentsSQLiteEngine:
     """
 
     def __init__(self, base_dir: Path = None, inbox_dir: Path = None):
+        # 1. 優先辨識自訂或候選目錄
         if base_dir:
             self.base_dir = Path(base_dir)
         else:
@@ -84,7 +95,37 @@ class MillionJudgmentsSQLiteEngine:
             self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
 
         self.shards_dir = self.base_dir / "shards"
-        self.index_db_path = self.base_dir / "judicial_1m_index.db"
+
+        # 2. 智慧母子庫雙軌自動探測 (Master 1.6M+ DB vs Core 60MB Exam DB)
+        master_candidates = [
+            self.base_dir / "judicial_1m_index.db",
+            Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db",
+            Path(DATA_DIR) / "data" / "judicial_1m_db" / "judicial_1m_index.db",
+            Path(__file__).resolve().parent / "data" / "judicial_1m_db" / "judicial_1m_index.db"
+        ]
+        core_candidates = [
+            Path(DATA_DIR) / "judicial_exam_core.db",
+            Path(DATA_DIR) / "data" / "judicial_exam_core.db",
+            Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+            Path(__file__).resolve().parent / "judicial_exam_core.db",
+            self.base_dir / "judicial_exam_core.db"
+        ]
+
+        found_master = next((p for p in master_candidates if p.exists() and p.stat().st_size > 1024), None)
+        found_core = next((p for p in core_candidates if p.exists() and p.stat().st_size > 1024), None)
+
+        if found_master:
+            self.index_db_path = found_master
+            self.db_mode = "master"
+            self.db_title = "🏛️ 百萬裁判全量母庫 (1,618,693+ 筆)"
+        elif found_core:
+            self.index_db_path = found_core
+            self.db_mode = "core"
+            self.db_title = "⚖️ 司律核心精華子庫 (60MB 國考精選版)"
+        else:
+            self.index_db_path = self.base_dir / "judicial_1m_index.db"
+            self.db_mode = "empty"
+            self.db_title = "📂 裁判資料庫 (初始化中)"
 
         if inbox_dir:
             self.inbox_dir = Path(inbox_dir)
@@ -255,13 +296,55 @@ class MillionJudgmentsSQLiteEngine:
 
         return jud_year, jud_word, jud_no, shard_key
 
+
+    @staticmethod
+    def get_official_url(case_id: str, jid: str = "") -> str:
+        """
+        生成司法院官方裁判書系統直連穿透連結：
+        1. 若帶有標準 JID (如 TPSM,108,台上,1719,20190523,1)，直接進入官方完整裁判內容頁面
+        2. 若僅有案號字串，精準導向司法院裁判書查詢系統 qryresultlst 頁面
+        """
+        if jid and "," in str(jid) and len(str(jid).split(",")) >= 4:
+            return f"https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id={str(jid).strip()}"
+        import urllib.parse
+        clean_cid = re.sub(r'\(.*?\)|（.*?）', '', str(case_id or "")).strip()
+        return f"https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?q={urllib.parse.quote(clean_cid)}"
+
+    def get_db_info(self) -> Dict[str, Any]:
+        """取得當前資料庫連線類型、收錄總筆數與狀態"""
+        cnt = self.get_total_count()
+        mode = getattr(self, "db_mode", "master")
+        if mode == "master" and cnt > 0:
+            title = f"🏛️ 百萬裁判全量母庫 (已收錄 {cnt:,} 筆裁判)"
+        elif mode == "core" and cnt > 0:
+            title = f"⚖️ 司律核心精華子庫 (已收錄 {cnt:,} 筆國考精華)"
+        elif cnt > 0:
+            title = f"📚 裁判資料庫 (已收錄 {cnt:,} 筆裁判)"
+        else:
+            title = "📂 裁判資料庫 (尚未建立或空庫)"
+        return {
+            "mode": mode,
+            "title": title,
+            "count": cnt,
+            "path": str(self.index_db_path),
+            "has_shards": bool(self.shards_dir.exists())
+        }
+
     def get_total_count(self) -> int:
         if not self.index_db_path.exists():
             return 0
+        now = time.time()
+        cached = getattr(self, "_cached_count", None)
+        last_t = getattr(self, "_last_count_time", 0)
+        if cached is not None and (now - last_t < 600):
+            return cached
         try:
             with self._get_conn(self.index_db_path) as conn:
                 row = conn.execute("SELECT COUNT(*) AS cnt FROM judgments_meta").fetchone()
-                return int(row["cnt"]) if row else 0
+                cnt = int(row["cnt"]) if row else 0
+                self._cached_count = cnt
+                self._last_count_time = now
+                return cnt
         except Exception:
             return 0
 
@@ -292,6 +375,7 @@ class MillionJudgmentsSQLiteEngine:
             return 0
         self._init_index_db()
 
+        self._cached_count = None
         total_inserted = 0
 
         for i in range(0, len(records), batch_size):
@@ -378,9 +462,11 @@ class MillionJudgmentsSQLiteEngine:
                         cids_in_batch = [r[0] for r in fts_rows]
                         existing_in_db = set()
                         if cids_in_batch:
-                            placeholders = ",".join("?" for _ in cids_in_batch)
-                            cur.execute(f"SELECT case_id FROM judgments_meta WHERE case_id IN ({placeholders})", cids_in_batch)
-                            existing_in_db = {row[0] for row in cur.fetchall() if row[0]}
+                            for sub_i in range(0, len(cids_in_batch), 500):
+                                sub_cids = cids_in_batch[sub_i:sub_i + 500]
+                                placeholders = ",".join("?" for _ in sub_cids)
+                                cur.execute(f"SELECT case_id FROM judgments_meta WHERE case_id IN ({placeholders})", sub_cids)
+                                existing_in_db.update(row[0] for row in cur.fetchall() if row[0])
 
                         cur.executemany("""
                             INSERT OR REPLACE INTO judgments_meta
@@ -388,14 +474,13 @@ class MillionJudgmentsSQLiteEngine:
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, meta_rows)
 
-                        # 2. 僅對確定已存在的舊案號執行 FTS 刪除；全新入庫案號完全不進行全表掃描
-                        if existing_in_db:
-                            cur.executemany("DELETE FROM judgments_fts WHERE case_id = ?", [(cid,) for cid in existing_in_db])
-
-                        cur.executemany("""
-                            INSERT INTO judgments_fts (case_id, title, holding_preview, issue, laws_cited)
-                            VALUES (?, ?, ?, ?, ?)
-                        """, fts_rows)
+                        # 2. 僅對全新未收錄案號寫入 judgments_fts，徹底杜絕對 UNINDEXED case_id 執行 DELETE 的百萬級全表掃描
+                        new_fts_rows = [r for r in fts_rows if r[0] not in existing_in_db]
+                        if new_fts_rows:
+                            cur.executemany("""
+                                INSERT INTO judgments_fts (case_id, title, holding_preview, issue, laws_cited)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, new_fts_rows)
                         conn.commit()
                     break
                 except sqlite3.OperationalError as oe:
@@ -532,8 +617,11 @@ class MillionJudgmentsSQLiteEngine:
                         "shard_key": r["shard_key"],
                         "has_legal_issue": bool(r["has_legal_issue"]),
                         "history_instances": json.loads(r["history_instances"]) if r["history_instances"] else [],
-                        "substantive_prior_instance": r["substantive_prior"],
-                        "history_cases": [x.strip() for x in (r["history_cases"] or "").split("、") if x.strip()]
+                        "extracted_history_instances": json.loads(r["history_instances"]) if r["history_instances"] else [],
+                        "substantive_prior": r["substantive_prior"] or "",
+                        "substantive_prior_instance": r["substantive_prior"] or "",
+                        "history_cases": [x.strip() for x in (r["history_cases"] or "").split("、") if x.strip()],
+                        "official_url": self.get_official_url(r["case_id"], r["jid"])
                     })
         except Exception as e:
             print(f"[Search FTS Error] {e}")

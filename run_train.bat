@@ -1,17 +1,15 @@
 @echo off
-chcp 65001 >nul
 title Taiwan Law Exam Model Fine-Tuning
-
 echo ========================================================
 echo   Taiwan Law Exam Model SFT Fine-Tuning
 echo ========================================================
 echo.
-echo Dataset: G:\LawExamData\training_data\law_exam_verified_sft.jsonl
-echo Checkpoints: G:\LawExamData\checkpoints\law_evaluator_qwen
+echo Dataset: G:\§Úªº¶³ºÝµwºÐ\LawExamData\data\training_data\law_exam_verified_sft.jsonl
+echo Checkpoints: G:\§Úªº¶³ºÝµwºÐ\LawExamData\data\checkpoints\law_evaluator_qwen
 echo Python: C:\Users\mis\miniconda3\python.exe
 echo.
 
-cd /d "G:\æˆ‘çš„é›²ç«¯ç¡¬ç¢Ÿ\LawExamData\code"
+cd /d "%~dp0"
 "C:\Users\mis\miniconda3\python.exe" train_evaluator.py --epochs 1 --batch_size 2 --max_samples 100
 
 echo.
