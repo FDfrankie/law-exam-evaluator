@@ -374,6 +374,21 @@ except Exception:
     def export_textbook_docx(*args, **kwargs): return b""
     def export_mcq_exam_docx(*args, **kwargs): return b""
 
+try:
+    from judicial_appeal_chain import get_appeal_chain_engine, JudicialAppealChainEngine
+    from legal_cross_reference_engine import get_cross_reference_engine, LegalCrossReferenceEngine
+    from judgment_summarizer import get_judgment_summarizer, JudgmentSummarizer
+    from unified_legal_corpus import get_unified_corpus_engine, UnifiedLegalCorpusEngine
+except Exception as _e_lawsuite:
+    class JudicialAppealChainEngine: pass
+    def get_appeal_chain_engine(): return None
+    class LegalCrossReferenceEngine: pass
+    def get_cross_reference_engine(): return None
+    class JudgmentSummarizer: pass
+    def get_judgment_summarizer(): return None
+    class UnifiedLegalCorpusEngine: pass
+    def get_unified_corpus_engine(): return None
+
 def render_citation_quick_cards(citations: list, key_prefix: str = "cit_cards"):
     """
     Lawsnote / 七法 (Laws.club) 水準之裁判案號互動快顯卡片與一鍵標準法學引註複製元件。
@@ -4610,16 +4625,34 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
     st.divider()
 
+    M5_SUB_ADVANCED_SEARCH = "⚖️ 裁判書多維專業檢索 (支援布林語法)"
+    M5_SUB_UNIFIED_CORPUS = "🌐 全方位法學大典藏跨庫檢索 (409萬裁判/判例/釋字/命令/法律)"
+    M5_SUB_HOT_SEARCH = "⚡ 極速全域熱搜 極速熱搜與全國資料庫矩陣"
+    M5_SUB_APPEAL_CHAIN = "🌿 審級更迭與歷審脈絡鏈 (JudgementChain 審級溯源專區)"
+    M5_SUB_ADMIN_ORDERS = "📜 全國行政法規命令與部會要點 (10,452部函釋/要點/行政命令交叉引證)"
+    M5_SUB_ISSUES = "🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典"
+    M5_SUB_DISTINGUISHING = "🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)"
+
     m5_sub_modes = [
-        "⚖️ 專業級 裁判書多維專業檢索 (支援布林語法)",
-        "⚡ 極速全域熱搜 極速熱搜與全國資料庫矩陣",
-        "🌿 審級更迭與歷審脈絡鏈 (JudgementChain 審級溯源專區)",
-        "🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典",
-        "🔄 案例橫向比對與實務分歧研析 (Case Distinguishing)"
+        M5_SUB_ADVANCED_SEARCH,
+        M5_SUB_UNIFIED_CORPUS,
+        M5_SUB_HOT_SEARCH,
+        M5_SUB_APPEAL_CHAIN,
+        M5_SUB_ADMIN_ORDERS,
+        M5_SUB_ISSUES,
+        M5_SUB_DISTINGUISHING
     ]
 
-    # 外部跳轉控制預設子功能索引
-    sub_default_idx = st.session_state.get("m5_sub_mode_idx", 0)
+    # 外部跳轉控制預設子功能索引（向下相容整數與字串）
+    raw_sub_idx = st.session_state.get("m5_sub_mode_idx", 0)
+    if isinstance(raw_sub_idx, str):
+        sub_default_idx = m5_sub_modes.index(raw_sub_idx) if raw_sub_idx in m5_sub_modes else 0
+    elif isinstance(raw_sub_idx, int):
+        idx_map = {0: 0, 1: 2, 2: 3, 3: 5, 4: 6}
+        sub_default_idx = idx_map.get(raw_sub_idx, 0)
+    else:
+        sub_default_idx = 0
+
     if sub_default_idx >= len(m5_sub_modes):
         sub_default_idx = 0
 
@@ -4635,7 +4668,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
     st.write("")
 
     # ==================== 子功能 1: ⚖️ 專業級 裁判書多維專業檢索 (LegalDatabase 規格) ====================
-    if m5_active_tab == m5_sub_modes[0]:
+    if m5_active_tab == M5_SUB_ADVANCED_SEARCH or m5_active_tab == m5_sub_modes[0]:
         st.subheader("⚖️ 實務裁判書多維進階檢索")
         st.caption("完整比照專業裁判書查詢規格，支援布林邏輯運算（＆、＋、－、( )），與法院審級、裁判年份、裁判字別、裁判案號、裁判案由、主文心證、爭點與法律條文全維度交叉篩選。")
         try:
@@ -4878,7 +4911,134 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                             st.link_button("⚖️ 司法院法學檢索", "https://jirs.judicial.gov.tw/Index.aspx", use_container_width=True)
 
     # ==================== 子功能 2: ⚡ 極速全域熱搜 極速熱搜與全國資料庫矩陣 ====================
-    elif m5_active_tab == m5_sub_modes[1]:
+        # ==================== 子功能 2: 🌐 全方位法學大典藏跨庫統一檢索 (對標法源/七法/法律人) ====================
+    elif m5_active_tab == M5_SUB_UNIFIED_CORPUS or m5_active_tab == m5_sub_modes[1]:
+        st.subheader("🌐 全方位法學大典藏跨庫統一檢索")
+        st.caption("完整比照「法源法律網」與「七法 Laws.club」旗艦檢索架構！一站式貫穿本機 **4,069,011 筆實體裁判**、**11,625 筆最高法院判例與決議**、**840+ 筆憲法法庭判決與大法官解釋**、**10,452 部行政命令要點**與 **1,351 部全國法律**。")
+
+        col_st1, col_st2, col_st3, col_st4, col_st5 = st.columns(5)
+        col_st1.metric("🏛️ 實體裁判大庫", "4,069,011 筆", "覆蓋各級法院")
+        col_st2.metric("⚖️ 最高院原判例/決議", "11,625 則", "百年司法傳承")
+        col_st3.metric("📜 憲判字與大法官釋字", "840+ 則", "憲政與基本權")
+        col_st4.metric("📋 全國行政命令與要點", "10,452 部", "部會函令指引")
+        col_st5.metric("📘 全國現行法律", "1,351 部", "法規母法全集")
+
+        st.write("")
+        corpus_categories = {
+            "ALL": "🌐 全庫綜合整合檢索 (409萬法學大典)",
+            "PRECEDENTS": "⚖️ 最高法院判例與決議 (11,625 則)",
+            "CONSTITUTION": "📜 憲法判決與司法院釋字 (840+ 則)",
+            "ORDERS": "📋 全國行政法規命令與作業要點 (10,452 部)",
+            "STATUTES": "📘 全國現行法律條文 (1,351 部)",
+            "JUDGMENTS": "🏛️ 各級法院實體裁判 (406 萬筆)"
+        }
+        sel_cat_key = st.radio(
+            "選擇檢索法學大典典藏類別：",
+            list(corpus_categories.keys()),
+            format_func=lambda k: corpus_categories[k],
+            horizontal=True,
+            key="corpus_search_cat_radio"
+        )
+
+        col_cq1, col_cq2 = st.columns([3.5, 1])
+        with col_cq1:
+            corpus_query = st.text_input(
+                "輸入法學關鍵字、爭點法理、條號或案號：",
+                value=st.session_state.get("corpus_search_query_val", ""),
+                placeholder="例如：借名登記、重大過失、108台上大1719、侵權行為、消保法、民法184、道路交通安全規則...",
+                key="corpus_search_input_widget"
+            )
+        with col_cq2:
+            st.write("")
+            st.write("")
+            btn_corpus_search = st.button("🚀 跨庫統一檢索", type="primary", use_container_width=True, key="btn_exec_corpus_search")
+
+        st.markdown("**🔥 高頻法學爭點快速檢索：**")
+        chip_cols = st.columns(7)
+        quick_chips = ["借名登記", "重大過失", "不當得利", "原因自由行為", "純粹經濟損失", "行政處分", "108台上大1719"]
+        for c_idx, chip in enumerate(quick_chips):
+            with chip_cols[c_idx]:
+                if st.button(chip, key=f"chip_corpus_{c_idx}", use_container_width=True):
+                    st.session_state["corpus_search_query_val"] = chip
+                    st.session_state["corpus_trigger_search"] = True
+                    st.rerun()
+
+        do_corpus_search = btn_corpus_search or st.session_state.pop("corpus_trigger_search", False)
+        if do_corpus_search:
+            q_target = corpus_query.strip()
+            if not q_target:
+                st.warning("請先輸入檢索關鍵字或點擊上方爭點標籤！")
+            else:
+                with st.spinner(f"正在全域法學大典藏中檢索【{q_target}】..."):
+                    try:
+                        uce_engine = get_unified_corpus_engine()
+                        t_start = time.time()
+                        hits = uce_engine.search_corpus(q_target, category=sel_cat_key, limit=20)
+                        t_elapsed = (time.time() - t_start) * 1000
+                        st.session_state["corpus_search_hits"] = hits
+                        st.session_state["corpus_search_query_val"] = q_target
+                        st.session_state["corpus_search_elapsed"] = t_elapsed
+                    except Exception as ce:
+                        st.error(f"跨庫檢索發生錯誤: {ce}")
+
+        if "corpus_search_hits" in st.session_state:
+            hits = st.session_state["corpus_search_hits"]
+            active_q = st.session_state.get("corpus_search_query_val", "")
+            t_ms = st.session_state.get("corpus_search_elapsed", 0)
+
+            st.divider()
+            st.markdown(f"#### 🎯 【{active_q}】檢索結果 ｜ ⚡ 費時 `{t_ms:.1f} ms` ｜ 共命中 `{len(hits)}` 筆法學典藏")
+
+            if not hits:
+                st.info(f"於所選大典分類中查無符合「{active_q}」之結果，建議擴大檢索類別為「全庫綜合」或使用同義字。")
+            else:
+                for h_idx, h in enumerate(hits):
+                    with st.container(border=True):
+                        col_h1, col_h2 = st.columns([4, 1.2])
+                        with col_h1:
+                            st.markdown(f"### {h.get('badge', '🏛️ 法學典藏')} {h.get('title', '')}")
+                            if h.get('sub_title'):
+                                st.caption(f"**案由/法規屬性：** {h.get('sub_title')}")
+                            if h.get('date'):
+                                st.caption(f"📅 日期：`{h.get('date')}` ｜ 類別：`{h.get('category', '法學資料')}`")
+                        with col_h2:
+                            st.write("")
+                            if h.get('url'):
+                                st.link_button("🌐 官方全文", h['url'], use_container_width=True)
+
+                        st.info(f"**核心要旨與裁判心證：**\n{h.get('holding', '無摘要')}")
+                        if h.get('laws_cited'):
+                            st.caption(f"🎯 **引述法律法規：** `{h.get('laws_cited')}`")
+
+                        btn_c1, btn_c2, btn_c3 = st.columns(3)
+                        with btn_c1:
+                            if st.button("🌿 追蹤審級脈絡", key=f"btn_cp_appeal_{h_idx}", use_container_width=True):
+                                st.session_state["target_history_case_id"] = h.get('title', '')
+                                st.session_state["m5_sub_mode_idx"] = M5_SUB_APPEAL_CHAIN
+                                st.rerun()
+                        with btn_c2:
+                            if st.button("📑 AI IRAC 深度精鍊", key=f"btn_cp_sum_{h_idx}", use_container_width=True):
+                                st.session_state["sum_citation_search"] = h.get('title', '')
+                                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                                st.session_state["sum_input_title"] = h.get('title', '')
+                                st.session_state["sum_input_text"] = ""
+                                st.session_state.pop("last_ai_sum_res", None)
+                                st.session_state["app_mode"] = MODE_SUMMARIZER
+                                st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
+                                st.rerun()
+                        with btn_c3:
+                            if st.button("⚖️ 帶入智慧六法", key=f"btn_cp_six_{h_idx}", use_container_width=True):
+                                if "民" in h.get('title', ''):
+                                    st.session_state["six_codes_law"] = "民法"
+                                elif "刑" in h.get('title', ''):
+                                    st.session_state["six_codes_law"] = "中華民國刑法"
+                                elif "行政" in h.get('title', ''):
+                                    st.session_state["six_codes_law"] = "行政程序法"
+                                st.session_state["app_mode"] = MODE_SIX_CODES
+                                st.session_state["nav_sidebar_radio_mode"] = MODE_SIX_CODES
+                                st.rerun()
+
+    elif m5_active_tab == M5_SUB_HOT_SEARCH or m5_active_tab == m5_sub_modes[2]:
         st.subheader("⚡ 全國法學判解熱搜與關聯導航")
         st.caption("支援高頻爭點晶片快選、雙向自然語言搜尋、案號縮寫智慧解析、本機 4,088+ 筆裁判與六法法條即時命中，並跨庫直通官方權威司法檢索系統！")
 
@@ -5071,7 +5231,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                     st.rerun()
 
     # ==================== 子功能 3: 🌿 審級更迭與歷審脈絡鏈 (JudgementChain 審級溯源專區) ====================
-    elif m5_active_tab == m5_sub_modes[2]:
+    elif m5_active_tab == M5_SUB_APPEAL_CHAIN or m5_active_tab == m5_sub_modes[3]:
         st.subheader("🌿 裁判審級更迭與歷審脈絡溯源")
         st.caption("完整比照「審級脈絡溯源系統」獨家專利之『歷審裁判鏈 (Judgement History Pipeline)』！自動溯源地方法院事實審 ➔ 高等法院事實/上訴審 ➔ 最高法院法律審 ➔ 大法庭終局定錨 / 憲法法庭，精準剖析各審級裁判見解之翻轉與定錨、法律攻防爭點、區別對比矩陣與司律二試上位卷 IRAC 開標示範！")
 
@@ -5130,11 +5290,18 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                 target_hid = inp_hist_case_id.strip() or "自訂裁判"
                 with st.spinner(f"正在全域調閱【{target_hid}】之歷審脈絡鏈，解構地院、高院、最高法院與大法庭審級更迭..."):
                     try:
+                        # 1. 優先檢索百萬實體裁判庫真實審級鏈接 (80 萬關聯記錄)
+                        ace = get_appeal_chain_engine()
+                        real_chain = ace.get_appeal_chain(target_hid) if ace else None
+
                         engine = LegalIssueQueryEngine()
                         h_res = engine.generate_case_history_timeline(
                             case_id=target_hid,
                             case_text=inp_custom_hist_text
                         )
+                        if real_chain and real_chain.get("success"):
+                            h_res["real_chain"] = real_chain
+
                         st.session_state["case_history_result"] = h_res
                         st.session_state["target_history_case_id"] = target_hid
                     except Exception as he:
@@ -5148,6 +5315,57 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
             st.divider()
             st.subheader(f"🌿 【{h_cid}】裁判審級更迭與歷審脈絡溯源報告")
+
+            # 司法院百萬裁判庫真實審級演進節點 (Real Judicial Appeal Chain)
+            rc = h_data.get("real_chain")
+            if rc and rc.get("success"):
+                rc_timeline = rc.get("timeline", [])
+                st.markdown(f"#### 🏛️ 司法院裁判庫真實審級鏈接 (偵測到 {len(rc_timeline)} 個審級節點)")
+                for r_idx, node in enumerate(rc_timeline):
+                    n_stage = node.get("stage", "審級歷程")
+                    n_court = node.get("court", "")
+                    n_cid = node.get("case_id", "")
+                    n_date = node.get("date", "")
+                    n_hold = node.get("holding", "")
+
+                    is_current = "當前" in n_stage
+                    badge_border = "#e63946" if is_current else "#1d3557"
+                    bg_col = "rgba(230,57,70,0.08)" if is_current else "rgba(29,53,87,0.05)"
+                    disp_cid = n_cid if n_cid.startswith(n_court) else f"{n_court} {n_cid}"
+
+                    with st.container():
+                        st.markdown(f'''
+<div style="border-left: 6px solid {badge_border}; padding: 12px 18px; margin: 10px 0; background-color: {bg_col}; border-radius: 6px;">
+    <div style="font-size: 1.1em; font-weight: bold; color: {badge_border};">
+        審級 {node.get('order', r_idx+1)}：{n_stage} ｜ <code>{disp_cid}</code>
+    </div>
+    <div style="font-size: 0.9em; color: #64748b; margin-top: 4px;">
+        📅 判決日期：{n_date or '已宣判入庫'}
+    </div>
+</div>
+''', unsafe_allow_html=True)
+                        if n_hold:
+                            st.caption(f"**裁判要旨/主文簡述：** {n_hold[:160]}...")
+
+                        n_col1, n_col2 = st.columns([1, 1])
+                        with n_col1:
+                            if st.button(f"🔍 深入溯源此審級", key=f"btn_rc_inspect_{r_idx}_{n_cid[:10]}", use_container_width=True):
+                                st.session_state["target_history_case_id"] = n_cid
+                                st.session_state["history_auto_exec"] = True
+                                st.rerun()
+                        with n_col2:
+                            if st.button(f"📑 AI 精鍊此審級", key=f"btn_rc_sum_{r_idx}_{n_cid[:10]}", use_container_width=True):
+                                st.session_state["sum_citation_search"] = n_cid
+                                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                                st.session_state["sum_input_title"] = n_cid
+                                st.session_state["sum_input_text"] = ""
+                                st.session_state.pop("last_ai_sum_res", None)
+                                st.session_state["app_mode"] = MODE_SUMMARIZER
+                                st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
+                                st.rerun()
+                    if r_idx < len(rc_timeline) - 1:
+                        st.markdown("<div style='text-align: center; font-size: 1.3em; color: #888; margin: -2px 0;'>⬇️ <em>審級救濟或發回更審</em></div>", unsafe_allow_html=True)
+                st.markdown("---")
 
             # 視覺化審級節點卡片流 (Visual Instance Pipeline Flow)
             stages = (p_info.get("timeline_stages") or p_info.get("chain")) if p_info else None
@@ -5232,7 +5450,60 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                     st.rerun()
 
     # ==================== 子功能 4: 🤖 AI 智慧爭點深度剖析與二試上位卷 IRAC 大典 ====================
-    elif m5_active_tab == m5_sub_modes[3]:
+        # ==================== 子功能 5: 📜 全國行政法規命令與部會要點 (10,452部法規庫) ====================
+    elif m5_active_tab == M5_SUB_ADMIN_ORDERS or m5_active_tab == m5_sub_modes[4]:
+        st.subheader("📜 全國行政法規命令與部會要點庫")
+        st.caption("完整收錄全國各中央部會 **10,452 部行政命令、法規命令、作業要點、審查標準、施行細則與注意事項**（ChOrder.json）。直接在命令下方對接授權母法、條文全文與司法裁判引述！")
+
+        col_ao1, col_ao2, col_ao3 = st.columns([1.5, 3, 1])
+        with col_ao1:
+            ao_ministries = ["全部機關", "經濟部", "金融監督管理委員會", "勞動部", "交通部", "財政部", "內政部", "衛生福利部", "法務部", "數位發展部", "公平交易委員會"]
+            sel_ao_min = st.selectbox("主管部會篩選：", ao_ministries, index=0, key="sel_ao_min_widget")
+        with col_ao2:
+            ao_kw = st.text_input(
+                "檢索法規命令名稱、關鍵字或授權母法：",
+                placeholder="例如：董事會議事辦法、道路交通安全規則、勞工請假規則、消保、專利...",
+                key="ao_kw_search_input"
+            )
+        with col_ao3:
+            st.write("")
+            st.write("")
+            btn_ao_search = st.button("🔍 查找法規命令", type="primary", use_container_width=True, key="btn_exec_ao_search")
+
+        if btn_ao_search or ao_kw.strip():
+            filter_cat = "" if sel_ao_min == "全部機關" else sel_ao_min
+            with st.spinner("正在行政法規命令庫中檢索..."):
+                try:
+                    cre_engine = get_cross_reference_engine()
+                    ao_results = cre_engine.search_administrative_orders(
+                        query=ao_kw.strip() or "準則",
+                        category=filter_cat,
+                        limit=20
+                    )
+                except Exception as aoe:
+                    st.error(f"行政法規檢索失敗: {aoe}")
+                    ao_results = []
+
+            st.divider()
+            st.markdown(f"#### 📋 命中法規命令與作業要點清單（共 `{len(ao_results)}` 部）")
+            if not ao_results:
+                st.info("查無符合之行政法規命令，請嘗試換用其他關鍵字。")
+            else:
+                for ao_i, ao in enumerate(ao_results):
+                    with st.expander(f"📜 《{ao['name']}》 ｜ 主管機關：`{ao['category']}` ｜ 條文數：{ao['articles_count']} 條", expanded=(ao_i == 0)):
+                        st.markdown(f"**法規性質：** `{ao['level']}` ｜ **最新修正日期：** `{ao['date']}`")
+                        if ao.get('url'):
+                            st.link_button("🌐 全國法規資料庫官方條文正本", ao['url'])
+                        full_order = cre_engine.get_order_details(ao['name'])
+                        if full_order and full_order.get("LawArticles"):
+                            st.markdown(f"##### 📑 《{ao['name']}》條文內容：")
+                            with st.container(height=300):
+                                for a_item in full_order["LawArticles"][:30]:
+                                    st.markdown(f"**{a_item.get('ArticleNo')}**")
+                                    st.caption(a_item.get("ArticleContent", ""))
+                                    st.markdown("---")
+
+    elif m5_active_tab == M5_SUB_ISSUES or m5_active_tab == m5_sub_modes[5]:
         st.subheader("🤖 核心法學爭點剖析與實務判解歸納")
         st.caption("引領司律考生直通二試上位卷！結合本機 4,088+ 筆權威判解庫與 Gemini 法學推論模型，自動輸出【法條構成要件】、【爭點所在】、【憲法法庭/大法庭/判例實務見解】、【學說肯否二說】及【俐落開標涵攝 IRAC 示範】。")
 
@@ -5406,7 +5677,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                     st.rerun()
 
     # ==================== 子功能 5: 🔄 案例橫向比對與實務分歧研析 ====================
-    elif m5_active_tab == m5_sub_modes[4]:
+    elif m5_active_tab == M5_SUB_DISTINGUISHING or m5_active_tab == m5_sub_modes[6]:
         st.subheader("🔄 裁判見解橫向比對與爭議分歧分析")
         st.caption("支援【輸入爭點・找出所有判決採何說】與【兩大裁判橫向精確對比】：深度解構實務學說頻譜（甲說、乙說、折衷說）、所有裁判採何說歸納清單、事實區別關鍵 (Case Distinguishing)、歷審見解變遷與司律二試作答上位心法！")
 
@@ -6658,27 +6929,56 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
         st.markdown(sum_res.get("markdown_result", ""))
         render_clickable_legal_entities(sum_res.get("markdown_result", ""), key_prefix="sum_res_ents")
 
+        # 司法院官方裁判字號防偽核驗卡 (Case Citation Verifier)
+        try:
+            from judgment_summarizer import get_case_citation_verifier
+            verifier = get_case_citation_verifier()
+            if verifier:
+                verified_cits = verifier.verify_text_citations(sum_res.get("markdown_result", ""))
+                if verified_cits:
+                    render_citation_quick_cards(verified_cits, key_prefix="sum_verified_cits")
+        except Exception:
+            pass
+
         st.divider()
         st.subheader("🔗 摘要成果一鍵轉化為司律考卷戰力：")
-        s_act1, s_act2, s_act3 = st.columns(3)
+        s_act1, s_act2, s_act3, s_act4 = st.columns(4)
         clean_act_title = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', active_title)[:15]
         with s_act1:
             st.download_button(
-                "📥 下載完整 Markdown 摘要報告",
+                "📥 下載 Markdown 報告",
                 data=sum_res.get("markdown_result", ""),
                 file_name=f"AI摘要_{clean_act_title}.md",
                 mime="text/markdown",
                 use_container_width=True
             )
         with s_act2:
-            if st.button("📝 帶入試卷評分 (作為評分標準)", use_container_width=True, key="btn_sum_to_eval"):
+            docx_bytes = None
+            try:
+                summarizer_eng = get_judgment_summarizer()
+                if summarizer_eng:
+                    docx_bytes = summarizer_eng.generate_summary_docx(sum_res)
+            except Exception:
+                pass
+            if docx_bytes:
+                st.download_button(
+                    "📄 下載 Word (.docx) 檔",
+                    data=docx_bytes,
+                    file_name=f"AI裁判精鍊_{clean_act_title}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True
+                )
+            else:
+                st.button("📄 Word 產生中", disabled=True, use_container_width=True)
+        with s_act3:
+            if st.button("📝 帶入試卷評分", use_container_width=True, key="btn_sum_to_eval"):
                 st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{active_title}】之案例事實與爭點深入申論其法律效果與實務見解。"
                 st.session_state["rubric_text_content"] = sum_res.get("markdown_result", "")
                 st.session_state["imported_from_bank_label"] = f"AI裁判摘要標準【{active_title[:15]}】"
                 st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
                 st.rerun()
-        with s_act3:
-            if st.button("📖 帶入高分擬答生成", use_container_width=True, key="btn_sum_to_ans"):
+        with s_act4:
+            if st.button("📖 帶入高分擬答", use_container_width=True, key="btn_sum_to_ans"):
                 m4_q_text = f"請就【{active_title}】所涉及之核心法律爭點，依 IRAC 架構撰寫標準上位卷擬答。"
                 st.session_state["m4_target_question"] = m4_q_text
                 st.session_state["m4_text_area_input"] = m4_q_text
@@ -6974,10 +7274,65 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                     else:
                         st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或由 AI 進行歷審精選裁判與學說補強。")
 
+                    # 🏛️ 最高法院引用本條之權威代表性裁判 (跨庫 406 萬實務精選)
+                    try:
+                        cre_engine = get_cross_reference_engine()
+                        if cre_engine:
+                            statute_judgments = cre_engine.get_landmark_judgments_for_statute(lname, ano, limit=6)
+                            if statute_judgments:
+                                with st.expander(f"🏛️ 引用本條之最高法院代表性裁判・判例（跨庫 406 萬實務精選共 {len(statute_judgments)} 則）", expanded=False):
+                                    st.caption(f"以下為司法實務引用《{lname}》{ano} 之最高法院判決、判例與大法庭裁定，支援秒級審級脈絡與 AI 深度精鍊：")
+                                    for sj_i, sj in enumerate(statute_judgments):
+                                        sj_cid = sj.get("case_id", "")
+                                        sj_court = sj.get("court", "最高法院")
+                                        sj_disp = sj_cid if sj_cid.startswith(sj_court) else f"{sj_court} {sj_cid}"
+                                        st.markdown(f"**📌 【{sj.get('level', '最高法院')}】`{sj_disp}`** ｜ 📅 {sj.get('date', '實務判解')}")
+                                        st.info(f"**核心主旨與要旨：**\n{sj.get('holding', '')}")
+                                        sj_col1, sj_col2, sj_col3 = st.columns([1.5, 1.5, 1])
+                                        with sj_col1:
+                                            if st.button(f"🌿 查看審級歷程", key=f"btn_sj_appeal_{idx}_{sj_i}", use_container_width=True):
+                                                st.session_state["target_history_case_id"] = sj_cid
+                                                st.session_state["m5_sub_mode_idx"] = M5_SUB_APPEAL_CHAIN
+                                                st.session_state["app_mode"] = MODE_SEARCH
+                                                st.session_state["nav_sidebar_radio_mode"] = MODE_SEARCH
+                                                st.rerun()
+                                        with sj_col2:
+                                            if st.button(f"📑 AI 深度精鍊", key=f"btn_sj_sum_{idx}_{sj_i}", use_container_width=True):
+                                                st.session_state["sum_citation_search"] = sj_cid
+                                                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                                                st.session_state["sum_input_title"] = sj_cid
+                                                st.session_state["sum_input_text"] = ""
+                                                st.session_state.pop("last_ai_sum_res", None)
+                                                st.session_state["app_mode"] = MODE_SUMMARIZER
+                                                st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
+                                                st.rerun()
+                                        with sj_col3:
+                                            st.link_button("🔗 官方全文", sj.get("official_url", "https://judgment.judicial.gov.tw/FJUD/default.aspx"), use_container_width=True)
+                                        st.markdown("---")
+                    except Exception:
+                        pass
+
                 with tab_orders_rulings:
                     st.markdown(render_formatted_article_quote(content, "📜 條文全文"))
                     st.markdown("#### 📋 法規命令與行政函釋")
                     st.caption("授權法規命令/細則全文點閱、主管機關行政指導與令函解釋：")
+
+                    # 📋 全國行政法規命令與作業要點庫 (10,452 部庫中關聯本法之規範)
+                    try:
+                        cre_engine = get_cross_reference_engine()
+                        if cre_engine:
+                            matching_orders = cre_engine.search_administrative_orders(lname, limit=5)
+                            if matching_orders:
+                                with st.expander(f"📋 全國行政法規命令庫中關聯部會規範（共 {len(matching_orders)} 部行政命令與要點）", expanded=False):
+                                    for mo in matching_orders:
+                                        st.markdown(f"**📜 《{mo.get('name')}》** ｜ 主管機關：`{mo.get('category')}` ｜ 最新修正：`{mo.get('date')}`")
+                                        if mo.get("snippet"):
+                                            st.caption(f"要旨：{mo.get('snippet')}")
+                                        if mo.get("url"):
+                                            st.link_button("🌐 全國法規資料庫官方全文", mo.get("url"), use_container_width=True)
+                                        st.markdown("---")
+                    except Exception:
+                        pass
 
                     # 第一區塊：關聯法規命令與施行細則
                     st.markdown("##### 📘 一、授權法規命令與細則全文")
