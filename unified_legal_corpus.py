@@ -73,20 +73,29 @@ class UnifiedLegalCorpusEngine:
 
         self.const_dir = Path(CONSTITUTIONAL_DIR)
 
+        self.coursework_path = Path("G:/我的雲端硬碟/LawExamData/data/raw_exams/academic_coursework_index.json")
+        if not self.coursework_path.exists():
+            cand_cw = Path(DATA_DIR) / "raw_exams" / "academic_coursework_index.json"
+            if cand_cw.exists():
+                self.coursework_path = cand_cw
+
         self._precedents_cache = None
         self._interp_cache = None
         self._laws_cache = None
+        self._coursework_cache = None
         self._query_cache: Dict[str, List[Dict[str, Any]]] = {}
 
     def get_corpus_statistics(self) -> Dict[str, Any]:
         """統計全典藏大庫收錄數量"""
+        cw_count = len(self._load_coursework()) or 115
         return {
             "master_judgments": 4069011,
             "administrative_orders": 10452,
             "national_laws": 1351,
             "precedents_and_resolutions": 11625,
             "constitutional_and_interpretations": 840,
-            "total_items": 4069011 + 10452 + 1351 + 11625 + 840
+            "academic_coursework": cw_count,
+            "total_items": 4069011 + 10452 + 1351 + 11625 + 840 + cw_count
         }
 
     def _load_precedents(self) -> List[Dict[str, Any]]:
@@ -100,6 +109,19 @@ class UnifiedLegalCorpusEngine:
             except Exception:
                 pass
         return self._precedents_cache
+
+
+    def _load_coursework(self) -> List[Dict[str, Any]]:
+        if self._coursework_cache is not None:
+            return self._coursework_cache
+        self._coursework_cache = []
+        if self.coursework_path.exists():
+            try:
+                with open(self.coursework_path, "r", encoding="utf-8") as f:
+                    self._coursework_cache = json.load(f)
+            except Exception:
+                pass
+        return self._coursework_cache
 
     def _load_interpretations(self) -> List[Dict[str, Any]]:
         if self._interp_cache is not None:
@@ -187,6 +209,30 @@ class UnifiedLegalCorpusEngine:
                         "date": interp.get("date", ""),
                         "holding": (holding[:160] + "...") if len(holding) > 160 else holding,
                         "url": "https://cons.judicial.gov.tw"
+                    })
+                    if len(results) >= limit:
+                        return results
+
+
+        # 3.5 檢索法學名師與學者評釋講義 (115 份講義、全科法學爭點庫)
+        if category in ("ALL", "ACADEMIC"):
+            cw_list = self._load_coursework()
+            for cw in cw_list:
+                fname = cw.get("filename", "")
+                subj = cw.get("subject", "")
+                prev = cw.get("summary_preview", "")
+                text_block = f"{fname} {subj} {prev}".lower()
+                if q_clean in text_block:
+                    results.append({
+                        "category": "學者文章與名師講義",
+                        "badge": "🎓 學者/名師講義",
+                        "title": fname,
+                        "sub_title": f"{subj} ｜ 類別：{cw.get('folder', '')} ｜ 篇幅：{cw.get('char_count', 0):,} 字",
+                        "date": "名師解題與體系精華",
+                        "holding": (prev[:180] + "...") if len(prev) > 180 else prev,
+                        "laws_cited": subj,
+                        "relative_path": cw.get("relative_path", ""),
+                        "url": ""
                     })
                     if len(results) >= limit:
                         return results

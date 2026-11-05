@@ -4916,16 +4916,18 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         st.subheader("🌐 全方位法學大典藏跨庫統一檢索")
         st.caption("完整比照「法源法律網」與「七法 Laws.club」旗艦檢索架構！一站式貫穿本機 **4,069,011 筆實體裁判**、**11,625 筆最高法院判例與決議**、**840+ 筆憲法法庭判決與大法官解釋**、**10,452 部行政命令要點**與 **1,351 部全國法律**。")
 
-        col_st1, col_st2, col_st3, col_st4, col_st5 = st.columns(5)
+        col_st1, col_st2, col_st3, col_st4, col_st5, col_st6 = st.columns(6)
         col_st1.metric("🏛️ 實體裁判大庫", "4,069,011 筆", "覆蓋各級法院")
-        col_st2.metric("⚖️ 最高院原判例/決議", "11,625 則", "百年司法傳承")
-        col_st3.metric("📜 憲判字與大法官釋字", "840+ 則", "憲政與基本權")
-        col_st4.metric("📋 全國行政命令與要點", "10,452 部", "部會函令指引")
+        col_st2.metric("⚖️ 最高院原判例", "11,625 則", "百年司法傳承")
+        col_st3.metric("📜 憲判與釋字", "840+ 則", "憲政基本權")
+        col_st4.metric("📋 行政命令要點", "10,452 部", "部會函令指引")
         col_st5.metric("📘 全國現行法律", "1,351 部", "法規母法全集")
+        col_st6.metric("🎓 學者名師講義", "115 份", "爭點解題架構")
 
         st.write("")
         corpus_categories = {
             "ALL": "🌐 全庫綜合整合檢索 (409萬法學大典)",
+            "ACADEMIC": "🎓 學者評釋與名師講義 (115 份講義)",
             "PRECEDENTS": "⚖️ 最高法院判例與決議 (11,625 則)",
             "CONSTITUTION": "📜 憲法判決與司法院釋字 (840+ 則)",
             "ORDERS": "📋 全國行政法規命令與作業要點 (10,452 部)",
