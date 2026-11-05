@@ -150,7 +150,7 @@ class CaseCitationVerifier:
 
         # Pattern A: 憲法法庭判決 / 裁定
         p_const = re.compile(
-            r'(?:憲法法庭\s*)?([0-9\uff10-\uff19]+)\s*年\s*(憲[判裁]|憲審)\s*字第\s*([0-9\uff10-\uff19]+)\s*號(?:\s*判決|\s*裁定)?'
+            r'(?:憲法法庭\s*)?([0-9\uff10-\uff19]+)\s*年\s*(憲[判裁]|憲審)\s*字\s*第?\s*([0-9\uff10-\uff19]+)\s*號(?:\s*判決|\s*裁定)?'
         )
         for m in p_const.finditer(text):
             span = m.span()
@@ -172,9 +172,9 @@ class CaseCitationVerifier:
                 "normalized": f"憲法法庭 {y_str} 年{word}字第 {no_str} 號"
             })
 
-        # Pattern B: 司法院釋字解釋
+        # Pattern B: 司法院釋字 / 院解字解釋
         p_interp = re.compile(
-            r'(?:司法院)?\s*釋字第\s*([0-9\uff10-\uff19]+)\s*號(?:\s*解釋)?'
+            r'(?:司法院)?\s*(釋字|院解?字)\s*第?\s*([0-9\uff10-\uff19]+)\s*號(?:\s*解釋)?'
         )
         for m in p_interp.finditer(text):
             span = m.span()
@@ -182,21 +182,48 @@ class CaseCitationVerifier:
                 continue
             seen_spans.add(span)
             raw = m.group(0).strip()
-            no_str = m.group(1).translate(FULL_TO_HALF)
+            w_prefix = m.group(1).strip()
+            no_str = m.group(2).translate(FULL_TO_HALF)
             citations.append({
                 "raw": raw,
                 "span": span,
                 "category": "INTERPRETATION",
                 "court": "司法院大法官",
                 "year": "",
-                "word": "釋字",
+                "word": w_prefix,
                 "no": no_str,
-                "normalized": f"司法院釋字第 {no_str} 號解釋"
+                "normalized": f"司法院{w_prefix}第 {no_str} 號解釋"
             })
 
-        # Pattern C: 各級法院判決、裁定、判例、大法庭
+        # Pattern C: 最高法院庭長法官聯席會議決議 (Resolutions)
+        p_res = re.compile(
+            r'((?:最高法院)?\s*([0-9\uff10-\uff19一二三四五六七八九十百〇零]+)\s*年度?(?:度)?\s*(?:第\s*([0-9\uff10-\uff19一二三四五六七八九十]+)\s*次)?\s*(?:民事庭|刑事庭|民刑庭|刑庭|民庭)?\s*(?:庭長法官聯席)?\s*(?:會議)?\s*決議)'
+        )
+        for m in p_res.finditer(text):
+            span = m.span()
+            if any(s <= span[0] and span[1] <= e for s, e in seen_spans):
+                continue
+            seen_spans.add(span)
+            raw = m.group(1).strip()
+            y_raw = m.group(2).translate(FULL_TO_HALF)
+            y_num = chinese_to_number(y_raw)
+            y_str = str(y_num) if y_num > 0 else y_raw
+            no_raw = m.group(3).translate(FULL_TO_HALF) if m.group(3) else ""
+            no_num = chinese_to_number(no_raw) if no_raw else ""
+            citations.append({
+                "raw": raw,
+                "span": span,
+                "category": "RESOLUTION",
+                "court": "最高法院",
+                "year": y_str,
+                "word": "決議",
+                "no": str(no_num) if no_num else "",
+                "normalized": raw
+            })
+
+        # Pattern D: 各級法院判決、裁定、判例、大法庭
         p_jud = re.compile(
-            r'((?:最高法院|最高行政法院|臺灣高等法院|高等法院|臺北高等行政法院|臺中高等行政法院|高雄高等行政法院|[臺台][\u4e00-\u9fa5]{2,6}地方法院)?\s*([0-9\uff10-\uff19一二三四五六七八九十百〇零]+)\s*年(?:度)?\s*([^\d\s，。；:：\(\)（）]{1,8}?)\s*字第\s*([0-9\uff10-\uff19]+)\s*號(?:\s*判決|\s*裁定|\s*判例)?)'
+            r'((?:最高法院|最高行政法院|臺灣高等法院|高等法院|臺北高等行政法院|臺中高等行政法院|高雄高等行政法院|[臺台][\u4e00-\u9fa5]{2,6}地方法院)?\s*([0-9\uff10-\uff19一二三四五六七八九十百〇零]+)\s*年(?:度)?\s*([^\d\s，。；:：\(\)\uff08\uff09]{1,8}?)\s*字\s*第?\s*([0-9\uff10-\uff19]+)\s*號(?:\s*(?:民事|刑事|行政))?(?:\s*(?:判決|裁定|判例|大法庭裁定))?)'
         )
         for m in p_jud.finditer(text):
             span = m.span()
@@ -204,7 +231,7 @@ class CaseCitationVerifier:
                 continue
             seen_spans.add(span)
             raw = m.group(1).strip()
-            if "憲判" in raw or "釋字" in raw:
+            if "憲判" in raw or "釋字" in raw or "決議" in raw:
                 continue
 
             court = ""
@@ -269,6 +296,37 @@ class CaseCitationVerifier:
         y = str(cit.get("year", "")).strip()
         w = str(cit.get("word", "")).strip()
         n = str(cit.get("no", "")).strip()
+
+        # ---------------------------------------------------------------------
+        # 檢驗情境 0: 最高法院庭長法官聯席會議決議 (RESOLUTION)
+        # ---------------------------------------------------------------------
+        if category == "RESOLUTION":
+            raw_res = cit.get("raw", "")
+            if self.authority_db_path.exists():
+                try:
+                    with sqlite3.connect(str(self.authority_db_path), timeout=2.0) as a_conn:
+                        a_conn.row_factory = sqlite3.Row
+                        p_query = f"%{y}%決議%"
+                        r_row = a_conn.execute(
+                            "SELECT case_no, precedent_id, title, holding, reasoning, source_url FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
+                            (p_query, p_query)
+                        ).fetchone()
+                        if not r_row:
+                            r_row = a_conn.execute(
+                                "SELECT case_no, title, holding, reasoning FROM authority_records WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
+                                (p_query, p_query)
+                            ).fetchone()
+                        if r_row:
+                            result["is_verified"] = True
+                            result["match_source"] = "AUTHORITY_DB_RESOLUTION"
+                            result["case_id"] = r_row["case_no"] or r_row["title"] or raw_res
+                            result["court"] = "最高法院"
+                            result["title"] = r_row["title"] or ""
+                            result["holding"] = r_row["holding"] or r_row["reasoning"] or ""
+                            result["official_url"] = "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+                            return result
+                except Exception:
+                    pass
 
         # ---------------------------------------------------------------------
         # 檢驗情境 A: 憲法法庭判決 / 裁定 (CONSTITUTIONAL)

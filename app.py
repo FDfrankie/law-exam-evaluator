@@ -693,37 +693,40 @@ def load_all_drive_notes():
 class _LazyDriveNotes(list):
     """
     延遲加載個人法學筆記與講義清單，避免每次頁面渲染重新掃描實體雲端硬碟。
+    完全委託 @st.cache_data 快取，支援即時快取清理與動態迭代。
     """
-    def __init__(self):
-        super().__init__()
-        self._loaded = False
-
-    def _ensure(self):
-        if not self._loaded:
-            self.clear()
-            self.extend(load_all_drive_notes())
-            self._loaded = True
-
-    def reload(self):
-        self._loaded = False
-        load_all_drive_notes.clear()
-        self._ensure()
+    def _get_data(self):
+        return load_all_drive_notes()
 
     def __iter__(self):
-        self._ensure()
-        return super().__iter__()
+        return iter(self._get_data())
 
     def __len__(self):
-        self._ensure()
-        return super().__len__()
+        return len(self._get_data())
 
     def __getitem__(self, idx):
-        self._ensure()
-        return super().__getitem__(idx)
+        return self._get_data()[idx]
 
     def __bool__(self):
-        self._ensure()
-        return super().__len__() > 0
+        return len(self._get_data()) > 0
+
+    def __contains__(self, item):
+        return item in self._get_data()
+
+    def index(self, value, *args):
+        return self._get_data().index(value, *args)
+
+    def count(self, value):
+        return self._get_data().count(value)
+
+    def __reversed__(self):
+        return reversed(self._get_data())
+
+    def copy(self):
+        return list(self._get_data())
+
+    def clear(self):
+        load_all_drive_notes.clear()
 
 drive_notes = _LazyDriveNotes()
 
