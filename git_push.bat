@@ -1,12 +1,15 @@
 @echo off
-title Git Push Sync
+chcp 65001 > nul
+title Git 專案同步與雲端推送
 echo ========================================================
-echo        Git Commit & Push Auto Sync
+echo        Git 自動提交與 GitHub 遠端同步
 echo ========================================================
 
 cd /d "%~dp0"
 git add -A
-git commit -m "Auto update project files"
-git push
+git commit -m "fix: auto sync and optimize codebase"
+git push origin main
 
+echo.
+echo 同步完成。
 pause

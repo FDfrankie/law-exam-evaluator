@@ -1,17 +1,17 @@
 @echo off
-title Taiwan Law Exam Model Fine-Tuning
+chcp 65001 > nul
+title 司律法學大模型微調訓練
 echo ========================================================
-echo   Taiwan Law Exam Model SFT Fine-Tuning
+echo        司律法學評分與擬答模型微調訓練
 echo ========================================================
-echo.
-echo Dataset: G:\�ڪ����ݵw��\LawExamData\data\training_data\law_exam_verified_sft.jsonl
-echo Checkpoints: G:\�ڪ����ݵw��\LawExamData\data\checkpoints\law_evaluator_qwen
-echo Python: C:\Users\mis\miniconda3\python.exe
 echo.
 
 cd /d "%~dp0"
-"C:\Users\mis\miniconda3\python.exe" train_evaluator.py --epochs 1 --batch_size 2 --max_samples 100
+set PY_EXE=C:\Users\mis\miniconda3\python.exe
+if not exist "%PY_EXE%" set PY_EXE=python
+
+"%PY_EXE%" train_evaluator.py --epochs 1 --batch_size 2 --max_samples 100
 
 echo.
-echo Training process completed.
+echo 模型微調作業完成。
 pause

@@ -1,23 +1,19 @@
 @echo off
-title ¥qªk°|µô§P¸ê®Æ®w§C°O¾ĞÅé¦ê¬y¶×¤J
+chcp 65001 > nul
+title å¸æ³•é™¢è£åˆ¤è³‡æ–™åº«å…¨è‡ªå‹•ä½è¨˜æ†¶é«”ä¸²æµå…¥åº«
 echo ========================================================
-echo    ¥qªk°|µô§P¸ê®Æ®w§C°O¾ĞÅé¤J®w¤ŞÀº (Â_ÂIÄò¶Ç)
-echo ========================================================
-echo.
-echo Python ª½Ä¶¾¹ : C:\Users\mis\miniconda3\python.exe
-echo µ{¦¡¸}¥»¸ô®| : G:\§Úªº¶³ºİµwºĞ\LawExamData\code\ingest_opendata_lowmem.py
-echo.
-echo [´£¥Ü] ¨ã³Æ§¹¥şÂ_ÂIÄò¶Ç¥\¯à¡A¥ô¦ó®É­ÔÃö³¬µøµ¡³£¤£·|¿ò¥¢¶i«×¡C
-echo.
-echo ========================================================
-echo [¶}©l°õ¦æ¦ê¬y¤J®w...]
+echo        å¸æ³•é™¢è£åˆ¤è³‡æ–™åº«å…¨è‡ªå‹•ä¸²æµå…¥åº« (æ–·é»çºŒå‚³)
 echo ========================================================
 echo.
 
-"C:\Users\mis\miniconda3\python.exe" -u "G:\§Úªº¶³ºİµwºĞ\LawExamData\code\ingest_opendata_lowmem.py"
+cd /d "%~dp0"
+set PY_EXE=C:\Users\mis\miniconda3\python.exe
+if not exist "%PY_EXE%" set PY_EXE=python
+
+"%PY_EXE%" -u ingest_opendata_lowmem.py
 
 echo.
 echo ========================================================
-echo °õ¦æµ²§ô¡C
+echo å…¥åº«ä½œæ¥­åŸ·è¡Œå®Œç•¢ã€‚
 echo ========================================================
 pause

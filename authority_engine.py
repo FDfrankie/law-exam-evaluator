@@ -53,25 +53,14 @@ class JudicialAuthorityEngine:
             self._init_db()
 
     def _get_conn(self, read_only: bool = False) -> sqlite3.Connection:
-        if read_only:
-            try:
-                uri = f"file:///{self.db_path.as_posix()}?mode=ro"
-                conn = sqlite3.connect(uri, uri=True, timeout=60.0, factory=ClosingConnection)
-            except Exception:
-                conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
-        else:
-            conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
+        conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA busy_timeout = 60000;")
+            conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA temp_store = MEMORY;")
         except Exception:
             pass
-        if not read_only:
-            try:
-                conn.execute("PRAGMA synchronous = NORMAL;")
-                conn.execute("PRAGMA temp_store = MEMORY;")
-            except Exception:
-                pass
         return conn
 
     def _init_db(self):

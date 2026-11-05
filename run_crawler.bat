@@ -1,16 +1,17 @@
 @echo off
-title Taiwan Law Exam Crawler and SFT Generator
+chcp 65001 > nul
+title 台灣法學試題與判解自動爬梳流水線
 echo ========================================================
-echo   Taiwan Law Exam Data Harvester
+echo        台灣法學試題與權威判解自動爬梳
 echo ========================================================
-echo.
-echo Target Storage: G:\�ڪ����ݵw��\LawExamData\
-echo Python interpreter: C:\Users\mis\miniconda3\python.exe
 echo.
 
 cd /d "%~dp0"
-"C:\Users\mis\miniconda3\python.exe" mass_crawler_pipeline.py
+set PY_EXE=C:\Users\mis\miniconda3\python.exe
+if not exist "%PY_EXE%" set PY_EXE=python
+
+"%PY_EXE%" mass_crawler_pipeline.py
 
 echo.
-echo Harvester process finished.
+echo 爬梳流程完成。
 pause

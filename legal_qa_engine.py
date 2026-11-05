@@ -678,9 +678,32 @@ class LegalQAEngine:
 
         analysis_result = self._call_model(prompt)
 
+        # 執行全量實體裁判案號防偽核驗 (Multi-Million Ground-Truth Case Verifier)
+        case_ver_res = {}
+        try:
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            case_ver_res = verifier.verify_and_decorate_response(analysis_result, context_topic=q_clean, auto_badge=True)
+            if case_ver_res.get("annotated_text"):
+                analysis_result = case_ver_res["annotated_text"]
+        except Exception:
+            pass
+
         # 執行事後真實性核實審計 (Post-Generation Grounding & Verification)
         audit_res = self.verify_citations_against_dataset(analysis_result)
-        final_content = analysis_result.rstrip() + "\n\n" + audit_res.get("audit_markdown", "")
+        
+        statute_audit_md = audit_res.get("audit_markdown", "")
+        case_audit_md = case_ver_res.get("audit_markdown", "")
+        
+        final_appendices = []
+        if statute_audit_md:
+            final_appendices.append(statute_audit_md)
+        if case_audit_md and "Ground Truth Case Audit" not in statute_audit_md:
+            final_appendices.append(case_audit_md)
+
+        final_content = analysis_result.rstrip()
+        if final_appendices:
+            final_content += "\n\n" + "\n\n".join(final_appendices)
 
         return {
             "success": True,
@@ -691,7 +714,8 @@ class LegalQAEngine:
             "question": q_clean,
             "content": final_content,
             "raw_content": analysis_result,
-            "verification_audit": audit_res
+            "verification_audit": audit_res,
+            "case_verification": case_ver_res
         }
 
     def generate_legal_notice(
@@ -827,113 +851,33 @@ class LegalQAEngine:
             else:
                 unverified_statutes.append(statute_item)
 
-        # 2. 萃取裁判案號引用
-        case_patterns = [
-            r'((?:最高法院|最高行政法院|憲法法庭|臺灣高等法院|高等法院|各地方法院|司法院)?[^\s，。\n「」『』]{0,10}?[0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*字?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*判決|\s*裁定|\s*大法庭裁定)?)',
-            r'([0-9]{1,3}\s*年(?:度)?\s*[^\s0-9]{1,6}\s*大(?:庭|字)?\s*第?\s*[0-9]+\s*號(?:\s*民事|\s*刑事)?(?:\s*裁定)?)',
-            r'([0-9]{1,3}\s*年\s*憲判字第?\s*[0-9]+\s*號(?:判決)?)',
-            r'((?:司法院)?釋字第?\s*[0-9]+\s*號(?:解釋)?)',
-            r'(最高法院\s*[0-9]{1,3}\s*年度?(?:第[^\s]+次)?(?:民事庭|刑事庭)?(?:庭長法官聯席)?(?:會議)?決議)'
-        ]
-
-        all_raw_cases = []
-        for pat in case_patterns:
-            for m in re.finditer(pat, text):
-                cand = m.group(1).strip()
-                if len(cand) >= 6 and re.search(r'[0-9]', cand):
-                    all_raw_cases.append(cand)
-
+        # 2. 萃取裁判案號並以毫秒級複合索引進行實體查核 (CaseCitationVerifier)
         verified_cases = []
         unverified_cases = []
-        seen_case_signatures = set()
-
-        db_engine = None
         try:
-            from build_million_judgments_db import get_million_db_engine
-            db_engine = get_million_db_engine()
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            citations = verifier.extract_citations(text)
+            seen_signatures = set()
+            for cit in citations:
+                sig = f"{cit.get('court')}_{cit.get('year')}_{cit.get('word')}_{cit.get('no')}"
+                if sig in seen_signatures:
+                    continue
+                seen_signatures.add(sig)
+                v_res = verifier.verify_citation(cit)
+                c_item = {
+                    "raw_citation": v_res.get("raw", ""),
+                    "official_case_id": v_res.get("case_id") or v_res.get("raw", ""),
+                    "verified": v_res.get("is_verified", False),
+                    "match_details": v_res.get("holding")[:60] if v_res.get("holding") else (v_res.get("title") or "權威裁判"),
+                    "external_url": v_res.get("official_url") or "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+                }
+                if v_res.get("is_verified"):
+                    verified_cases.append(c_item)
+                else:
+                    unverified_cases.append(c_item)
         except Exception:
             pass
-
-        for raw_case in all_raw_cases:
-            clean_c = raw_case.strip()
-            sig = re.sub(r'[\s]+', '', clean_c)
-            if sig in seen_case_signatures:
-                continue
-            seen_case_signatures.add(sig)
-
-            is_verified = False
-            match_details = ""
-            official_case_id = clean_c
-
-            # (A) 檢查 BUILTIN_LANDMARK_DOCS
-            for b in BUILTIN_LANDMARK_DOCS:
-                b_tit = b.get("title", "")
-                b_cid = b.get("case_id", "")
-                if clean_c in b_tit or clean_c in b_cid or (sig in re.sub(r'[\s]+', '', b_tit)):
-                    is_verified = True
-                    match_details = b.get("title")
-                    official_case_id = b.get("case_id") or b_tit
-                    break
-
-            # (B) 至 SQLite judgments_meta 核實
-            if not is_verified and db_engine:
-                y_m = re.search(r'([0-9]{1,3})\s*年', clean_c)
-                n_m = re.search(r'第?\s*([0-9]+)\s*號', clean_c)
-                if y_m and n_m:
-                    y_val = y_m.group(1)
-                    n_val = n_m.group(1)
-                    try:
-                        with db_engine._get_conn(db_engine.index_db_path) as conn:
-                            cur = conn.cursor()
-                            cur.execute(
-                                "SELECT case_id, title FROM judgments_meta WHERE jud_year = ? AND jud_no = ? LIMIT 1",
-                                (y_val, n_val)
-                            )
-                            r = cur.fetchone()
-                            if r:
-                                is_verified = True
-                                official_case_id = r[0]
-                                match_details = r[1]
-                    except Exception:
-                        pass
-
-            # (C) 至 authority_engine 核實（涵蓋 813 則釋字、憲判字、大法庭裁定與萬則判例）
-            if not is_verified:
-                try:
-                    from authority_engine import get_engine
-                    a_eng = get_engine()
-                    with a_eng._get_conn(read_only=True) as a_conn:
-                        r_auth = a_conn.execute(
-                            "SELECT case_no, title FROM authority_records WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
-                            (f"%{clean_c}%", f"%{clean_c}%")
-                        ).fetchone()
-                        if r_auth:
-                            is_verified = True
-                            official_case_id = r_auth[0]
-                            match_details = r_auth[1]
-                        else:
-                            r_prec = a_conn.execute(
-                                "SELECT case_no, title FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
-                                (f"%{clean_c}%", f"%{clean_c}%")
-                            ).fetchone()
-                            if r_prec:
-                                is_verified = True
-                                official_case_id = r_prec[0]
-                                match_details = r_prec[1]
-                except Exception:
-                    pass
-
-            case_item = {
-                "raw_citation": clean_c,
-                "official_case_id": official_case_id,
-                "verified": is_verified,
-                "match_details": match_details,
-                "external_url": f"https://judgment.judicial.gov.tw/FJUD/default.aspx"
-            }
-            if is_verified:
-                verified_cases.append(case_item)
-            else:
-                unverified_cases.append(case_item)
 
         # 3. 產出 Markdown 審計卡片
         audit_lines = [
@@ -953,7 +897,7 @@ class LegalQAEngine:
         if verified_cases or unverified_cases:
             audit_lines.append("\n#### 🏛️ 裁判案號與司法先例真實性檢驗：")
             for vc in verified_cases:
-                audit_lines.append(f"- ✅ **【本機裁判庫正本核實】**：`{vc['official_case_id']}`（收錄主題：{vc['match_details'] or '權威指標判旨'}）")
+                audit_lines.append(f"- ✅ **【本機裁判庫正本核實】**：`{vc['official_case_id']}` ➔ [🔗 司法院正本檢索]({vc['external_url']})（收錄主題：{vc['match_details'] or '權威指標判旨'}）")
             for uc in unverified_cases:
                 audit_lines.append(f"- ⚠️ **【未於本機權威大庫收錄・請謹慎核對】**：`{uc['raw_citation']}` ➔ [🔍 點此前往司法院官方查詢系統核實]({uc['external_url']})")
 

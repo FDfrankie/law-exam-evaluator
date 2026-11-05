@@ -223,6 +223,15 @@ class LawExamGenerator:
 【深度結合指令】：請深入提取上述考生筆記所載之爭點論理、肯否兩說、法條構成要件或判決字號，將其轉換為題目情境與選項陷阱！
 """
 
+        # 檢索司法權威裁判注入命題背景
+        grounding_instruction = ""
+        try:
+            from authority_engine import get_dynamic_legal_grounding
+            g_res = get_dynamic_legal_grounding(f"{subject} {topic}", subject=subject, limit=3)
+            grounding_instruction = g_res.get("grounding_prompt_block", "")
+        except Exception:
+            grounding_instruction = ""
+
         batch_size = 5
         all_questions = []
         answer_key = {}
@@ -326,6 +335,21 @@ class LawExamGenerator:
                 progress_callback(len(all_questions), count)
 
         exam_id = f"ai_exam_{uuid.uuid4().hex[:8]}"
+        # 逐題查核解析中引用之判解字號真實性
+        try:
+            from case_citation_verifier import get_case_verifier
+            c_verifier = get_case_verifier()
+            for q in all_questions:
+                exp_text = q.get("explanation", "")
+                if exp_text:
+                    v_res = c_verifier.verify_and_decorate_response(exp_text, auto_badge=True)
+                    if v_res.get("annotated_text"):
+                        q["explanation"] = v_res["annotated_text"]
+                    if v_res.get("citations"):
+                        q["citation_verification"] = v_res["citations"]
+        except Exception:
+            pass
+
         return {
             "exam_id": exam_id,
             "subject": subject,
@@ -349,6 +373,15 @@ class LawExamGenerator:
 \"\"\"
 【特別命題指示】：請深入融合上述考生筆記中的核心法條、權威裁判判旨與學者爭點，編織進本題二試實例案件事實中！
 """
+
+        # 檢索司法權威裁判注入二試命題背景
+        grounding_instruction = ""
+        try:
+            from authority_engine import get_dynamic_legal_grounding
+            g_res = get_dynamic_legal_grounding(f"{subject} {topic}", subject=subject, limit=5)
+            grounding_instruction = g_res.get("grounding_prompt_block", "")
+        except Exception:
+            grounding_instruction = ""
 
         prompt = f"""
 你是一位台灣「律師司法官高等考試二試」命題召集人。
@@ -432,18 +465,21 @@ class LawExamGenerator:
             )
         )
         ans_text = response.text
-        if verifier_func:
-            try:
-                v_res = verifier_func(ans_text)
-                if v_res.get("verified") or v_res.get("unverified"):
-                    v_badges = []
-                    if v_res.get("verified"):
-                        v_badges.append(f"✅ **經權威裁判庫核定真跡**：{', '.join([c['citation'] for c in v_res['verified']])}")
-                    if v_res.get("unverified"):
-                        v_badges.append(f"⚠️ **未於權威庫中精確比對之字號（請以法理為準）**：{', '.join(v_res['unverified'])}")
-                    ans_text += "\n\n---\n#### 🛡️ 司法院權威裁判真偽核驗報告：\n" + "\n".join(v_badges)
-            except Exception:
-                pass
+        # 全量實體裁判案號防偽核驗與真跡超連結注入 (CaseCitationVerifier)
+        try:
+            from case_citation_verifier import get_case_verifier
+            c_verifier = get_case_verifier()
+            v_res = c_verifier.verify_and_decorate_response(
+                ans_text,
+                context_topic=f"{subject} {question[:50]}",
+                auto_badge=True
+            )
+            if v_res.get("annotated_text"):
+                ans_text = v_res["annotated_text"]
+            if v_res.get("audit_markdown"):
+                ans_text += "\n\n" + v_res["audit_markdown"]
+        except Exception:
+            pass
         return ans_text
 
     @staticmethod

@@ -644,6 +644,25 @@ class TextbookGenerator:
 
         content_markdown = self._call_ai(prompt)
 
+        # 實體裁判案號防偽核驗與官方判旨超連結注入 (CaseCitationVerifier)
+        if progress_callback:
+            progress_callback("正在比對 400 萬筆實體裁判庫與判例先例，核驗教材引用字號...")
+
+        try:
+            from case_citation_verifier import get_case_verifier
+            c_verifier = get_case_verifier()
+            v_res = c_verifier.verify_and_decorate_response(
+                content_markdown,
+                context_topic=f"{subject} {chapter} {topic.get('title', '')}",
+                auto_badge=True
+            )
+            if v_res.get("annotated_text"):
+                content_markdown = v_res["annotated_text"]
+            if v_res.get("audit_markdown"):
+                content_markdown += "\n\n" + v_res["audit_markdown"]
+        except Exception:
+            pass
+
         return {
             "success": True,
             "subject": subject,

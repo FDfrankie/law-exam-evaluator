@@ -176,10 +176,41 @@ class LawExamEvaluator:
         with open(report_file, "w", encoding="utf-8") as f:
             json.dump(result_json, f, ensure_ascii=False, indent=2)
 
-        if verifier_func and isinstance(result_json, dict) and "suggested_revision" in result_json:
+        # 全量實體裁判案號防偽與考卷字號真實性查核 (CaseCitationVerifier)
+        if isinstance(result_json, dict):
             try:
-                v_res = verifier_func(result_json["suggested_revision"])
-                result_json["citation_verification"] = v_res
-            except Exception:
+                from case_citation_verifier import get_case_verifier
+                verifier = get_case_verifier()
+
+                # 1. 查核並裝飾閱卷委員優化建議 (suggested_revision)
+                if "suggested_revision" in result_json and result_json["suggested_revision"]:
+                    v_res = verifier.verify_and_decorate_response(
+                        result_json["suggested_revision"],
+                        context_topic=question_text[:60],
+                        auto_badge=True
+                    )
+                    result_json["suggested_revision_annotated"] = v_res.get("annotated_text", "")
+                    result_json["citation_verification"] = v_res
+                    result_json["audit_markdown"] = v_res.get("audit_markdown", "")
+
+                # 2. 查核考生原卷引用字號 (防範考生作答憑空捏造案號)
+                student_text = result_json.get("transcription") or submission_text or ""
+                if student_text:
+                    s_res = verifier.verify_and_decorate_response(
+                        student_text,
+                        context_topic="考生作答字號真實性檢視",
+                        auto_badge=True
+                    )
+                    result_json["student_citation_verification"] = s_res
+
+            except Exception as e_ver:
                 pass
+
+        # 覆寫儲存已注入真實性核驗之報告
+        try:
+            with open(report_file, "w", encoding="utf-8") as f:
+                json.dump(result_json, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
         return result_json
