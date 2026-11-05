@@ -629,6 +629,17 @@ class CaseCitationVerifier:
 
         return "\n".join(md_lines)
 
+    def verify_text_citations(
+        self,
+        text: str,
+        context_topic: str = "",
+        auto_badge: bool = True
+    ) -> Dict[str, Any]:
+        """
+        驗證文本中所有引述裁判案號之實體真實性（verify_and_decorate_response 之直觀相容別名）。
+        """
+        return self.verify_and_decorate_response(text, context_topic=context_topic, auto_badge=auto_badge)
+
 
 _global_verifier = None
 

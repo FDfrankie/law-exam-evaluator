@@ -400,6 +400,216 @@ def calculate_statutory_interest(
     }
 
 
+def get_hoffman_factor(years: int, months: int = 0) -> float:
+    """
+    計算司法院標準年別單利霍夫曼係數（年息 5% 單利扣除中間利息）。
+    H(n) = Σ_{t=0}^{n-1} [1 / (1 + t * 0.05)]
+    """
+    factor = 0.0
+    for t in range(years):
+        factor += 1.0 / (1.0 + t * 0.05)
+    if months > 0:
+        factor += (months / 12.0) * (1.0 / (1.0 + years * 0.05))
+    return round(factor, 6)
+
+
+def calculate_personal_injury_damages(
+    medical_cost: float,
+    care_days: int,
+    daily_care_rate: float = 2200.0,
+    lost_work_months: float = 0.0,
+    monthly_wage: float = 40000.0,
+    victim_age: int = 35,
+    retirement_age: int = 65,
+    disability_level: int = 0,
+    custom_disability_pct: float = 0.0,
+    pain_suffering_amount: float = 200000.0,
+    comparative_negligence_pct: float = 0.0,
+    insurance_paid: float = 0.0
+) -> Dict[str, Any]:
+    """
+    依司法院與最高法院通說標準精算人身侵權損害賠償：
+    1. 醫療費用
+    2. 看護費用（含親屬看護，最高法院 94 年度台上字第 1543 號判決）
+    3. 醫療期間不能工作之薪作損失
+    4. 勞動能力減損（曾玉堂失能等級對照表 + 司法院單利霍夫曼係數計算）
+    5. 精神慰撫金（民法第 195 條）
+    6. 與有過失扣減（民法第 217 條）與強制汽車責任險扣除
+    """
+    disability_map = {
+        1: 100.0, 2: 100.0, 3: 100.0, 4: 92.28, 5: 84.59,
+        6: 76.90, 7: 69.21, 8: 61.52, 9: 53.83, 10: 46.14,
+        11: 38.45, 12: 30.76, 13: 23.07, 14: 15.38, 15: 7.69
+    }
+    pct = custom_disability_pct if custom_disability_pct > 0 else disability_map.get(disability_level, 0.0)
+
+    total_care = round(care_days * daily_care_rate, 2)
+    total_lost_work = round(lost_work_months * monthly_wage, 2)
+
+    remaining_years = max(0, retirement_age - victim_age)
+    hoffman_factor = get_hoffman_factor(remaining_years) if remaining_years > 0 and pct > 0 else 0.0
+    annual_loss = round((monthly_wage * 12.0) * (pct / 100.0), 2)
+    labor_loss_total = round(annual_loss * hoffman_factor, 2)
+
+    subtotal = round(medical_cost + total_care + total_lost_work + labor_loss_total + pain_suffering_amount, 2)
+
+    neg_pct = max(0.0, min(100.0, comparative_negligence_pct))
+    after_neg = round(subtotal * (1.0 - (neg_pct / 100.0)), 2)
+    final_award = max(0.0, round(after_neg - insurance_paid, 2))
+
+    steps = [
+        f"1. 實支醫療與輔具費用：NT${medical_cost:,.0f} 元",
+        f"2. 必要看護費用（以每日 NT${daily_care_rate:,.0f} 計，共 {care_days} 日）：NT${total_care:,.0f} 元（最高法院 94 台上 1543 號：親屬看護得比照常情評價）",
+        f"3. 醫療不能工作薪資損失（{lost_work_months} 個月 × 月薪 NT${monthly_wage:,.0f}）：NT${total_lost_work:,.0f} 元",
+        f"4. 勞動能力減損（失能等級 {disability_level} 級，減損率 {pct:.2f}%，勞動年數自 {victim_age} 歲計至退休 {retirement_age} 歲共 {remaining_years} 年，司法院霍夫曼單利係數 {hoffman_factor:.4f}）：年減損額 NT${annual_loss:,.0f} × 霍夫曼係數 = NT${labor_loss_total:,.0f} 元",
+        f"5. 精神慰撫金（民法第 195 條）：NT${pain_suffering_amount:,.0f} 元",
+        f"➔ 損害總額合計（過失相抵前）：NT${subtotal:,.0f} 元"
+    ]
+    if neg_pct > 0:
+        steps.append(f"6. 被害人與有過失扣減 {neg_pct:.1f}%（民法第 217 條）：減損 NT${(subtotal * (neg_pct / 100.0)):,.0f} 元 ➔ 餘額 NT${after_neg:,.0f} 元")
+    if insurance_paid > 0:
+        steps.append(f"7. 強制險或已受領保險給付扣除：-NT${insurance_paid:,.0f} 元 ➔ 最終應受賠償金額 NT${final_award:,.0f} 元")
+
+    return {
+        "medical_cost": medical_cost,
+        "care_cost": total_care,
+        "lost_work_cost": total_lost_work,
+        "labor_loss_cost": labor_loss_total,
+        "labor_disability_pct": pct,
+        "remaining_years": remaining_years,
+        "hoffman_factor": hoffman_factor,
+        "pain_suffering": pain_suffering_amount,
+        "subtotal": subtotal,
+        "comparative_negligence_pct": neg_pct,
+        "insurance_deduction": insurance_paid,
+        "final_award": final_award,
+        "steps": steps,
+        "legal_basis": "民法第191-2條（動力車輛駕駛人責任）、民法第193條第1項（侵害身體健康之賠償）、民法第195條第1項（非財產上損害賠償）、民法第217條（與有過失）、最高法院94年度台上字第1543號判決、司法院霍夫曼單利扣除中間利息試算標準。"
+    }
+
+
+def calculate_occupational_accident_compensation(
+    medical_cost: float,
+    incapacity_months: float,
+    monthly_wage: float,
+    disability_days: int = 0,
+    is_death: bool = False,
+    labor_insurance_payout: float = 0.0
+) -> Dict[str, Any]:
+    """
+    依勞動基準法第 59 條職業災害補償精算雇主法定無過失補償責任與保險抵充：
+    1. 必需醫療費用補償（第1款）
+    2. 醫療中不能工作之原領工資補償（第2款）
+    3. 殘廢/失能補償（第3款）
+    4. 喪葬費 5 個月 + 死亡補償 40 個月 = 45 個月平均工資（第4款）
+    5. 勞工保險局職災保險給付全額抵充（第59條但書）
+    """
+    med_comp = round(medical_cost, 2)
+    wage_comp = round(incapacity_months * monthly_wage, 2)
+    daily_wage = round(monthly_wage / 30.0, 2)
+    disability_comp = round(daily_wage * disability_days, 2)
+
+    if is_death:
+        funeral_comp = round(monthly_wage * 5.0, 2)
+        death_comp = round(monthly_wage * 40.0, 2)
+        death_total = round(funeral_comp + death_comp, 2)
+    else:
+        funeral_comp = 0.0
+        death_comp = 0.0
+        death_total = 0.0
+
+    statutory_total = round(med_comp + wage_comp + disability_comp + death_total, 2)
+    offset_amount = min(statutory_total, round(labor_insurance_payout, 2))
+    employer_payable = max(0.0, round(statutory_total - offset_amount, 2))
+
+    steps = [
+        f"1. 醫療費用補償（勞基法第 59 條第 1 款）：必需醫療支出 NT${med_comp:,.0f} 元",
+        f"2. 原領工資補償（勞基法第 59 條第 2 款）：醫療不能工作 {incapacity_months} 個月 × 原領工資 NT${monthly_wage:,.0f} = NT${wage_comp:,.0f} 元",
+    ]
+    if disability_days > 0:
+        steps.append(f"3. 失能補償（勞基法第 59 條第 3 款）：按日投保薪資 NT${daily_wage:,.0f} × 勞保失能給付日數 {disability_days} 日 = NT${disability_comp:,.0f} 元")
+    if is_death:
+        steps.append(f"4. 死亡與喪葬補償（勞基法第 59 條第 4 款）：喪葬費 5 個月 NT${funeral_comp:,.0f} + 遺屬補償 40 個月 NT${death_comp:,.0f} = NT${death_total:,.0f} 元")
+    steps.append(f"➔ 雇主法定職災無過失補償責任總額：NT${statutory_total:,.0f} 元")
+    if offset_amount > 0:
+        steps.append(f"5. 勞保局已給付職業災害保險金額抵充（勞基法第 59 條但書）：-NT${offset_amount:,.0f} 元 ➔ 雇主實質應給付差額 NT${employer_payable:,.0f} 元")
+
+    return {
+        "medical_compensation": med_comp,
+        "wage_compensation": wage_comp,
+        "disability_compensation": disability_comp,
+        "funeral_compensation": funeral_comp,
+        "death_compensation": death_comp,
+        "statutory_total": statutory_total,
+        "labor_insurance_offset": offset_amount,
+        "employer_payable": employer_payable,
+        "steps": steps,
+        "legal_basis": "勞動基準法第59條第1款至第4款（職業災害雇主無過失補償責任）、勞動基準法第59條但書（勞保職災給付抵充）、勞動基準法施行細則第31條至第34條。"
+    }
+
+
+def calculate_excessive_interest_and_penalty(
+    principal: float,
+    agreed_annual_rate_pct: float,
+    duration_days: int,
+    agreed_penalty_amount: float = 0.0
+) -> Dict[str, Any]:
+    """
+    依現行民法第 205 條與第 252 條精算借貸約定利率與違約金合法性：
+    1. 民法第 205 條法定最高利率上限為年息 16%（110年7月20日施行，超過部分之約定自始無效）
+    2. 超過 16% 部分之利息為不當得利（民法第179條），債務人得請求返還或抵充本金
+    3. 違約金檢驗：民法第 252 條違約金額過高者法院得職權酌減
+    """
+    STATUTORY_CAP_PCT = 16.0
+
+    agreed_interest = round(principal * (agreed_annual_rate_pct / 100.0) * (duration_days / 365.0), 2)
+    effective_cap_pct = min(STATUTORY_CAP_PCT, agreed_annual_rate_pct)
+    lawful_interest = round(principal * (effective_cap_pct / 100.0) * (duration_days / 365.0), 2)
+    excess_void_interest = max(0.0, round(agreed_interest - lawful_interest, 2))
+
+    penalty_ratio_to_principal = round((agreed_penalty_amount / principal) * 100.0, 2) if principal > 0 else 0.0
+    penalty_risk_warning = ""
+    if penalty_ratio_to_principal > 20.0:
+        penalty_risk_warning = f"⚠️ 約定違約金高達本金之 {penalty_ratio_to_principal:.1f}%，司法實務上極可能被法院依民法第 252 條認定過高而依職權大幅酌減！"
+
+    total_lawful_claim = round(principal + lawful_interest, 2)
+
+    steps = [
+        f"1. 借款本金：NT${principal:,.0f} 元，借款天數：{duration_days} 天",
+        f"2. 契約約定年利率：{agreed_annual_rate_pct:.2f}%，約定利息總額：NT${agreed_interest:,.0f} 元",
+        f"3. 現行民法第 205 條法定最高利率上限：年息 {STATUTORY_CAP_PCT}%（民國 110 年 7 月 20 日修正施行）",
+        f"4. 法定合法上限利息：NT${lawful_interest:,.0f} 元",
+    ]
+    if agreed_annual_rate_pct > STATUTORY_CAP_PCT:
+        steps.append(f"⚠️ 5. 超額無效利息：NT${excess_void_interest:,.0f} 元（依民法第 205 條修正案，超過 16% 之約定自始當然絕對無效，債權人無受領權；若已給付得依民法第 179 條請求返還或抵充本金！）")
+    else:
+        steps.append("5. 約定年利率未超過法定上限 16%，全部約定利息均屬合法有效。")
+
+    if agreed_penalty_amount > 0:
+        steps.append(f"6. 約定違約金：NT${agreed_penalty_amount:,.0f} 元（佔本金比例 {penalty_ratio_to_principal:.1f}%）")
+        if penalty_risk_warning:
+            steps.append(f"   {penalty_risk_warning}")
+
+    steps.append(f"➔ 債權人合法得受領本利和上限：NT${total_lawful_claim:,.0f} 元")
+
+    return {
+        "principal": principal,
+        "agreed_rate_pct": agreed_annual_rate_pct,
+        "duration_days": duration_days,
+        "agreed_interest": agreed_interest,
+        "statutory_cap_pct": STATUTORY_CAP_PCT,
+        "lawful_interest": lawful_interest,
+        "excess_void_interest": excess_void_interest,
+        "is_rate_excessive": agreed_annual_rate_pct > STATUTORY_CAP_PCT,
+        "agreed_penalty": agreed_penalty_amount,
+        "penalty_ratio": penalty_ratio_to_principal,
+        "penalty_risk_warning": penalty_risk_warning,
+        "total_lawful_claim": total_lawful_claim,
+        "steps": steps,
+        "legal_basis": "民法第205條（約定最高利率週年16%，超過部分無效）、民法第179條（不當得利返還請求權）、民法第252條（違約金過高法院得減至相當之數額）、最高法院50年台上字第19號判例。"
+    }
+
+
 class LegalQAEngine:
     """
     全方位通用法律智慧問答與全能檢索引擎

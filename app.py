@@ -338,7 +338,10 @@ try:
         calculate_severance_pay,
         calculate_marital_property_division,
         calculate_inheritance_shares,
-        calculate_statutory_interest
+        calculate_statutory_interest,
+        calculate_personal_injury_damages,
+        calculate_occupational_accident_compensation,
+        calculate_excessive_interest_and_penalty
     )
 except Exception:
     class LegalQAEngine:
@@ -352,6 +355,59 @@ except Exception:
     def calculate_marital_property_division(*args, **kwargs): return {}
     def calculate_inheritance_shares(*args, **kwargs): return {}
     def calculate_statutory_interest(*args, **kwargs): return {}
+    def calculate_personal_injury_damages(*args, **kwargs): return {}
+    def calculate_occupational_accident_compensation(*args, **kwargs): return {}
+    def calculate_excessive_interest_and_penalty(*args, **kwargs): return {}
+
+try:
+    from document_exporter import (
+        export_evaluation_docx,
+        export_model_answer_docx,
+        export_legal_notice_docx,
+        export_textbook_docx,
+        export_mcq_exam_docx
+    )
+except Exception:
+    def export_evaluation_docx(*args, **kwargs): return b""
+    def export_model_answer_docx(*args, **kwargs): return b""
+    def export_legal_notice_docx(*args, **kwargs): return b""
+    def export_textbook_docx(*args, **kwargs): return b""
+    def export_mcq_exam_docx(*args, **kwargs): return b""
+
+def render_citation_quick_cards(citations: list, key_prefix: str = "cit_cards"):
+    """
+    Lawsnote / 七法 (Laws.club) 水準之裁判案號互動快顯卡片與一鍵標準法學引註複製元件。
+    """
+    if not citations:
+        return
+    st.markdown("##### 🏛️ 引用裁判案號與司法權威先例互動卡片 (Lawsnote-grade Citation Cards)")
+    for idx, cit in enumerate(citations):
+        case_id = cit.get("official_case_id") or cit.get("case_id") or cit.get("raw") or "裁判案號"
+        is_verified = cit.get("verified", False) or cit.get("is_verified", False)
+        court = cit.get("court") or ("最高法院" if any(k in case_id for k in ["台上", "台抗", "台非", "台聲"]) else "司法院")
+        holding = cit.get("holding") or cit.get("match_details", "")
+        official_url = cit.get("external_url") or cit.get("official_url") or "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+        status_badge = "🟢 司法院實體裁判庫已核驗" if is_verified else "⚠️ 非大庫典型案號 (防偽查核中)"
+        badge_bg = "#f0fdf4" if is_verified else "#fffbeb"
+        badge_border = "#86efac" if is_verified else "#fde68a"
+        badge_text = "#15803d" if is_verified else "#b45309"
+        with st.container(border=True):
+            head_col1, head_col2 = st.columns([3, 1.2])
+            with head_col1:
+                st.markdown(
+                    f"""<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;">
+                        <span style="background-color: #1e3a8a; color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: bold;">{court}</span>
+                        <span style="font-size: 1.05rem; font-weight: bold; color: #0f172a;">{case_id}</span>
+                        <span style="background-color: {badge_bg}; color: {badge_text}; border: 1px solid {badge_border}; padding: 2px 8px; border-radius: 12px; font-size: 0.78rem;">{status_badge}</span>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+            with head_col2:
+                st.link_button("🔗 司法院正本檢索", official_url, use_container_width=True)
+            if holding and holding not in ["權威裁判", "權威指標判旨"]:
+                st.caption(f"📜 **判旨要點**：{holding[:160]}{'...' if len(holding) > 160 else ''}")
+            std_ref = f"{court} {case_id}"
+            st.code(std_ref, language="text")
 
 try:
     from textbook_generator import (
@@ -1760,16 +1816,29 @@ def render_textbook_learning_view():
         st.markdown(rendered_text)
 
         st.divider()
-        col_down, col_fin = st.columns([1, 1])
-        with col_down:
+        col_down_md, col_down_doc, col_fin = st.columns([1, 1.2, 1])
+        with col_down_md:
             st.download_button(
-                label="📥 匯出本講為 Markdown 教材",
+                label="📥 匯出 Markdown 筆記",
                 data=rendered_text,
                 file_name=f"{sel_topic['title'].replace('：', '_').replace(' ', '_')}.md",
                 mime="text/markdown",
                 use_container_width=True,
                 key=f"btn_dl_tb_{sel_topic['id']}"
             )
+        with col_down_doc:
+            try:
+                tb_docx = export_textbook_docx(sel_subject, sel_chapter, sel_topic['title'], rendered_text)
+                st.download_button(
+                    label="📄 匯出正式 Word (.docx) 講義",
+                    data=tb_docx,
+                    file_name=f"{sel_subject}_{sel_topic['title'].replace('：', '_').replace(' ', '_')}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    use_container_width=True,
+                    key=f"btn_dl_tb_docx_{sel_topic['id']}"
+                )
+            except Exception as e_tb_doc:
+                st.caption(f"Word 匯出待命：{e_tb_doc}")
         with col_fin:
             if sel_topic["id"] not in completed_set:
                 if st.button("🎉 研讀完畢！點此標記完成", type="primary", use_container_width=True, key=f"btn_fin_{sel_topic['id']}"):
@@ -2854,6 +2923,37 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                     if student_ver and student_ver.get("hallucination_count", 0) > 0:
                         st.warning(f"⚠️ **【考生作答防偽警示】**：考生原卷引述之字號中，經比對全國 400 萬筆裁判大庫偵測到 **{student_ver['hallucination_count']} 筆** 查無實體文書之案號！國家考試正式作答切勿憑空捏造字號。")
 
+                    # Lawsnote 等級互動判解卡片
+                    eval_cits = result.get("citations", [])
+                    if eval_cits:
+                        render_citation_quick_cards(eval_cits, key_prefix="eval_cit_cards")
+
+                    # 閱卷診斷報告 Word / Markdown 匯出
+                    st.divider()
+                    col_ev_doc, col_ev_md = st.columns([1, 1])
+                    with col_ev_doc:
+                        try:
+                            eval_docx = export_evaluation_docx(result, st.session_state.get("question_text_content", ""))
+                            st.download_button(
+                                "📄 匯出正式閱卷評閱診斷報告 (.docx)",
+                                data=eval_docx,
+                                file_name="司律申論試卷_閱卷診斷報告.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True,
+                                key="btn_dl_eval_docx"
+                            )
+                        except Exception as e_evd:
+                            st.caption(f"Word 匯出待命：{e_evd}")
+                    with col_ev_md:
+                        st.download_button(
+                            "💾 匯出評閱報告 (.md)",
+                            data=f"# 司律試卷評閱診斷報告\n\n- 總得分：{result.get('total_score', 0)}\n- 等第：{result.get('grade_level', '')}\n\n## 改寫示範\n{rev_text}\n\n{audit_md}",
+                            file_name="司律申論試卷_閱卷診斷報告.md",
+                            mime="text/markdown",
+                            use_container_width=True,
+                            key="btn_dl_eval_md"
+                        )
+
                 except Exception as e:
                     st.error(f"評閱失敗: {e}")
 
@@ -3646,6 +3746,18 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
                 clean_cats = sorted(list(set(raw_cats)))
 
                 st.divider()
+                # 模考計時與作答狀態列
+                col_timer1, col_timer2 = st.columns([2, 1])
+                with col_timer1:
+                    ans_count = len([str(q.get('question_no')) for q in questions if st.session_state.get(f"user_choice_{q.get('question_no')}")])
+                    prog_pct = int(ans_count / len(questions) * 100) if questions else 0
+                    st.info(f"⏱️ **全真司律模考場** ｜ 已作答：**{ans_count} / {len(questions)} 題**（作答進度：{prog_pct}%）")
+                with col_timer2:
+                    if st.session_state.get("stage1_graded"):
+                        st.success("✅ 本卷已完成批改")
+                    else:
+                        st.caption("提示：選項點選後即自動記錄心證，完成後點擊下方「交卷立即線上批改評分」。")
+
                 col_sec_head, col_sec_cat = st.columns([2, 1])
                 with col_sec_head:
                     st.subheader(f"📝 【第一部分：全真試題區】（盲測情境實力）")
@@ -3695,21 +3807,42 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                     st.write("")
 
-                col_submit, col_export = st.columns([1, 1])
+                col_submit, col_export_md, col_export_doc, col_reset = st.columns([1.2, 1, 1.2, 0.8])
                 with col_submit:
-                    if st.button("🏁 交卷立即線上批改評分", type="primary"):
+                    if st.button("🏁 交卷立即線上批改評分", type="primary", use_container_width=True):
                         st.session_state["stage1_graded"] = True
                         st.session_state["stage1_user_answers"] = user_answers
                         st.rerun()
 
-                with col_export:
+                with col_export_md:
                     md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
                     st.download_button(
-                        label="💾 一鍵下載完整全真模擬試卷 (Markdown 檔)",
+                        label="💾 下載試卷 (.md)",
                         data=md_content,
                         file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
-                        mime="text/markdown"
+                        mime="text/markdown",
+                        use_container_width=True
                     )
+
+                with col_export_doc:
+                    try:
+                        u_ans_for_doc = st.session_state.get("stage1_user_answers", user_answers) if st.session_state.get("stage1_graded") else None
+                        docx_content = export_mcq_exam_docx(exam_data, u_ans_for_doc)
+                        st.download_button(
+                            label="📄 匯出全真試卷 (.docx)",
+                            data=docx_content,
+                            file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="btn_dl_mcq_docx"
+                        )
+                    except Exception as e_mcqd:
+                        st.caption(f"Word 匯出待命：{e_mcqd}")
+
+                with col_reset:
+                    if st.button("🔄 重新測驗", use_container_width=True, key="btn_reset_stage1"):
+                        _clear_stage1_exam_answers()
+                        st.rerun()
 
                 # 批改結果與考點分類實力診斷
                 is_graded = st.session_state.get("stage1_graded", False)
@@ -3785,7 +3918,32 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                 st.divider()
                 st.subheader("💡 【第三部分：逐題詳細解析與實務裁判出處】")
+
+                # 錯題專屬過濾檢視 (錯題本)
+                wrong_q_nums = []
+                if is_graded:
+                    u_ans_map_for_err = st.session_state.get("stage1_user_answers", user_answers)
+                    wrong_q_nums = [q.get("question_no") for q in questions if u_ans_map_for_err.get(str(q.get("question_no"))) != answer_key.get(str(q.get("question_no")))]
+                    col_filter_err1, col_filter_err2 = st.columns([2, 1])
+                    with col_filter_err1:
+                        err_view_mode = st.radio(
+                            "🔍 詳解檢視範圍：",
+                            [f"🌟 全卷解析 (共 {len(questions)} 題)", f"📕 專屬錯題本 (僅檢視答錯之 {len(wrong_q_nums)} 題)"],
+                            horizontal=True,
+                            key="rad_err_view_mode"
+                        )
+                    with col_filter_err2:
+                        if wrong_q_nums:
+                            st.warning(f"⚠️ 本次共有 **{len(wrong_q_nums)} 題** 答錯，建議切換至「📕 專屬錯題本」精準複習！")
+                        else:
+                            st.success("🎉 全對滿分！太厲害了！")
+                else:
+                    err_view_mode = "🌟 全卷解析"
+
                 for q in questions:
+                    q_no = q.get("question_no")
+                    if is_graded and "專屬錯題本" in err_view_mode and q_no not in wrong_q_nums:
+                        continue
                     q_no = q.get("question_no")
                     ans = q.get("answer")
                     with st.expander(f"查看第 {q_no} 題詳細解析 (正確答案：({ans}))"):
@@ -4400,6 +4558,41 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                     st.markdown("### 🏆 示範擬答全文 (IRAC)：")
                     st.markdown(ans)
                     render_clickable_legal_entities(ans, key_prefix="m4_ans_ents")
+
+                    # Lawsnote 互動裁判卡片
+                    try:
+                        from case_citation_verifier import get_case_verifier
+                        _ans_verifier = get_case_verifier()
+                        _ans_v_res = _ans_verifier.verify_text_citations(ans, auto_badge=False)
+                        if _ans_v_res.get("citations"):
+                            render_citation_quick_cards(_ans_v_res["citations"], key_prefix="m4_cit_cards")
+                    except Exception:
+                        pass
+
+                    # 示範擬答 Word / Markdown 匯出
+                    col_ans_doc, col_ans_md = st.columns([1, 1])
+                    with col_ans_doc:
+                        try:
+                            ans_docx = export_model_answer_docx(target_q, ans, m4_subject)
+                            st.download_button(
+                                "📄 匯出二試榜首示範擬答 (.docx)",
+                                data=ans_docx,
+                                file_name=f"高分示範擬答_{m4_subject}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True,
+                                key="btn_dl_m4_docx"
+                            )
+                        except Exception as e_andoc:
+                            st.caption(f"Word 匯出待命：{e_andoc}")
+                    with col_ans_md:
+                        st.download_button(
+                            "💾 下載示範擬答 (.md)",
+                            data=f"# 高分示範擬答【{m4_subject}】\n\n## 題目\n{target_q}\n\n## 示範擬答\n{ans}",
+                            file_name=f"高分示範擬答_{m4_subject}.md",
+                            mime="text/markdown",
+                            use_container_width=True,
+                            key="btn_dl_m4_md"
+                        )
                     st.divider()
                     if st.button("📝 將此題與示範擬答帶入【試卷評分】批改 (自動帶入題目與評分標準)"):
                         st.session_state["question_text_content"] = target_q
@@ -5542,12 +5735,15 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
         st.divider()
         st.markdown("##### 🧮 專用法律金錢精算機（純 Python 零誤差精算法定公式，亦可點擊帶入上方搜尋欄進行 AI 深度剖析）：")
-        calc_tab1, calc_tab2, calc_tab3, calc_tab4, calc_tab5 = st.tabs([
+        calc_tab1, calc_tab2, calc_tab3, calc_tab4, calc_tab5, calc_tab6, calc_tab7, calc_tab8 = st.tabs([
             "🚗 車損零件折舊",
+            "🩹 人身侵權霍夫曼",
             "💼 勞退新制資遣費",
+            "🏭 勞基職災補償抵充",
             "👨‍👩‍👧 夫妻剩餘財產",
             "📜 遺產應繼與特留分",
-            "💰 法定遲延利息"
+            "💰 法定遲延利息",
+            "⚖️ 約定利率與違約金"
         ])
 
         with calc_tab1:
@@ -5610,6 +5806,78 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                     st.caption(f"**法律依據**：{vr['legal_basis']}")
 
         with calc_tab2:
+            st.caption("依民法第 191-2、193、195 條、最高法院 94 年度台上字第 1543 號判決（親屬看護比照常情）及司法院標準單利霍夫曼係數（年息 5% 扣除中間利息）精算人身侵權賠償。")
+            pi_c1, pi_c2, pi_c3 = st.columns(3)
+            with pi_c1:
+                c_pi_med = st.number_input("實支醫療/輔具費用 (元)：", min_value=0.0, value=65000.0, step=5000.0, key="num_c_pi_med")
+            with pi_c2:
+                c_pi_care_days = st.number_input("需專人全日看護日數 (天)：", min_value=0, max_value=3650, value=30, key="num_c_pi_care_days")
+            with pi_c3:
+                c_pi_daily_care = st.number_input("每日看護費行情 (元)：", min_value=0.0, value=2200.0, step=100.0, key="num_c_pi_daily_care")
+
+            pi_c4, pi_c5, pi_c6 = st.columns(3)
+            with pi_c4:
+                c_pi_wage = st.number_input("被害人受害前平均月薪 (元)：", min_value=0.0, value=45000.0, step=1000.0, key="num_c_pi_wage")
+            with pi_c5:
+                c_pi_lost_m = st.number_input("醫療休養不能工作月數：", min_value=0.0, max_value=60.0, value=3.0, step=0.5, key="num_c_pi_lost_m")
+            with pi_c6:
+                c_pi_age = st.number_input("被害人案發年齡 (歲)：", min_value=1, max_value=99, value=35, key="num_c_pi_age")
+
+            pi_c7, pi_c8, pi_c9 = st.columns(3)
+            with pi_c7:
+                c_pi_dis_lvl = st.selectbox("勞工保險失能等級 (減損比例)：", [
+                    "0級：無永久失能 (0%)",
+                    "1級：全殘 (100%)", "2級：全殘 (100%)", "3級：全殘 (100%)",
+                    "4級：重度失能 (92.28%)", "5級：重度失能 (84.59%)", "6級：中重度 (76.90%)",
+                    "7級：顯著障害 (69.21%)", "8級：中度障害 (61.52%)", "9級：輕中度 (53.83%)",
+                    "10級：輕度障害 (46.14%)", "11級：輕微失能 (38.45%)", "12級：輕微失能 (30.76%)",
+                    "13級：局部失能 (23.07%)", "14級：局部失能 (15.38%)", "15級：輕微局部 (7.69%)"
+                ], index=7, key="sel_c_pi_dis_lvl")
+            with pi_c8:
+                c_pi_pain = st.number_input("精神慰撫金請求額 (元)：", min_value=0.0, value=300000.0, step=50000.0, key="num_c_pi_pain")
+            with pi_c9:
+                c_pi_ins = st.number_input("強制責任險已獲理賠 (元)：", min_value=0.0, value=50000.0, step=10000.0, key="num_c_pi_ins")
+
+            c_pi_neg = st.slider("被害人與有過失責任比例 (%)：", min_value=0, max_value=100, value=0, key="sli_c_pi_neg")
+
+            lvl_num = int(c_pi_dis_lvl.split("級")[0]) if "0級" not in c_pi_dis_lvl else 0
+
+            btn_run_pi, btn_pass_pi = st.columns([1, 1])
+            with btn_run_pi:
+                if st.button("🧮 立即精算人身侵權霍夫曼賠償", use_container_width=True, key="btn_calc_pi_run"):
+                    res_pi = calculate_personal_injury_damages(
+                        medical_cost=c_pi_med,
+                        care_days=int(c_pi_care_days),
+                        daily_care_rate=c_pi_daily_care,
+                        lost_work_months=c_pi_lost_m,
+                        monthly_wage=c_pi_wage,
+                        victim_age=int(c_pi_age),
+                        retirement_age=65,
+                        disability_level=lvl_num,
+                        pain_suffering_amount=c_pi_pain,
+                        comparative_negligence_pct=c_pi_neg,
+                        insurance_paid=c_pi_ins
+                    )
+                    st.session_state["calc_pi_result"] = res_pi
+            with btn_pass_pi:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_pi_search"):
+                    st.session_state["current_qa_question_input"] = f"人身傷害侵權賠償案例：被害人現年 {c_pi_age} 歲，受害前月薪 NT${c_pi_wage:,.0f}，支出醫療費 NT${c_pi_med:,.0f}，需專人看護 {c_pi_care_days} 日（每日行情 NT${c_pi_daily_care:,.0f}），醫療休養 {c_pi_lost_m} 個月，經醫院評定為【{c_pi_dis_lvl}】，請求精神慰撫金 NT${c_pi_pain:,.0f}。請依民法第191-2、193、195條與司法院霍夫曼扣除中間利息公式，試算賠償清單與實務勝算。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_pi_result" in st.session_state:
+                pir = st.session_state["calc_pi_result"]
+                pim1, pim2, pim3, pim4 = st.columns(4)
+                pim1.metric("勞損總額 (霍夫曼)", f"NT${pir['labor_loss_cost']:,.0f}", help=f"係數 {pir['hoffman_factor']:.4f}")
+                pim2.metric("看護與休養損失", f"NT${(pir['care_cost'] + pir['lost_work_cost']):,.0f}")
+                pim3.metric("過失相抵前總計", f"NT${pir['subtotal']:,.0f}")
+                pim4.metric("最終應獲賠金額", f"NT${pir['final_award']:,.0f}", delta=f"過失扣減 {pir['comparative_negligence_pct']}%")
+                with st.expander("🔍 查看詳細精算公式步驟與司法院依據", expanded=True):
+                    for s in pir["steps"]:
+                        st.write(f"- {s}")
+                    st.caption(f"**法律依據**：{pir['legal_basis']}")
+
+        with calc_tab3:
             st.caption("依勞工退休金條例第 12 條（勞退新制）每滿 1 年發給 0.5 個月平均工資，未滿 1 年以比例計，最高 6 個月為限；及勞動基準法第 16 條預告期間工資。")
             cs_c1, cs_c2 = st.columns(2)
             with cs_c1:
@@ -5650,7 +5918,55 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                 sm4.metric("合計應給付總額", f"NT${sr['total_due']:,.0f}")
                 st.caption(f"**年資計算**：{sr['tenure_str']} ｜ **法條依據**：{sr['legal_basis']}")
 
-        with calc_tab3:
+        with calc_tab4:
+            st.caption("依勞動基準法第 59 條職業災害補償規定：雇主負無過失之醫療費用、原領工資補償、失能與死亡補償責任；並依第 59 條但書由勞保局職災保險給付全額抵充。")
+            occ_c1, occ_c2, occ_c3 = st.columns(3)
+            with occ_c1:
+                c_occ_med = st.number_input("必需醫療支出補償 (元)：", min_value=0.0, value=30000.0, step=5000.0, key="num_c_occ_med")
+            with occ_c2:
+                c_occ_wage = st.number_input("勞工原領月工資 (元)：", min_value=0.0, value=48000.0, step=1000.0, key="num_c_occ_wage")
+            with occ_c3:
+                c_occ_incap_m = st.number_input("醫療中不能工作月數：", min_value=0.0, max_value=60.0, value=6.0, step=0.5, key="num_c_occ_incap_m")
+
+            occ_c4, occ_c5, occ_c6 = st.columns(3)
+            with occ_c4:
+                c_occ_dis_days = st.number_input("勞保失能給付標準日數 (日)：", min_value=0, max_value=1200, value=440, help="例如失能第7級為440日、第1級為1200日", key="num_c_occ_dis_days")
+            with occ_c5:
+                c_occ_death = st.checkbox("是否為罹難不幸死亡？（喪葬5個月+死亡40個月）", value=False, key="chk_c_occ_death")
+            with occ_c6:
+                c_occ_ins = st.number_input("勞保局已給付職災保險金額 (元)：", min_value=0.0, value=300000.0, step=20000.0, key="num_c_occ_ins")
+
+            btn_run_occ, btn_pass_occ = st.columns([1, 1])
+            with btn_run_occ:
+                if st.button("🧮 立即精算職災補償與雇主責任", use_container_width=True, key="btn_calc_occ_run"):
+                    res_occ = calculate_occupational_accident_compensation(
+                        medical_cost=c_occ_med,
+                        incapacity_months=c_occ_incap_m,
+                        monthly_wage=c_occ_wage,
+                        disability_days=int(c_occ_dis_days),
+                        is_death=c_occ_death,
+                        labor_insurance_payout=c_occ_ins
+                    )
+                    st.session_state["calc_occ_result"] = res_occ
+            with btn_pass_occ:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_occ_search"):
+                    st.session_state["current_qa_question_input"] = f"勞基法第59條職業災害雇主補償責任案例：勞工原領月工資 NT${c_occ_wage:,.0f} 元，醫療不能工作 {c_occ_incap_m} 個月，醫療費 NT${c_occ_med:,.0f}，勞保失能給付標準 {c_occ_dis_days} 日，勞保局已理賠 NT${c_occ_ins:,.0f}。請依勞基法第59條第1款至第4款及但書抵充規定，精算雇主實質尚須給付之差額與勞資權利義務。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_occ_result" in st.session_state:
+                occr = st.session_state["calc_occ_result"]
+                ocm1, ocm2, ocm3, ocm4 = st.columns(4)
+                ocm1.metric("原領工資補償", f"NT${occr['wage_compensation']:,.0f}")
+                ocm2.metric("失能/死亡補償", f"NT${(occr['disability_compensation'] + occr['death_compensation']):,.0f}")
+                ocm3.metric("法定補償總額", f"NT${occr['statutory_total']:,.0f}")
+                ocm4.metric("雇主實質應給付", f"NT${occr['employer_payable']:,.0f}", delta=f"-NT${occr['labor_insurance_offset']:,.0f} (勞保抵充)")
+                with st.expander("🔍 查看詳細計算步驟與勞動部法理", expanded=True):
+                    for stp in occr["steps"]:
+                        st.write(f"- {stp}")
+                    st.caption(f"**法律依據**：{occr['legal_basis']}")
+
+        with calc_tab5:
             st.caption("民法第 1030 條之 1 法定財產制剩餘財產分配：婚後現存財產扣除婚後負債，並扣除因繼承、無償取得之財產與慰撫金後，計算雙方差額並平均分配。")
             cm_col1, cm_col2 = st.columns(2)
             with cm_col1:
@@ -5690,7 +6006,7 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                 mm3.metric("雙方差額", f"NT${mr['difference']:,.0f}")
                 st.success(f"⚖️ 分配結論：由 **{mr['giver']}** 給付 **{mr['receiver']}** 剩餘財產差額半數 **NT${mr['transfer_amount']:,.0f}** 元！")
 
-        with calc_tab4:
+        with calc_tab6:
             st.caption("民法第 1138、1144 條法定應繼分與第 1223 條特留分精算。")
             ci_c1, ci_c2, ci_c3 = st.columns(3)
             with ci_c1:
@@ -5744,7 +6060,7 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                 st.table(i_rows)
                 st.caption(f"**法律依據**：{ir['legal_basis']}")
 
-        with calc_tab5:
+        with calc_tab7:
             st.caption("民法第 203 條：應付利息之債務，其利率未經約定，亦無法律可據者，週年利率為百分之五。")
             cnt_c1, cnt_c2, cnt_c3 = st.columns(3)
             with cnt_c1:
@@ -5764,6 +6080,46 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                 im1.metric("請求本金", f"NT${res_int['principal']:,.0f}")
                 im2.metric("法定利息金額", f"NT${res_int['interest_amount']:,.0f}", delta=f"{res_int['days']} 天")
                 im3.metric("本利和總額", f"NT${res_int['total_amount']:,.0f}")
+
+        with calc_tab8:
+            st.caption("現行民法第 205 條（110 年 7 月 20 日施行）：約定最高利率週年 16%，超過部分之約定自始無效；及民法第 252 條約定違約金過高之法院職權酌減審查。")
+            ex_c1, ex_c2 = st.columns(2)
+            with ex_c1:
+                c_ex_p = st.number_input("借款本金 (元)：", min_value=0.0, value=1000000.0, step=50000.0, key="num_c_ex_p")
+                c_ex_days = st.number_input("約定借貸期 (天)：", min_value=1, max_value=3650, value=365, key="num_c_ex_days")
+            with ex_c2:
+                c_ex_rate = st.number_input("契約約定週年利率 (%)：", min_value=0.0, max_value=100.0, value=24.0, step=0.5, key="num_c_ex_rate")
+                c_ex_pen = st.number_input("契約約定違約金金額 (元)：", min_value=0.0, value=200000.0, step=10000.0, key="num_c_ex_pen")
+
+            btn_run_ex, btn_pass_ex = st.columns([1, 1])
+            with btn_run_ex:
+                if st.button("🧮 立即精算合法利息與無效超額", use_container_width=True, key="btn_calc_ex_run"):
+                    res_ex = calculate_excessive_interest_and_penalty(
+                        principal=c_ex_p,
+                        agreed_annual_rate_pct=c_ex_rate,
+                        duration_days=int(c_ex_days),
+                        agreed_penalty_amount=c_ex_pen
+                    )
+                    st.session_state["calc_ex_result"] = res_ex
+            with btn_pass_ex:
+                if st.button("📝 帶入上方搜尋欄進行 AI 深度剖析", use_container_width=True, key="btn_apply_ex_search"):
+                    st.session_state["current_qa_question_input"] = f"借貸約定利率與違約金爭議：借款本金 NT${c_ex_p:,.0f} 元，約定年利率 {c_ex_rate}%（借期 {c_ex_days} 天），違約金 NT${c_ex_pen:,.0f} 元。請依民國110年新修民法第205條16%上限與第252條，分析超過部分無效、不當得利返還及違約金酌減之實務主張。"
+                    st.session_state["qa_auto_run_trigger"] = True
+                    st.rerun()
+
+            if "calc_ex_result" in st.session_state:
+                exr = st.session_state["calc_ex_result"]
+                exm1, exm2, exm3, exm4 = st.columns(4)
+                exm1.metric("法定合法利息", f"NT${exr['lawful_interest']:,.0f}")
+                exm2.metric("超額無效利息", f"NT${exr['excess_void_interest']:,.0f}", delta="自始無效" if exr['is_rate_excessive'] else "合法範圍")
+                exm3.metric("合法受領本利和", f"NT${exr['total_lawful_claim']:,.0f}")
+                exm4.metric("約定違約金比率", f"{exr['penalty_ratio']:.1f}%")
+                if exr.get("penalty_risk_warning"):
+                    st.warning(exr["penalty_risk_warning"])
+                with st.expander("🔍 查看詳細計算步驟與民法第205條依據", expanded=True):
+                    for stp in exr["steps"]:
+                        st.write(f"- {stp}")
+                    st.caption(f"**法律依據**：{exr['legal_basis']}")
 
     # 3. 執行檢索推論
     do_run_qa = btn_start_qa or st.session_state.pop("qa_auto_run_trigger", False)
@@ -5825,6 +6181,11 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
         st.markdown(qa_ans)
 
+        # Lawsnote 互動裁判卡片 (QA 檢索核實字號)
+        qa_ver_cases = audit.get("verified_cases", []) if audit else []
+        if qa_ver_cases:
+            render_citation_quick_cards(qa_ver_cases, key_prefix="qa_cit_cards")
+
         st.divider()
         st.markdown("##### 🛠️ 實務救濟文書生成與延伸工具：")
 
@@ -5852,13 +6213,33 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
             if "qa_generated_notice" in st.session_state:
                 st.text_area("存證信函草稿內文（可直接複製）：", value=st.session_state["qa_generated_notice"], height=260, key="txt_area_notice_out")
-                st.download_button(
-                    "💾 下載存證信函草稿 (.txt)",
-                    data=st.session_state["qa_generated_notice"],
-                    file_name="存證信函草稿.txt",
-                    mime="text/plain",
-                    use_container_width=True
-                )
+                c_dl_txt, c_dl_doc = st.columns(2)
+                with c_dl_txt:
+                    st.download_button(
+                        "💾 下載存證信函草稿 (.txt)",
+                        data=st.session_state["qa_generated_notice"],
+                        file_name="存證信函草稿.txt",
+                        mime="text/plain",
+                        use_container_width=True
+                    )
+                with c_dl_doc:
+                    try:
+                        n_docx = export_legal_notice_docx(
+                            st.session_state["qa_generated_notice"],
+                            sender_name=n_sender,
+                            receiver_name=n_recv,
+                            subject="郵局存證信函"
+                        )
+                        st.download_button(
+                            "📄 匯出郵局標準格式 Word (.docx)",
+                            data=n_docx,
+                            file_name=f"郵局存證信函_{n_recv}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="btn_dl_notice_docx"
+                        )
+                    except Exception as e_ndoc:
+                        st.caption(f"Word 匯出待命：{e_ndoc}")
 
         # 調解聲請要旨區
         with st.expander("🏛️ 一鍵生成【鄉鎮市區調解聲請要旨與談判方案】", expanded=False):
@@ -5873,13 +6254,33 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
             if "qa_generated_mediation" in st.session_state:
                 st.markdown(st.session_state["qa_generated_mediation"])
-                st.download_button(
-                    "💾 下載調解聲請要旨 (.md)",
-                    data=st.session_state["qa_generated_mediation"],
-                    file_name="調解委員會聲請要旨.md",
-                    mime="text/markdown",
-                    use_container_width=True
-                )
+                c_med_md, c_med_doc = st.columns(2)
+                with c_med_md:
+                    st.download_button(
+                        "💾 下載調解聲請要旨 (.md)",
+                        data=st.session_state["qa_generated_mediation"],
+                        file_name="調解委員會聲請要旨.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+                with c_med_doc:
+                    try:
+                        med_docx = export_legal_notice_docx(
+                            st.session_state["qa_generated_mediation"],
+                            sender_name="聲請人",
+                            receiver_name="對造人",
+                            subject="鄉鎮市區調解委員會聲請要旨"
+                        )
+                        st.download_button(
+                            "📄 匯出標準調解聲請書 Word (.docx)",
+                            data=med_docx,
+                            file_name="鄉鎮市區調解委員會聲請要旨.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="btn_dl_med_docx"
+                        )
+                    except Exception as e_mdoc:
+                        st.caption(f"Word 匯出待命：{e_mdoc}")
 
         # 延伸連動導航
         st.write("")
