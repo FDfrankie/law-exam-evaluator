@@ -365,7 +365,8 @@ try:
         export_model_answer_docx,
         export_legal_notice_docx,
         export_textbook_docx,
-        export_mcq_exam_docx
+        export_mcq_exam_docx,
+        export_litigation_pleading_docx
     )
 except Exception:
     def export_evaluation_docx(*args, **kwargs): return b""
@@ -373,6 +374,7 @@ except Exception:
     def export_legal_notice_docx(*args, **kwargs): return b""
     def export_textbook_docx(*args, **kwargs): return b""
     def export_mcq_exam_docx(*args, **kwargs): return b""
+    def export_litigation_pleading_docx(*args, **kwargs): return b""
 
 try:
     from judicial_appeal_chain import get_appeal_chain_engine as _raw_get_appeal_chain_engine, JudicialAppealChainEngine
@@ -6593,6 +6595,90 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                         )
                     except Exception as e_mdoc:
                         st.caption(f"Word 匯出待命：{e_mdoc}")
+
+        # 法院訴訟書類區（民事準備書（一）狀 / 起訴狀 / 答辯狀）
+        with st.expander("⚖️ 一鍵生成【法院正式訴狀 / 民事準備書狀 / 起訴狀 / 答辯狀】與 Word (.docx) 匯出", expanded=False):
+            st.markdown("依據司法院民事訴訟書類格式規範，將諮詢案情與法學研析直接提煉為具備**訴之聲明、事實及理由、攻擊防禦、最高法院指標判解引述與證據清單**之正式司法書狀。")
+
+            p_col1, p_col2, p_col3 = st.columns(3)
+            with p_col1:
+                pleading_type = st.selectbox(
+                    "書狀種類：",
+                    ["民事準備書（一）狀", "民事起訴狀", "民事答辯狀", "民事準備書（二）狀", "民事聲請調解狀"],
+                    key="sel_pleading_type"
+                )
+            with p_col2:
+                court_dest = st.text_input("受訴法院：", value="臺灣臺北地方法院民事庭", key="txt_pleading_court")
+            with p_col3:
+                claim_amt = st.text_input("訴訟標的金額或價額：", value="新臺幣              元整", key="txt_pleading_claim_amt")
+
+            p_col4, p_col5, p_col6 = st.columns(3)
+            with p_col4:
+                plaintiff_name = st.text_input("原告姓名/法定代理人：", value="【原告姓名】", key="txt_pleading_plaintiff")
+            with p_col5:
+                defendant_name = st.text_input("被告姓名/法定代理人：", value="【被告姓名】", key="txt_pleading_defendant")
+            with p_col6:
+                case_no_str = st.text_input("案號與股別：", value="113 年度訴字第      號（    股）", key="txt_pleading_caseno")
+
+            if st.button("⚖️ 立即擬定司法院正式標準訴狀", key="btn_gen_pleading", use_container_width=True, type="primary"):
+                with st.spinner("AI 司法幕僚正在根據案件事實、實體法條與最高法院裁判要旨草擬正式民事訴狀..."):
+                    engine = LegalQAEngine()
+                    c_no = case_no_str
+                    c_branch = "    股"
+                    if "（" in case_no_str and "）" in case_no_str:
+                        parts = case_no_str.split("（")
+                        c_no = parts[0].strip()
+                        c_branch = parts[1].replace("）", "").strip()
+                    pleading_text = engine.generate_court_pleading(
+                        question=qa_q,
+                        legal_advice=qa_ans,
+                        pleading_type=pleading_type,
+                        plaintiff=plaintiff_name,
+                        defendant=defendant_name,
+                        court=court_dest,
+                        claim_amount=claim_amt,
+                        case_no=c_no,
+                        case_branch=c_branch
+                    )
+                    st.session_state["qa_generated_pleading"] = pleading_text
+                    st.session_state["qa_pleading_meta"] = {
+                        "title": pleading_type,
+                        "court": court_dest,
+                        "case_no": c_no,
+                        "branch": c_branch,
+                        "claim_amount": claim_amt,
+                        "plaintiff": plaintiff_name,
+                        "defendant": defendant_name,
+                        "body_text": pleading_text
+                    }
+
+            if "qa_generated_pleading" in st.session_state and st.session_state["qa_generated_pleading"]:
+                st.markdown(st.session_state["qa_generated_pleading"])
+                c_pl_md, c_pl_doc = st.columns(2)
+                with c_pl_md:
+                    st.download_button(
+                        f"💾 下載{st.session_state.get('qa_pleading_meta', {}).get('title', '民事訴狀')} (.md)",
+                        data=st.session_state["qa_generated_pleading"],
+                        file_name=f"{st.session_state.get('qa_pleading_meta', {}).get('title', '民事訴狀')}.md",
+                        mime="text/markdown",
+                        use_container_width=True,
+                        key="btn_dl_pleading_md"
+                    )
+                with c_pl_doc:
+                    try:
+                        p_meta = st.session_state.get("qa_pleading_meta", {})
+                        p_meta["body_text"] = st.session_state["qa_generated_pleading"]
+                        p_docx = export_litigation_pleading_docx(p_meta)
+                        st.download_button(
+                            f"📄 匯出司法院標準規範 Word (.docx)",
+                            data=p_docx,
+                            file_name=f"{p_meta.get('title', '民事訴狀')}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            use_container_width=True,
+                            key="btn_dl_pleading_docx"
+                        )
+                    except Exception as e_pldoc:
+                        st.caption(f"Word 匯出待命：{e_pldoc}")
 
         # 延伸連動導航
         st.write("")

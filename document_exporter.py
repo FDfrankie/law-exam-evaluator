@@ -504,3 +504,145 @@ def export_mcq_exam_docx(
     buffer.seek(0)
     return buffer.getvalue()
 
+
+
+def export_litigation_pleading_docx(
+    pleading_data: Dict[str, Any]
+) -> bytes:
+    """
+    將民事起訴狀、民事準備書狀、民事答辯狀或刑事告訴狀匯出為符合中華民國司法院標準規範之正式法院書類 Word (.docx) 文件。
+    包含：
+    1. 案號、股別、管轄法院
+    2. 訴訟標的金額或價額
+    3. 當事人名冊（原告、被告、法定代理人、送達代收人）
+    4. 訴之聲明（第一項給付、第二項訴訟費用負擔、第三項願供擔保請准宣告假執行）
+    5. 事實及理由（程序事項、請求權基礎、爭點攻擊防禦、最高法院指標判解）
+    6. 證物清單（原證/被證）
+    7. 具狀人及撰狀律師簽章處
+    """
+    doc = _init_legal_doc()
+
+    title = pleading_data.get("title", "民事準備書（一）狀")
+    court = pleading_data.get("court", "臺灣臺北地方法院民事庭")
+    case_no = pleading_data.get("case_no", "113 年度訴字第      號")
+    branch = pleading_data.get("branch", "    股")
+    claim_amount = pleading_data.get("claim_amount", "新臺幣              元整")
+
+    plaintiff = pleading_data.get("plaintiff", "【原告姓名】")
+    defendant = pleading_data.get("defendant", "【被告姓名】")
+    body_text = pleading_data.get("body_text", "")
+    claims = pleading_data.get("claims", [])
+    evidence = pleading_data.get("evidence", [])
+
+    # 1. 案號與股別表頭
+    h_tbl = doc.add_table(rows=2, cols=2)
+    h_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    h_tbl.autofit = True
+    h_tbl.cell(0, 0).text = f"案　號：{case_no}"
+    h_tbl.cell(0, 1).text = f"股　別：{branch}"
+    h_tbl.cell(1, 0).text = f"訴訟標的金額或價額：{claim_amount}"
+    h_tbl.cell(1, 1).text = f"受訴法院：{court}"
+
+    p_div = doc.add_paragraph()
+    p_div.paragraph_format.space_before = Pt(8)
+    p_div.paragraph_format.space_after = Pt(8)
+
+    # 2. 正式大標題（居中、20pt粗體）
+    title_p = doc.add_paragraph()
+    title_run = title_p.add_run(title)
+    title_run.font.name = 'Microsoft JhengHei'
+    title_run.font.size = Pt(20)
+    title_run.font.bold = True
+    title_run.font.color.rgb = RGBColor(15, 23, 42)
+    title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    title_p.paragraph_format.space_after = Pt(14)
+
+    # 3. 當事人名冊表格
+    p_tbl = doc.add_table(rows=2, cols=2)
+    p_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+    p_tbl.autofit = True
+
+    p_tbl.cell(0, 0).text = "原　　　告："
+    p_tbl.cell(0, 0).paragraphs[0].runs[0].font.bold = True
+    p_tbl.cell(0, 1).text = plaintiff
+
+    p_tbl.cell(1, 0).text = "被　　　告："
+    p_tbl.cell(1, 0).paragraphs[0].runs[0].font.bold = True
+    p_tbl.cell(1, 1).text = defendant
+
+    for row in p_tbl.rows:
+        _set_cell_margins(row.cells[0], top=80, bottom=80, left=120, right=120)
+        _set_cell_margins(row.cells[1], top=80, bottom=80, left=120, right=120)
+
+    # 4. 前言事由
+    intro_p = doc.add_paragraph()
+    intro_p.paragraph_format.space_before = Pt(14)
+    intro_p.paragraph_format.space_after = Pt(10)
+    intro_r = intro_p.add_run(f"為就兩造間請求損害賠償等事件，依法提呈{title}事：")
+    intro_r.font.bold = True
+    intro_r.font.size = Pt(12)
+
+    # 5. 訴之聲明
+    h_claim = doc.add_heading("訴之聲明", level=2)
+    h_claim.runs[0].font.color.rgb = RGBColor(29, 53, 87)
+
+    if claims and isinstance(claims, list):
+        for c in claims:
+            p_c = doc.add_paragraph()
+            p_c.paragraph_format.left_indent = Inches(0.2)
+            p_c.paragraph_format.space_after = Pt(4)
+            p_c.add_run(c)
+    else:
+        p_c1 = doc.add_paragraph("一、被告應給付原告新臺幣                  元整，及自起訴狀繕本送達翌日起至清償日止，按年息百分之五計算之利息。")
+        p_c1.paragraph_format.left_indent = Inches(0.2)
+        p_c2 = doc.add_paragraph("二、訴訟費用由被告負擔。")
+        p_c2.paragraph_format.left_indent = Inches(0.2)
+        p_c3 = doc.add_paragraph("三、原告願供擔保，請准宣告假執行。")
+        p_c3.paragraph_format.left_indent = Inches(0.2)
+
+    # 6. 事實及理由
+    h_facts = doc.add_heading("事實及理由", level=2)
+    h_facts.runs[0].font.color.rgb = RGBColor(29, 53, 87)
+    h_facts.paragraph_format.space_before = Pt(12)
+
+    clean_body = re.sub(r'#+\s*', '', body_text)
+    for line in clean_body.splitlines():
+        l_str = line.strip()
+        if l_str:
+            p = doc.add_paragraph()
+            p.paragraph_format.line_spacing = 1.3
+            p.paragraph_format.space_after = Pt(5)
+            # 首行縮進 2 個中文字元 (約 0.3 英吋)
+            p.paragraph_format.first_line_indent = Inches(0.3)
+            p.add_run(l_str)
+
+    # 7. 證據清單
+    if evidence:
+        h_evi = doc.add_heading("證據清單", level=2)
+        h_evi.runs[0].font.color.rgb = RGBColor(29, 53, 87)
+        for ev in evidence:
+            p_ev = doc.add_paragraph()
+            p_ev.paragraph_format.left_indent = Inches(0.2)
+            p_ev.paragraph_format.space_after = Pt(3)
+            p_ev.add_run(ev)
+
+    # 8. 結尾法院致候語
+    doc.add_paragraph().paragraph_format.space_after = Pt(14)
+    foot_p = doc.add_paragraph()
+    foot_p.add_run("　　謹　　狀\n")
+    foot_run = foot_p.add_run(f"{court}　公鑒")
+    foot_run.font.bold = True
+    foot_run.font.size = Pt(12)
+
+    # 9. 具狀人與撰狀律師簽章欄
+    sign_p = doc.add_paragraph()
+    sign_p.paragraph_format.space_before = Pt(20)
+    sign_p.paragraph_format.line_spacing = 1.5
+    sign_p.add_run("具　狀　人：　　　　　　　　　　　　（簽章）\n")
+    sign_p.add_run("撰　狀　人：　　　　　　　　　　律師（簽章）\n\n")
+    sign_p.add_run("中　　華　　民　　國　　　　　年　　　　　月　　　　　日")
+
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()

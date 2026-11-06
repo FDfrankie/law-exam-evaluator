@@ -66,33 +66,55 @@ class JudicialAppealChainEngine:
         n = str(no).strip() if no else ""
 
         if clean_case_id and not (y and w and n):
+            # 1. 優先嘗試標準完整裁判字號（如：最高法院 108 年度台上大字第 1719 號判決）
             m = re.search(r'(?:(臺灣[^\s]+法院|最高法院|最高行政法院|臺[北中南高]等[行政]*法院)\s*)?(\d{2,3})\s*年(?:度)?\s*([^\s\d號字]+)\s*字第\s*(\d+)\s*號', clean_case_id)
             if m:
                 court = m.group(1) or court
                 y = m.group(2)
                 w = m.group(3)
                 n = m.group(4)
+            else:
+                # 2. 支援大眾與實務案號縮寫（如：108台上大1719、108台上908、高院88上更四203、108 台上 908 號）
+                m_short = re.search(
+                    r'(?:(臺灣[^\s]+法院|最高法院|最高行政法院|臺[北中南高]等[行政]*法院|[A-Za-z]+)\s*)?(\d{2,3})\s*(?:年|年度)?\s*([^\s\d號字]+?)\s*(?:字)?\s*(?:第)?\s*(\d+)\s*(?:號)?',
+                    clean_case_id
+                )
+                if m_short:
+                    raw_c = m_short.group(1) or ""
+                    if any(k in raw_c for k in ["SC", "最高院"]):
+                        court = "最高法院"
+                    elif any(k in raw_c for k in ["高院", "高等"]):
+                        court = "臺灣高等法院"
+                    y = m_short.group(2)
+                    w = m_short.group(3)
+                    n = m_short.group(4)
 
         current_row = None
         with self._get_connection() as conn:
-            # 1. 查找本裁判之原始資料 (走 idx_meta_ywn 毫秒級索引)
+            # 1. 查找本裁判之原始資料 (走 idx_meta_ywn 毫秒級複合索引)
             if y and w and n:
-                current_row = conn.execute(
-                    "SELECT case_id, court, jud_year, jud_word, jud_no, date, title, "
-                    "       holding_preview, history_instances, substantive_prior, laws_cited, jid "
-                    "FROM judgments_meta WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
-                    (y, w, n)
-                ).fetchone()
-            elif clean_case_id:
-                # 嘗試提取條號字號避免全表掃描
-                cand_m = re.search(r'(\d{2,3})\s*年(?:度)?\s*([^\s\d號字]+)\s*字第\s*(\d+)\s*號', clean_case_id)
-                if cand_m:
+                # 構建字別候選清單（處理更審、大法庭與字號後綴多態性變體）
+                word_candidates = [w]
+                w_clean = re.sub(r'字$', '', w).strip()
+                if w_clean != w:
+                    word_candidates.append(w_clean)
+                if w_clean == "台上":
+                    word_candidates.extend(["台上大", "台上大四", "台抗", "台非"])
+                elif w_clean == "台上大":
+                    word_candidates.extend(["台上", "台上大四"])
+                elif "上更" in w_clean:
+                    for repl in ["上更(一)", "上更㈠", "上更1", "上更(二)", "上更㈡", "上更2", "上更(三)", "上更㈢", "上更3", "上更(四)", "上更㈣", "上更4"]:
+                        word_candidates.append(repl)
+
+                for cand_w in word_candidates:
                     current_row = conn.execute(
                         "SELECT case_id, court, jud_year, jud_word, jud_no, date, title, "
                         "       holding_preview, history_instances, substantive_prior, laws_cited, jid "
                         "FROM judgments_meta WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
-                        (cand_m.group(1), cand_m.group(2), cand_m.group(3))
+                        (y, cand_w, n)
                     ).fetchone()
+                    if current_row:
+                        break
 
             if not current_row:
                 return {
