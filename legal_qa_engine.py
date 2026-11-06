@@ -1049,64 +1049,6 @@ class LegalQAEngine:
             pass
         return raw_advice
 
-    def generate_court_pleading(
-        self,
-        question: str,
-        legal_advice: str,
-        pleading_type: str = "民事準備書（一）狀",
-        plaintiff: str = "【原告姓名】",
-        defendant: str = "【被告姓名】",
-        court: str = "臺灣臺北地方法院民事庭",
-        claim_amount: str = "新臺幣              元整",
-        case_no: str = "113 年度訴字第      號",
-        case_branch: str = "    股"
-    ) -> str:
-        """
-        根據爭議事實與法學研析，自動撰擬符合司法院民事訴訟法標準規範之民事準備書狀/起訴狀/答辯狀。
-        """
-        prompt = f"""請以精通臺灣民事訴訟實務、具備司法官與合法律師合格資質之高階法學幕僚筆觸，為當事人草擬一份完全合乎司法院標準規範之【{pleading_type}】：
-
-【案件事實經過】：
-{question}
-
-【專業法學研析與權益主張】：
-{legal_advice[:1500]}
-
-【訴狀基本參數】：
-- 書狀名稱：{pleading_type}
-- 案件案由：請求損害賠償等事件
-- 案件標頭：案號：{case_no} ｜ 股別：{case_branch} ｜ 訴訟標的金額或價額：{claim_amount}
-- 受訴管轄法院：{court}
-- 當事人：原告 {plaintiff} ｜ 被告 {defendant}
-
-【訴狀撰寫標準規範】：
-1. 嚴格包含以下法定核心章節：
-   - 案號、股別、管轄法院與訴訟標的價額
-   - 當事人基本資料（原告、被告）
-   - 【訴之聲明】（一、實體給付與遲延利息起算日；二、訴訟費用負擔；三、原告願供擔保請准宣告假執行）
-   - 【事實及理由】：
-     - 一、程序事項（管轄權、程序要件說明）
-     - 二、實體法律關係與請求權基礎（明確列出民法等實體法條依據）
-     - 三、事實經過與構成要件之密緻涵攝（針對人、事、時、地、物詳加論述）
-     - 四、引用最高法院指標裁判與大法庭見解（立論鏗鏘有力、杜絕虛構案號）
-     - 五、證據清單說明（原證一、原證二）
-   - 結尾法院致候語（謹狀 {court} 公鑒）
-   - 具狀人、撰狀律師簽章欄位與撰狀日期
-2. 語氣嚴謹、標題清晰（大標題一、二、三，中標題(一)、(二)，小標題1.、2.），文理暢達具備法院實戰說服力！
-"""
-        raw_pleading = self._call_model(prompt, temperature=0.1)
-        try:
-            from case_citation_verifier import get_case_verifier
-            verifier = get_case_verifier()
-            case_ver = verifier.verify_and_decorate_response(raw_pleading, context_topic=question, auto_badge=True)
-            if case_ver.get("annotated_text"):
-                raw_pleading = case_ver["annotated_text"]
-            if case_ver.get("audit_markdown"):
-                raw_pleading += "\n\n" + case_ver["audit_markdown"]
-        except Exception:
-            pass
-        return raw_pleading
-
     def verify_citations_against_dataset(self, text: str) -> Dict[str, Any]:
         """
         【事後真實性核實審計核心 (Post-Generation Grounding Audit)】：
