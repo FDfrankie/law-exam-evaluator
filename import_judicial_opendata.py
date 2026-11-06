@@ -639,7 +639,7 @@ def extract_archive_to_temp(archive_path: Path, extract_dir: Path) -> bool:
         tool_bin = cmd[0]
         if shutil.which(tool_bin) or Path(tool_bin).exists():
             try:
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+                res = subprocess.run(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=600)
                 if res.returncode == 0:
                     return True
             except Exception:

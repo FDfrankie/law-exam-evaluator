@@ -255,7 +255,8 @@ def _log_ingest_metrics(target_name: str, added_count: int, total_db_count: int)
 
 def process_record_to_db_payload(
     raw_item: Dict[str, Any],
-    existing_case_ids: Optional[Set[str]] = None
+    existing_case_ids: Optional[Set[str]] = None,
+    redirect_buffer: Optional[List[tuple]] = None
 ) -> Optional[Dict[str, Any]]:
     """
     將司法院標準 JSON 紀錄轉換為大庫結構，並掛載實質法律爭點檢定與歷審脈絡鏈。
@@ -322,16 +323,20 @@ def process_record_to_db_payload(
     ):
         prior_instance = parsed.get("substantive_prior")
         if prior_instance and str(prior_instance).strip():
-            try:
-                engine = get_million_db_engine()
-                engine.record_redirect(
-                    dismissed_case_id=str(parsed.get("case_id", "")).strip(),
-                    substantive_prior_id=str(prior_instance).strip(),
-                    discard_reason=str(parsed.get("discard_reason", "程序駁回")).strip(),
-                    court=str(parsed.get("court", "")).strip()
-                )
-            except Exception:
-                pass
+            entry = (
+                str(parsed.get("case_id", "")).strip(),
+                str(prior_instance).strip(),
+                str(parsed.get("discard_reason", "程序駁回")).strip(),
+                str(parsed.get("court", "")).strip()
+            )
+            if redirect_buffer is not None:
+                redirect_buffer.append(entry)
+            else:
+                try:
+                    engine = get_million_db_engine()
+                    engine.record_redirect(*entry)
+                except Exception:
+                    pass
         return None
     return parsed
 
@@ -356,7 +361,8 @@ def low_memory_ingest(
     max_records: int = 1000000000,
     progress_callback = None,
     delete_source_after_ingest: bool = True,
-    existing_case_ids: Optional[Set[str]] = None
+    existing_case_ids: Optional[Set[str]] = None,
+    base_total_count: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     超低記憶體裁判匯入主程序：
@@ -386,6 +392,7 @@ def low_memory_ingest(
     total_added = 0
     total_skipped = 0
     batch_buffer: List[Dict[str, Any]] = []
+    redirect_buffer: List[tuple] = []
     deleted_files: List[str] = []
     total_freed_bytes = 0
 
@@ -414,8 +421,25 @@ def low_memory_ingest(
             print(f"[!] 載入現存案號集合失敗 (以空集合啟動): {e_load}")
             existing_case_ids = set()
 
+    # 2. 快取起始裁判數 (避免每輪 RAR 結束時重複執行 8.76GB 全表 COUNT(*) 耗時 8 秒)
+    if base_total_count is None:
+        try:
+            base_total_count = engine.get_total_count()
+        except Exception:
+            base_total_count = len(existing_case_ids) if existing_case_ids else 0
+
     def _flush_buffer():
-        nonlocal batch_buffer, total_added
+        nonlocal batch_buffer, redirect_buffer, total_added
+        if redirect_buffer:
+            try:
+                if hasattr(engine, "batch_record_redirects"):
+                    engine.batch_record_redirects(redirect_buffer)
+                else:
+                    for r_item in redirect_buffer:
+                        engine.record_redirect(*r_item)
+            except Exception:
+                pass
+            redirect_buffer.clear()
         if batch_buffer:
             max_flush_retries = 5
             for attempt in range(max_flush_retries):
@@ -425,7 +449,6 @@ def low_memory_ingest(
                     if existing_case_ids is not None:
                         existing_case_ids.update(r["case_id"] for r in batch_buffer if r.get("case_id"))
                     batch_buffer.clear()
-                    gc.collect()
                     break
                 except sqlite3.OperationalError as oe:
                     if attempt < max_flush_retries - 1:
@@ -446,7 +469,7 @@ def low_memory_ingest(
                 if any(c in existing_case_ids for c in cands):
                     total_skipped += 1
                     continue
-            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
+            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids, redirect_buffer=redirect_buffer)
             if rec:
                 batch_buffer.append(rec)
                 if len(batch_buffer) >= batch_size:
@@ -458,7 +481,7 @@ def low_memory_ingest(
             if total_added >= max_records:
                 break
         _flush_buffer()
-        db_count = engine.get_total_count()
+        db_count = (base_total_count + total_added) if base_total_count is not None else engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
         if delete_source_after_ingest:
             sz, fn = _safe_delete_source(target)
@@ -484,7 +507,7 @@ def low_memory_ingest(
                 if any(c in existing_case_ids for c in cands):
                     total_skipped += 1
                     continue
-            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
+            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids, redirect_buffer=redirect_buffer)
             if rec:
                 batch_buffer.append(rec)
                 if len(batch_buffer) >= batch_size:
@@ -496,7 +519,7 @@ def low_memory_ingest(
             if total_added >= max_records:
                 break
         _flush_buffer()
-        db_count = engine.get_total_count()
+        db_count = (base_total_count + total_added) if base_total_count is not None else engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
         if delete_source_after_ingest:
             sz, fn = _safe_delete_source(target)
@@ -511,13 +534,41 @@ def low_memory_ingest(
             "freed_bytes": total_freed_bytes
         }
 
-    # 3. RAR 或 7Z 檔案（使用本機臨時節流目錄，處理一個檔案立即刪除）
+    # 3. RAR 或 7Z 檔案（使用本機高速 SSD 中繼快取，解壓完畢整包清除非單檔 unlink）
     if target.is_file() and target.suffix.lower() in (".rar", ".7z"):
         from import_judicial_opendata import extract_archive_to_temp
         with tempfile.TemporaryDirectory() as td:
             extract_dir = Path(td) / "extracted"
             extract_dir.mkdir(parents=True, exist_ok=True)
-            ok = extract_archive_to_temp(target, extract_dir)
+
+            # 【極速優化】：若檔案位於雲端硬碟 (如 G:\)，7-Zip 直接在虛擬磁碟上解壓 8 萬個微型檔會產生巨量隨機 Seek 卡頓。
+            # 先以循序流式複製到本機高速 SSD 暫存區 (200MB 僅需 1~2 秒)，再由 7-Zip 在本地極速解壓！
+            sz_mb = target.stat().st_size / (1024 * 1024) if target.exists() else 0
+            is_virtual_or_remote = any(str(target).lower().startswith(p) for p in ("g:", "d:", "\\")) or (sz_mb > 30)
+
+            archive_to_extract = target
+            local_staged_rar = None
+            if is_virtual_or_remote:
+                print(f"\n⏳ [準備階段 1/2] 正在自雲端載入 {target.name} 至本機高速暫存 (約 {sz_mb:.1f} MB)...", flush=True)
+                t_copy_0 = time.time()
+                local_staged_rar = Path(td) / f"_staged_{target.name}"
+                try:
+                    shutil.copyfile(target, local_staged_rar)
+                    archive_to_extract = local_staged_rar
+                    print(f"  ⚡ 雲端載入完成 (耗時 {time.time() - t_copy_0:.2f} 秒)！", flush=True)
+                except Exception as e_cp:
+                    print(f"  ⚠️ 本機暫存複製失敗，回退直接解壓: {e_cp}", flush=True)
+                    archive_to_extract = target
+
+            print(f"📦 [準備階段 2/2] 正在高速解開壓縮封包 (7-Zip)，請稍候...", flush=True)
+            t_ext_0 = time.time()
+            ok = extract_archive_to_temp(archive_to_extract, extract_dir)
+            t_ext_sec = time.time() - t_ext_0
+
+            # 解壓完成後立即刪除本機 staged rar 釋放磁碟空間
+            if local_staged_rar and local_staged_rar.exists():
+                local_staged_rar.unlink(missing_ok=True)
+
             if not ok:
                 return {
                     "success": False,
@@ -529,6 +580,7 @@ def low_memory_ingest(
 
             # 遍歷臨時解壓目錄中所有 JSON 或 ZIP
             total_extracted_files = sum(len(f_list) for _, _, f_list in os.walk(extract_dir))
+            print(f"  🎉 解壓成功 (耗時 {t_ext_sec:.1f} 秒，共 {total_extracted_files:,} 篇檔案)，開始快速串流比對與入庫...", flush=True)
             scanned_in_archive = 0
             last_report_t = time.time()
 
@@ -538,7 +590,7 @@ def low_memory_ingest(
                     low_fn = fn.lower()
                     scanned_in_archive += 1
                     cur_t = time.time()
-                    if scanned_in_archive % 1000 == 0 or (cur_t - last_report_t >= 15.0):
+                    if scanned_in_archive % 500 == 0 or (cur_t - last_report_t >= 5.0):
                         last_report_t = cur_t
                         pct = (scanned_in_archive / total_extracted_files * 100) if total_extracted_files > 0 else 0
                         print(f"  [掃描中 {scanned_in_archive:,}/{total_extracted_files:,} ({pct:.1f}%)] 已落盤: {total_added:,} 筆 | 待入庫緩衝: {len(batch_buffer):,} 筆 | 現存/程序略過: {total_skipped:,} 筆", flush=True)
@@ -550,7 +602,7 @@ def low_memory_ingest(
                                 if any(c in existing_case_ids for c in cands):
                                     total_skipped += 1
                                     continue
-                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
+                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids, redirect_buffer=redirect_buffer)
                             if rec:
                                 batch_buffer.append(rec)
                                 if len(batch_buffer) >= batch_size:
@@ -569,7 +621,7 @@ def low_memory_ingest(
                                 if any(c in existing_case_ids for c in cands):
                                     total_skipped += 1
                                     continue
-                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids)
+                            rec = process_record_to_db_payload(raw_doc, existing_case_ids=existing_case_ids, redirect_buffer=redirect_buffer)
                             if rec:
                                 batch_buffer.append(rec)
                                 if len(batch_buffer) >= batch_size:
@@ -581,15 +633,14 @@ def low_memory_ingest(
                                 total_skipped += 1
                             if total_added >= max_records:
                                 break
-                    # 處理完立即刪除該子檔以省硬碟空間
-                    sf.unlink(missing_ok=True)
+
                     if total_added >= max_records:
                         break
                 if total_added >= max_records:
                     break
 
         _flush_buffer()
-        db_count = engine.get_total_count()
+        db_count = (base_total_count + total_added) if base_total_count is not None else engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
         if delete_source_after_ingest:
             sz, fn = _safe_delete_source(target)
@@ -615,13 +666,15 @@ def low_memory_ingest(
         )
         print(f"📦 掃描到 {len(all_entries):,} 個待處理壓縮包/檔案。")
         for idx, f_item in enumerate(all_entries, 1):
+            curr_base = (base_total_count + total_added) if base_total_count is not None else None
             res_sub = low_memory_ingest(
                 f_item,
                 batch_size=batch_size,
                 max_records=(max_records - total_added),
                 progress_callback=progress_callback,
                 delete_source_after_ingest=delete_source_after_ingest,
-                existing_case_ids=existing_case_ids
+                existing_case_ids=existing_case_ids,
+                base_total_count=curr_base
             )
             sub_added = res_sub.get("added", 0)
             sub_skipped = res_sub.get("skipped", 0)
@@ -629,13 +682,14 @@ def low_memory_ingest(
             total_skipped += sub_skipped
             deleted_files.extend(res_sub.get("deleted_files", []))
             total_freed_bytes += res_sub.get("freed_bytes", 0)
+            curr_db_est = (base_total_count + total_added) if base_total_count is not None else res_sub.get("total_in_db", 0)
             if res_sub.get("deleted_files"):
-                print(f"\n  ↳ [{idx}/{len(all_entries)}] 已完成處理並刪除: {f_item.name} (+{sub_added:,} 筆，略過 {sub_skipped:,} 筆)")
+                print(f"\n  ↳ [{idx}/{len(all_entries)}] 已完成處理並刪除: {f_item.name} (+{sub_added:,} 筆，略過 {sub_skipped:,} 筆 | 大庫現存約: {curr_db_est:,} 筆)")
             if total_added >= max_records:
                 print(f"\n⚡ 已達到最大匯入上限 ({max_records:,} 筆)，停止處理。")
                 break
 
-        db_count = engine.get_total_count()
+        db_count = (base_total_count + total_added) if base_total_count is not None else engine.get_total_count()
         _log_ingest_metrics(str(target), total_added, db_count)
         return {
             "success": True,

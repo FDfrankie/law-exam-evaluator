@@ -692,6 +692,23 @@ class MillionJudgmentsSQLiteEngine:
         """
         if not dismissed_case_id or not substantive_prior_id:
             return False
+
+    def batch_record_redirects(self, redirects: list) -> int:
+        """批次落盤程序駁回轉導映射 (避免逐筆 commit 拖慢雲端虛擬硬碟)"""
+        if not redirects or not self.index_db_path.exists():
+            return 0
+        self._init_index_db()
+        try:
+            with self._get_conn(self.index_db_path) as conn:
+                conn.executemany("""
+                    INSERT OR REPLACE INTO judgment_redirects (dismissed_case_id, substantive_prior_id, discard_reason, court)
+                    VALUES (?, ?, ?, ?)
+                """, redirects)
+                conn.commit()
+            return len(redirects)
+        except Exception as e:
+            print(f"[batch_record_redirects error] {e}")
+            return 0
         self._init_index_db()
         try:
             with self._get_conn(self.index_db_path) as conn:
