@@ -211,7 +211,8 @@ def load_six_codes_data() -> tuple:
 
 def clear_six_codes_cache():
     """清除六法條文與標註快取，強制重新載入最新資料庫"""
-    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS, _ARTICLE_ANNOTATIONS_CACHE
+    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS, _ARTICLE_ANNOTATIONS_CACHE, _CACHED_STATUTE_ISSUES_MASSIVE
+    _CACHED_STATUTE_ISSUES_MASSIVE = None
     _ARTICLE_ANNOTATIONS_CACHE.clear()
     _CACHED_ARTICLES = None
     _CACHED_META = None
@@ -1081,6 +1082,68 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
     scored.sort(key=lambda x: -x["score"])
     return scored[:15]
 
+
+_CACHED_STATUTE_ISSUES_MASSIVE = None
+
+def load_statute_issues_massive() -> Dict[str, Any]:
+    """載入國考百大核心爭點矩陣資料庫 (statute_issues_massive.json: 2.5MB)"""
+    global _CACHED_STATUTE_ISSUES_MASSIVE
+    if _CACHED_STATUTE_ISSUES_MASSIVE is not None:
+        return _CACHED_STATUTE_ISSUES_MASSIVE
+    cand = [
+        Path(DATA_DIR) / "statute_issues_massive.json",
+        Path(__file__).resolve().parent / "data" / "statute_issues_massive.json",
+        Path("G:/我的雲端硬碟/LawExamData/data/statute_issues_massive.json")
+    ]
+    p = next((f for f in cand if f.exists()), None)
+    if p:
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                _CACHED_STATUTE_ISSUES_MASSIVE = json.load(fh)
+        except Exception:
+            _CACHED_STATUTE_ISSUES_MASSIVE = {}
+    else:
+        _CACHED_STATUTE_ISSUES_MASSIVE = {}
+    return _CACHED_STATUTE_ISSUES_MASSIVE
+
+def get_bar_exam_issues_for_article(law_name: str, article_no: str, content: str = "") -> List[Dict[str, Any]]:
+    """依據法典名稱與條號，檢索本條文所涉之司律二試核心爭點（對標七法 Laws.club 與月旦知識庫爭點矩陣）"""
+    data = load_statute_issues_massive()
+    if not data:
+        return []
+    clean_no = re.sub(r'[^\d]', '', str(article_no))
+    clean_law = law_name.strip()
+    matches = []
+    seen = set()
+
+    def search_dict(d, current_path):
+        for k, v in d.items():
+            new_path = current_path + [k]
+            if isinstance(v, dict):
+                search_dict(v, new_path)
+            elif isinstance(v, list):
+                for item in v:
+                    item_str = str(item)
+                    path_str = " > ".join(new_path)
+                    hit = False
+                    if clean_law in path_str or clean_law in item_str:
+                        if f"{clean_no}條" in item_str or f"第{clean_no}條" in item_str or f"第 {clean_no} 條" in item_str or f"{clean_no}之" in item_str:
+                            hit = True
+                        elif content and any(len(kw) >= 3 and kw in item_str for kw in re.findall(r'[一-龥]{3,6}', content[:60])):
+                            hit = True
+                    if hit and item_str not in seen:
+                        seen.add(item_str)
+                        matches.append({
+                            "domain": new_path[0] if new_path else "",
+                            "category": new_path[1] if len(new_path) > 1 else "",
+                            "topic": new_path[2] if len(new_path) > 2 else "",
+                            "sub_topic": new_path[3] if len(new_path) > 3 else "",
+                            "issue_text": item_str
+                        })
+
+    search_dict(data, [])
+    return matches
+
 def get_article_annotations(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、實戰試題、課輔講義與純讀書筆記）"""
     global _ARTICLE_ANNOTATIONS_CACHE
@@ -1137,6 +1200,7 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
         "questions": matched_questions[:5],
         "handouts": matched_handouts[:5],
         "notes": matched_pure_notes[:5],
+        "bar_exam_issues": get_bar_exam_issues_for_article(law_name=law_name, article_no=article_no, content=content),
         "all_materials": anno_materials,
         "legislative_details": legislative_details
     }
