@@ -158,12 +158,12 @@ MODE_TEXTBOOK = "📖 體系教科書"
 MODE_EVAL = "📝 試卷批改"
 MODE_GEN = "🎯 模擬命題"
 MODE_BANK = "📚 歷年真題"
-MODE_ANS = "📖 擬答生成"
+MODE_ANS = "✍️ 擬答生成"
 MODE_SEARCH = "🔍 法學檢索"
 MODE_QA = "💬 法律問答"
 MODE_SUMMARIZER = "📑 裁判精鍊"
 MODE_SIX_CODES = "⚖️ 智慧六法"
-MODE_SFT = "📥 筆記蒸餾"
+MODE_SFT = "📥 法學筆記"
 MODE_INGEST = "📦 裁判入庫"
 MODE_DEV_MANAGER = "🛠️ 檔案總管"
 
@@ -809,7 +809,7 @@ init_directories()
 # 若六法全書或底層模組在 Streamlit Cloud 遭遇載入異常，於此主動向使用者呈現未遮蔽診斷訊息
 if _six_codes_load_error:
     st.error("⚠️ **【六法引擎自動安全防護已啟動】**：`six_codes_engine` 模組載入遭遇異常，系統已自動啟用安全模式以維持全部核心功能運作。")
-    with st.expander("🔍 點此查看未遮蔽之完整除錯日誌 (Unredacted Traceback)"):
+    with st.expander("🔍 查看詳細系統診斷日誌"):
         st.code(_six_codes_load_error)
 
 try:
@@ -1525,7 +1525,7 @@ def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
         st.markdown("#### 💡 【裁判核心要旨 (Holding / Key Point)】")
         st.info(holding)
         
-    with st.expander("📜 【判決理由與主文全文 (Full Judgment Text)】", expanded=True):
+    with st.expander("📜 【判決理由與主文全文】", expanded=True):
         st.text_area("裁判全文內容：", value=full_text, height=360, key=f"{key_prefix}_full_text_area", disabled=True)
         
     render_clickable_legal_entities(holding + "\n" + full_text[:1000], key_prefix=f"{key_prefix}_card_ents")
@@ -1538,12 +1538,12 @@ MODE_HOME = "🏠 系統首頁"
 MODE_EVAL = "📝 試卷批改"
 MODE_GEN = "🎯 模擬命題"
 MODE_BANK = "📚 歷年真題"
-MODE_ANS = "📖 擬答生成"
+MODE_ANS = "✍️ 擬答生成"
 MODE_SEARCH = "🔍 法學檢索"
 MODE_QA = "💬 法律問答"
 MODE_SUMMARIZER = "📑 裁判精鍊"
 MODE_SIX_CODES = "⚖️ 智慧六法"
-MODE_SFT = "📥 筆記蒸餾"
+MODE_SFT = "📥 法學筆記"
 MODE_INGEST = "📦 裁判入庫"
 MODE_DEV_MANAGER = "🛠️ 檔案總管"
 
@@ -2650,24 +2650,24 @@ if app_mode == MODE_HOME:
 
     home_tab_nav, home_tab_privacy, home_tab_copyright, home_tab_disclaimer, home_tab_feedback = st.tabs([
         "🧭 十大核心模組快速導覽",
-        "🔒 隱私權政策與個資分流保護 (Privacy Policy)",
-        "📜 著作權與合理使用政策 (Copyright Policy)",
-        "⚖️ 法律免責聲明與服務條款 (Legal Disclaimer)",
-        "📩 權益回報與移除申請 (Author Feedback)"
+        "🔒 隱私權保護政策",
+        "📜 著作權與合理使用",
+        "⚖️ 法律聲明與條款",
+        "📩 權益回報與移除申請"
     ])
 
     with home_tab_nav:
         st.subheader("🧭 平台法學核心模組一覽（點擊即可直接進入）")
         nav_cards = [
-            (MODE_EVAL, "📝 試卷批改", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行 OCR 辨識、爭點命中分析與四大維度閱卷評分。"),
+            (MODE_EVAL, "📝 試卷批改", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行智慧辨識、爭點命中分析與四大維度閱卷評分。"),
             (MODE_GEN, "🎯 模擬命題", "支援互動式考點列表增刪、AI 一試/二試客製命題，並整合行政法 300 題與全科既有選擇題庫隨機抽考。"),
             (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與最新 113～115 試卷，一鍵刷新與在線實戰。"),
-            (MODE_ANS, "📖 擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、大前提、實務學說對比與事實涵攝 IRAC 示範擬答。"),
+            (MODE_ANS, "✍️ 擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、請求權基礎、實務學說對比與事實涵攝示範擬答。"),
             (MODE_SEARCH, "🔍 法學檢索", "支援專業布林語法檢索、原判例／最高院決議／高院座談會篩選、審級歷審脈絡鏈，以及基準判決相同/相反見解比對。"),
             (MODE_QA, "💬 法律問答", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
             (MODE_SUMMARIZER, "📑 裁判精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度開放資料包批次擴充入庫。"),
             (MODE_SIX_CODES, "⚖️ 智慧六法", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
-            (MODE_SFT, "📥 筆記煉金", "重構之 AI 筆記煉金工坊：三步工作流支援體系數位筆記、Anki 爭點閃卡、實例題出題驗收與一頁式大抄！")
+            (MODE_SFT, "📥 法學筆記", "個人法學筆記工坊：三步工作流支援讀書筆記整理、Anki 爭點閃卡、重點速查表與考前大抄！")
         ]
         for row_i in range(0, len(nav_cards), 3):
             cols = st.columns(3)
@@ -2728,7 +2728,7 @@ if app_mode == MODE_HOME:
 #### 二、實務效力核實提醒
 - 原判例與舊決議依《法院組織法》第 57 條之 1 規定已停止適用其法源位階，改為一般裁判見解；最新實務見解仍請隨時參照司法院與憲法法庭官方公告。
 
-#### 三、裁判引用真實性保證與防偽核驗機制聲明 (Ground Truth Case Audit Guarantee)
+#### 三、裁判引用真實性保證與正本核驗機制聲明
 1. **堅決杜絕 AI 幻覺虛構案號**：本系統已全面啟用實時防偽校驗引擎，所有 AI 評閱、擬答、問答與教科書生成內容中所引述之法院裁判字號、大法官解釋與憲法法庭判決，均逐一穿透比對司法院 400 萬筆實體裁判大庫與權威判例庫。
 2. **官方正本雙軌直連**：經比對無誤之實體裁判均自動附加司法院裁判書官方檢索連結；若查無實體裁判文書，系統將主動以醒目警示標註，防範考生或實務工作者誤信不實字號。
         """)
@@ -2769,7 +2769,7 @@ elif app_mode == MODE_TEXTBOOK or any(k in str(app_mode) for k in ["教科書", 
     render_textbook_learning_view()
 
 elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "批改", "手寫"]):
-    st.header("📝 司律申論試卷 - 多模態 AI 批改與診斷")
+    st.header("📝 司律申論試卷 - 智慧擬真批改與深度診斷")
     st.write("上傳考生的手寫試卷照片、PDF 檔或 Word 電子稿，系統將自動進行 OCR 辨識、爭點比對與四大維度評分。")
 
     col1, col2 = st.columns([1, 1])
@@ -3046,7 +3046,7 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                         for item in result.get("weaknesses", []):
                             st.write(f"- {item}")
 
-                    st.subheader("🔍 手寫謄錄內容 (OCR 辨識結果)")
+                    st.subheader("🔍 手寫謄錄作答內容")
                     st.text_area("考生試卷文字排版還原：", value=result.get("transcription", ""), height=150)
 
                     st.subheader("✍️ 閱卷委員優化重構建議")
@@ -3056,7 +3056,7 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                     # 裁判引用真實性查核與官方正本直連 (Ground Truth Case Audit)
                     audit_md = result.get("audit_markdown", "")
                     if audit_md:
-                        with st.expander("🏛️ 裁判引用真實性查核與司法院正本檢索 (Ground Truth Case Audit)", expanded=True):
+                        with st.expander("🏛️ 裁判引用真實性查核與司法院正本檢索", expanded=True):
                             st.markdown(audit_md)
 
                     # 考生原卷字號真偽診斷
@@ -4724,7 +4724,7 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                     except Exception:
                         pass
 
-                    st.markdown("### 🏆 示範擬答全文 (IRAC)：")
+                    st.markdown("### 🏆 示範擬答全文：")
                     st.markdown(ans)
                     render_clickable_legal_entities(ans, key_prefix="m4_ans_ents")
 
@@ -5039,7 +5039,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         if hint:
                             st.success(f"✍️ **國考作答提示：** {hint}")
 
-                        with st.expander("📜 展開本機離線全文 (按需解壓串流)", expanded=False):
+                        with st.expander("📜 展開裁判全文", expanded=False):
                             full_txt = r.get("full_text", "")
                             if not full_txt:
                                 try:
@@ -5051,7 +5051,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                             else:
                                 st.info("💡 該裁判詳細事實未存於本機分卷庫中（採去事實化精萃儲存），請點擊下方「司法院直連全文」即可秒級調閱官方全卷！")
 
-                        with st.expander("🏛️ 【法源資訊規格】裁判排版詳情、引述工具列與關聯網絡", expanded=False):
+                        with st.expander("🏛️ 裁判排版詳情、引述工具列與關聯網絡", expanded=False):
                             render_lawsource_judgment_card(r, key_prefix=f"m5_card_{idx}")
 
                         b_c1, b_c2, b_c3, b_c4, b_c5 = st.columns([1.5, 1.4, 1.4, 1.2, 1.0])
@@ -5340,7 +5340,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         if mc.get("exam_application_hint"):
                             st.success(f"✍️ **國考作答提示：** {mc.get('exam_application_hint')}")
 
-                        with st.expander("📜 展開本機離線全文 (按需解壓串流)", expanded=False):
+                        with st.expander("📜 展開裁判全文", expanded=False):
                             full_txt = mc.get("full_text", "")
                             if not full_txt:
                                 try:
@@ -5826,7 +5826,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                                 st.rerun()
 
             # IRAC 報告內容
-            st.markdown("#### 🤖 深度法理爭點剖析與 IRAC 上位卷示範報告")
+            st.markdown("#### 🤖 深度法理爭點剖析與上位卷示範報告")
             st.markdown(res.get("markdown_result", ""))
 
             st.divider()
@@ -7298,7 +7298,7 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
 
     # 批次匯入司法院開放資料擴充大庫區塊
     st.divider()
-    with st.expander("📦 【大庫擴充管理】批次匯入司法院裁判書開放資料 (data/judgements / ZIP / RAR) 至本機庫", expanded=True):
+    with st.expander("📦 裁判資料庫擴充與管理", expanded=True):
         render_judgements_ingest_view()
 
 
@@ -8255,7 +8255,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
     st.divider()
 
     # 百萬筆 SFT 資料庫與微調管線（摺疊收納至底部）
-    with st.expander("🛠️ 進階：法學百萬語料庫 (SFT/Fine-Tuning) 調閱與訓練導出 (Colab / Kaggle)", expanded=False):
+    with st.expander("🛠️ 進階：法學專業結構化資料調閱與匯出", expanded=False):
     
         sft_tab1, sft_tab2, sft_tab3, sft_tab4 = st.tabs([
             "📤 單份筆記匯入與即時蒸餾",
@@ -8372,7 +8372,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                                     st.balloons()
                                     st.success(f"🎉 全部分析蒸餾完成！共處理 {len(sub_notes)} 份筆記（成功 {success_files} 份，失敗 {failed_files} 份），成功提煉出 **{len(total_new_samples)} 組** 高品質 SFT 法學微調樣本！")
                                     if total_new_samples:
-                                        with st.expander("🔍 檢視本次全部分析提煉之 SFT 樣本預覽 (前 10 組)", expanded=True):
+                                        with st.expander("🔍 檢視本次提煉之精華考點預覽 (前 10 組)", expanded=True):
                                             for s_idx, s in enumerate(total_new_samples[:10], 1):
                                                 st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
                                                 st.caption(f"指令 (Instruction): {s.get('instruction')}")
@@ -8399,7 +8399,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                                             if new_samples:
                                                 st.balloons()
                                                 st.success(f"🎉 蒸餾成功！自《{target_note['filename']}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動同步合併至主微調大庫！")
-                                                with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                                with st.expander("🔍 檢視本次提煉之精華考點預覽", expanded=True):
                                                     for s_idx, s in enumerate(new_samples, 1):
                                                         st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
                                                         st.caption(f"指令 (Instruction): {s.get('instruction')}")
@@ -8451,7 +8451,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                                 if new_samples:
                                     st.balloons()
                                     st.success(f"🎉 蒸餾成功！自《{up_file.name}》中成功提煉出 **{len(new_samples)} 組** 高品質 SFT 法學微調樣本，並已自動新建獨立檔案 `{arch_res.get('archive_filename', up_file.name)}` 永久典藏至社群筆記庫與六法大典！")
-                                    with st.expander("🔍 檢視本次提煉之 SFT 樣本預覽", expanded=True):
+                                    with st.expander("🔍 檢視本次提煉之精華考點預覽", expanded=True):
                                         for s_idx, s in enumerate(new_samples, 1):
                                             st.markdown(f"**【樣本 {s_idx}】ID: `{s.get('id')}`**")
                                             st.caption(f"指令 (Instruction): {s.get('instruction')}")
@@ -8607,7 +8607,7 @@ elif app_mode == MODE_SFT or any(k in app_mode for k in ["筆記", "蒸餾", "�
                                     )
     
                     with c_op2:
-                        st.markdown(f"### ⚡ 方案二：全科自動文字提取與 OCR 彙編")
+                        st.markdown(f"### ⚡ 方案二：全科自動文字提取與彙編")
                         st.caption(f"自動遍歷【{sel_subject}】所有 {len(sub_notes)} 份檔案，優先調用高速快取與數位字；若為手寫筆記掃描檔則由 Gemini Flash 辨識並彙整為單一 Markdown 筆記大典。")
                         ocr_flag = st.checkbox("自動對手寫掃描檔啟用 Gemini Flash 多模態 OCR", value=True, key="chk_auto_ocr_full")
     
