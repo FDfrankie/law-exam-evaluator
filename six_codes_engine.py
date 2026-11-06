@@ -298,6 +298,22 @@ def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
     articles, meta, law_map = load_six_codes_data()
     if law_name in law_map:
         return law_map[law_name]
+    
+    # 支援常見法典簡稱雙向對照
+    alias_map = {
+        "刑法": "中華民國刑法",
+        "中華民國刑法": "刑法",
+        "憲法": "中華民國憲法",
+        "中華民國憲法": "憲法"
+    }
+    target_alias = alias_map.get(law_name) or COMMON_LAW_ALIASES.get(law_name)
+    if target_alias and target_alias in law_map:
+        return law_map[target_alias]
+        
+    for k in law_map:
+        if len(law_name) >= 2 and (law_name in k or k in law_name):
+            return law_map[k]
+
     reg_map = meta.get("regulations_map", {})
     for parent_l, ords in reg_map.items():
         for ord_item in ords:
@@ -1144,11 +1160,18 @@ def get_bar_exam_issues_for_article(law_name: str, article_no: str, content: str
     search_dict(data, [])
     return matches
 
-def get_article_annotations(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
-    """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、實戰試題、課輔講義與純讀書筆記）"""
+def get_article_annotations(
+    law_name: str,
+    article_no: str,
+    content: str = "",
+    court_filter: Optional[str] = "全部法院",
+    order_by: str = "authority",
+    search_kw: str = ""
+) -> Dict[str, Any]:
+    """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、主管函釋、實戰試題、課輔講義與純讀書筆記）"""
     global _ARTICLE_ANNOTATIONS_CACHE
     clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
-    cache_key = (law_name, clean_no)
+    cache_key = (law_name, clean_no, court_filter or "ALL", order_by, search_kw)
     if cache_key in _ARTICLE_ANNOTATIONS_CACHE:
         return _ARTICLE_ANNOTATIONS_CACHE[cache_key]
     articles, meta, law_map = load_six_codes_data()
@@ -1158,8 +1181,47 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
     key = f"{law_name}_第{clean_no}條"
     
     prec_index = meta.get("precedents_article_index", {})
-    matched_precedents = prec_index.get(key, [])
+    matched_precedents = list(prec_index.get(key, []))
     
+    # 1. 簡稱與別名備用鍵查找 (例如 刑法 <-> 中華民國刑法, 憲法 <-> 中華民國憲法)
+    if not matched_precedents:
+        alias_name = None
+        if "中華民國刑法" in law_name:
+            alias_name = "刑法"
+        elif law_name == "刑法":
+            alias_name = "中華民國刑法"
+        elif "中華民國憲法" in law_name:
+            alias_name = "憲法"
+        elif law_name == "憲法":
+            alias_name = "中華民國憲法"
+            
+        if alias_name:
+            alias_key = f"{alias_name}_第{clean_no}條"
+            matched_precedents = list(prec_index.get(alias_key, []))
+            
+    # 2. 深度融合實體裁判庫與權威先例庫 (judicial_authority.db & 百萬裁判庫)
+    try:
+        from legal_cross_reference_engine import get_cross_reference_engine
+        cre = get_cross_reference_engine()
+        if cre:
+            cre_precs = cre.get_landmark_judgments_for_statute(
+                law_name=law_name,
+                article_no=clean_no,
+                court_filter=court_filter,
+                order_by=order_by,
+                search_kw=search_kw,
+                limit=15
+            )
+            if cre_precs:
+                seen_ids = {p.get("case_id") for p in matched_precedents if p.get("case_id")}
+                for cp in cre_precs:
+                    cid = cp.get("case_id")
+                    if cid and cid not in seen_ids:
+                        seen_ids.add(cid)
+                        matched_precedents.append(cp)
+    except Exception:
+        pass
+            
     # 相關命令與細則
     reg_map = meta.get("regulations_map", {})
     matched_orders = reg_map.get(law_name, [])
@@ -1403,6 +1465,20 @@ def get_moj_article_url(law_name: str, article_no: str) -> str:
         encoded_name = urllib.parse.quote(law_name)
         return f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={encoded_name}"
 
+def get_ly_article_url(law_name: str, article_no: str) -> str:
+    """產生指定法規與條號在《立法院法律系統 (lis.ly.gov.tw)》之官方立法理由與公報查詢連結"""
+    encoded_name = urllib.parse.quote(law_name)
+    clean_no = normalize_article_no(article_no)
+    return f"https://lis.ly.gov.tw/lglawc/lawsingle?00^{encoded_name}^{clean_no}"
+
+def get_judicial_article_url(law_name: str, article_no: str) -> str:
+    """產生指定法規與條號在《司法院法學資料檢索系統 (judgment.judicial.gov.tw)》之裁判查詢連結"""
+    return "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+
+def get_constitutional_article_url(law_name: str = "", article_no: str = "") -> str:
+    """產生在《憲法法庭裁判查詢系統 (cons.judicial.gov.tw)》之查詢連結"""
+    return "https://cons.judicial.gov.tw/judgments.aspx"
+
 def get_article_legislative_details(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """
     獲取特定法條之完整立法修法理由與歷史新舊條文對照（比照法源法律網依年份降冪倒序呈現）：
@@ -1497,11 +1573,13 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
                 "date": h.get("date", ""),
                 "gazette": decree_title,
                 "is_current": is_cur,
+                "is_curated": False,
                 "version_tag": v_tag,
                 "previous_text": f"（修正前歷史條文，發布字號：{decree_title}）",
                 "current_text": content if is_cur else "（修正條文文字如公報記載）",
                 "key_changes": h.get("action", f"{seq_str}條文"),
-                "reason": f"立法院三讀及總統令公布紀錄：{h.get('content', '')}",
+                "reason": "",  # 嚴格防錯置：公報條號列表絕非個別條文之立法理由，標註為空並保留完整公報令號
+                "gazette_record": h.get('content', ''),
                 "exam_impact": f"生效施行原則：除法律別有規定施行日期外，自{h.get('date', '')}公布或發布日起算至第三日起發生效力。"
             })
     
@@ -1515,6 +1593,7 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
             "date": f"{enact_str}制定公布",
             "gazette": first_decree,
             "is_current": True,
+            "is_curated": True,
             "version_tag": f"{law_name} 現行有效條文（制定公布迄今未曾修改）",
             "previous_text": f"（{enact_str}制定公布全文，施行迄今未曾修正）",
             "current_text": content,
@@ -1528,10 +1607,10 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
     if timeline_hits:
         latest_date = timeline_hits[-1].get('date', '')
         latest_decree = timeline_hits[-1].get('decree', '')
-        default_intent = f"🎯 立法意旨：本條歷經立法院修法三讀程序修正通過，最新修正發布於民國 {latest_date}。"
+        default_intent = f"🎯 立法沿革：本條歷經立法院修法三讀程序修正通過，最新修正發布於民國 {latest_date}。"
         default_summary = f"本條於立法院沿革中查有 {len(timeline_hits)} 次官方公布/修正紀錄，最新發布令號為：{latest_decree}。"
     else:
-        default_intent = f"🎯 立法意旨：本條於{enact_str}制定公布，文字歷久彌新未曾修改。"
+        default_intent = f"🎯 立法沿革：本條於{enact_str}制定公布，文字歷久彌新未曾修改。"
         default_summary = f"本條自{enact_str}制定公布施行迄今未曾修正，維持原制定條文內容完整適用。"
 
     is_initial = (len(formatted_amends) == 0 and len(timeline_hits) == 0)
@@ -1545,7 +1624,11 @@ def get_article_legislative_details(law_name: str, article_no: str, content: str
         "enactment_card": enactment_card,
         "is_initial_enactment": is_initial,
         "timeline_hits": timeline_hits,
-        "total_official_hits": len(timeline_hits)
+        "total_official_hits": len(timeline_hits),
+        "official_moj_url": get_moj_article_url(law_name, clean_no),
+        "official_ly_url": get_ly_article_url(law_name, clean_no),
+        "official_judicial_url": get_judicial_article_url(law_name, clean_no),
+        "official_constitutional_url": get_constitutional_article_url(law_name, clean_no)
     }
 
 def save_article_legislative_details(law_name: str, article_no: str, data: Dict[str, Any]) -> bool:
@@ -1825,21 +1908,79 @@ class SixCodesDeepAnnotator:
 
 def format_legal_article_text(text: str) -> str:
     """
-    將法律條文內容進行標準法學結構化排版（段落、款項分離縮排）。
+    將法律條文內容進行標準法學結構化排版（項、款、目分離與階層縮排）。
     """
     if not text or not isinstance(text, str):
         return ""
     t = text.replace('\r\n', '\n').replace('\r', '\n').strip()
-    t = re.sub(r'(?<=[。；:：\n])\s*(?=[一二三四五六七八九十百]+[、\s])', '\n  ', t)
-    t = re.sub(r'(?<=[。；:：\n])\s*(?=[（(][一二三四五六七八九十百]+[)）])', '\n    ', t)
+    # 款項分離
+    t = re.sub(r'(?<=[。；:：\n])\s*(?=[一二三四五六七八九十百]+[、\s])', '\n    ', t)
+    # 目分離
+    t = re.sub(r'(?<=[。；:：\n])\s*(?=[（(][一二三四五六七八九十百]+[)）])', '\n        ', t)
     return t
+
+
+def render_formatted_article_html(content: str, title: str = "") -> str:
+    """
+    將條文內容轉為高階法學排版 HTML 卡片（比照七法、法律人）：
+    - 項次標記（第 1 項、第 2 項...）
+    - 款項縮排（一、二、...）
+    - 目次縮排（(一)、(二)...）
+    - 但書與準用關鍵法學色彩高亮
+    """
+    if not content or not isinstance(content, str):
+        return ""
+    
+    raw_paras = [p.strip() for p in content.replace('\r\n', '\n').replace('\r', '\n').split('\n') if p.strip()]
+    has_multiple_paras = len(raw_paras) > 1
+
+    lines_html = []
+    lines_html.append('<div style="background: rgba(37, 99, 235, 0.03); border: 1px solid rgba(37, 99, 235, 0.2); border-left: 5px solid #2563eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, \'Noto Sans TC\', sans-serif; line-height: 1.85;">')
+    if title:
+        lines_html.append(f'<div style="font-weight: 700; color: #1e293b; font-size: 1.05rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;"><span>{title}</span></div>')
+
+    for p_idx, para in enumerate(raw_paras):
+        # 拆解款 (一、二、三...)
+        sub_items = re.split(r'(?=[一二三四五六七八九十百]+[、\s])', para)
+        if len(sub_items) > 1 and not sub_items[0].strip():
+            sub_items = sub_items[1:]
+
+        para_inner = []
+        for item in sub_items:
+            # 檢查是否為款
+            m_sub = re.match(r'^([一二三四五六七八九十百]+[、\s])(.*)', item)
+            if m_sub:
+                prefix, body = m_sub.groups()
+                body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+                body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+                para_inner.append(f'<div style="padding-left: 28px; text-indent: -28px; margin: 4px 0; color: #334155;"><strong style="color: #0f172a;">{prefix}</strong>{body}</div>')
+                continue
+
+            # 檢查是否為目
+            m_item = re.match(r'^([（(][一二三四五六七八九十百]+[)）])(.*)', item)
+            if m_item:
+                prefix, body = m_item.groups()
+                body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+                body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+                para_inner.append(f'<div style="padding-left: 48px; text-indent: -20px; margin: 3px 0; color: #475569;"><strong style="color: #1e293b;">{prefix}</strong>{body}</div>')
+                continue
+
+            # 一般段落內文
+            body = item
+            body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+            body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+            p_badge = f'<span style="background: #e2e8f0; color: #475569; font-size: 0.78rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-right: 8px;">第 {p_idx+1} 項</span>' if has_multiple_paras else ''
+            para_inner.append(f'<div style="margin: 6px 0; color: #1e293b; font-size: 1.02rem;">{p_badge}{body}</div>')
+
+        lines_html.append(''.join(para_inner))
+
+    lines_html.append('</div>')
+    return ''.join(lines_html)
 
 
 def render_formatted_article_quote(content: str, title: str = "📜 條文全文") -> str:
     """
-    將條文內容轉為美觀之 Markdown 引用區塊格式。
+    將條文內容轉為美觀之 Markdown / HTML 區塊格式。
     """
-    formatted = format_legal_article_text(content)
-    lines = [f"> {line}  " for line in formatted.split('\n')]
-    return f"> **{title}**：  \n" + '\n'.join(lines)
+    return render_formatted_article_html(content, title)
 

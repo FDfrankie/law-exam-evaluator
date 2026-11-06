@@ -517,7 +517,12 @@ def parse_official_opendata_record(data: Dict[str, Any]) -> Optional[Dict[str, A
     if not holding_content:
         holding_content = clean_text(jfull[:500])
 
-    laws = re.findall(r'(?:行政訴訟法|行政程序法|區域計畫法|行政罰法|民法|刑法|公司法|民事訴訟法|刑事訴訟法|憲法)第[0-9\-]+條(?:之[0-9]+)?', jfull)[:6]
+    try:
+        from legal_cross_reference_engine import extract_statute_citations_from_text
+        cits = extract_statute_citations_from_text(jfull)
+        laws = [x["canonical"] for x in cits[:12]]
+    except Exception:
+        laws = re.findall(r'(?:行政訴訟法|行政程序法|區域計畫法|行政罰法|民法|刑法|公司法|民事訴訟法|刑事訴訟法|憲法)第[0-9\-]+條(?:之[0-9]+)?', jfull)[:6]
 
     # 法學學科判定
     subject = "公法學與行政訴訟法" if "行政" in court else ("刑事法學" if ("刑" in track or "刑事" in jfull[:100]) else ("民商事法學" if ("民" in track or "民事" in jfull[:100]) else "法學專業實務"))

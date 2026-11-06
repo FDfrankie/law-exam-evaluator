@@ -148,7 +148,26 @@ class MillionJudgmentsSQLiteEngine:
             print(f"[MillionJudgmentsDB Init Warning] {e}")
 
     def _get_conn(self, db_path: Path) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
+        max_connect_retries = 5
+        conn = None
+        for c_attempt in range(max_connect_retries):
+            try:
+                # 針對 Google Drive 雲端同步虛擬磁碟：自動清理因網路暫態中斷遺留之 0 位元鎖定檔
+                if db_path.exists():
+                    try:
+                        if db_path.stat().st_size == 0:
+                            db_path.unlink()
+                    except Exception:
+                        pass
+                conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
+                break
+            except sqlite3.OperationalError as oe:
+                err_msg = str(oe).lower()
+                if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and c_attempt < max_connect_retries - 1:
+                    time.sleep((c_attempt + 1) * 1.5)
+                else:
+                    raise
+
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=120000;")
 
@@ -254,15 +273,30 @@ class MillionJudgmentsSQLiteEngine:
         if not hasattr(self, "_initialized_shards"):
             self._initialized_shards = set()
         if shard_path in self._initialized_shards and shard_path.exists():
-            return shard_path
+            try:
+                if shard_path.stat().st_size > 0:
+                    return shard_path
+            except Exception:
+                pass
 
-        with self._get_conn(shard_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS judgments_blob (
-                    case_id TEXT PRIMARY KEY,
-                    full_text_zlib BLOB
-                )
-            """)
+        max_init_retries = 5
+        for i_attempt in range(max_init_retries):
+            try:
+                with self._get_conn(shard_path) as conn:
+                    conn.execute("""
+                        CREATE TABLE IF NOT EXISTS judgments_blob (
+                            case_id TEXT PRIMARY KEY,
+                            full_text_zlib BLOB
+                        )
+                    """)
+                break
+            except sqlite3.OperationalError as oe:
+                err_msg = str(oe).lower()
+                if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and i_attempt < max_init_retries - 1:
+                    time.sleep((i_attempt + 1) * 1.5)
+                else:
+                    raise
+
         self._initialized_shards.add(shard_path)
         return shard_path
 
@@ -494,9 +528,9 @@ class MillionJudgmentsSQLiteEngine:
 
             # 寫入分片本文 BLOB 庫 (亦帶重試保護)
             for s_key, blob_rows in shard_buckets.items():
-                s_path = self._init_shard_db(s_key)
                 for s_attempt in range(max_retries):
                     try:
+                        s_path = self._init_shard_db(s_key)
                         with self._get_conn(s_path) as sconn:
                             sconn.executemany("""
                                 INSERT OR REPLACE INTO judgments_blob (case_id, full_text_zlib)

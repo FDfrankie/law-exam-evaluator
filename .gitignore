@@ -70,3 +70,6 @@ data/ingest_log.jsonl
 
 # Jupyter Notebook 快取
 .ipynb_checkpoints/
+
+# 本地暫存與除錯腳本
+scratch/

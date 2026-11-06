@@ -302,6 +302,18 @@ def process_record_to_db_payload(
         parsed["extracted_history_instances"] = sub_info.get("extracted_history_instances", [])
         parsed["substantive_prior_instance"] = sub_info.get("substantive_prior_instance")
 
+    # 確保引用法條欄位精準萃取（供法條-判決雙向反查網絡使用）
+    if not parsed.get("laws_cited"):
+        sample_text = parsed.get("full_text") or parsed.get("holding") or ""
+        if sample_text:
+            try:
+                from legal_cross_reference_engine import extract_statute_citations_from_text
+                cits = extract_statute_citations_from_text(sample_text)
+                if cits:
+                    parsed["laws_cited"] = [x["canonical"] for x in cits[:12]]
+            except Exception:
+                pass
+
     # 提取前審案號與歷審鏈字串
     spi = parsed.get("substantive_prior_instance")
     if spi:
