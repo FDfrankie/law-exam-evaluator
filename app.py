@@ -123,6 +123,21 @@ div[data-testid="stAlert"] {
     border-radius: 10px !important;
     box-shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
+/* Reading Ergonomics & Line Spacing (LawyerMan / LawBank) */
+p, div[data-testid="stMarkdownContainer"] p, div[data-testid="stMarkdownContainer"] li, textarea, .stTextArea textarea {
+    line-height: 1.68 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# 效法法律人與法源法律網：動態字體大小舒適排版注入
+_cur_reading_fs = st.session_state.get("reading_font_size", "16px")
+if _cur_reading_fs != "16px":
+    st.markdown(f"""
+<style>
+p, div[data-testid="stMarkdownContainer"] p, div[data-testid="stMarkdownContainer"] li, textarea, .stTextArea textarea {{
+    font-size: {_cur_reading_fs} !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1602,6 +1617,18 @@ with st.sidebar:
     else:
         st.caption("🟢 AI 核心引擎已連線")
     st.divider()
+    with st.expander("🔠 閱讀字體大小偏好", expanded=False):
+        font_opt = st.selectbox(
+            "選擇閱讀字級（比照法律人/法源排版）：",
+            ["標準字體 (16px)", "舒適大字 (18px)", "高齡護眼 (20px)"],
+            index=1 if st.session_state.get("reading_font_size") == "18px" else (2 if st.session_state.get("reading_font_size") == "20px" else 0),
+            key="sb_reading_font_selector"
+        )
+        target_size = "18px" if "舒適" in font_opt else ("20px" if "護眼" in font_opt else "16px")
+        if st.session_state.get("reading_font_size") != target_size:
+            st.session_state["reading_font_size"] = target_size
+            st.rerun()
+
     if st.button("🔒 隱私權與法律聲明", use_container_width=True, key="btn_sidebar_privacy_home"):
         st.session_state["app_mode"] = MODE_HOME
         st.session_state["nav_sidebar_radio_mode"] = MODE_HOME
