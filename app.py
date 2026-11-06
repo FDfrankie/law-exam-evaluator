@@ -9390,6 +9390,60 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
 
 
 
+    # 🌟 人性化體驗升級：司律二試歷屆全真考題一鍵帶入
+
+    st.markdown("**🏆 司律二試熱門真題示範（點擊一鍵帶入題目）**：")
+
+    c_m1, c_m2, c_m3, c_m4 = st.columns(4)
+
+    sample_exam_qs = [
+
+        (
+
+            "甲將其所有之 A 地借名登記於乙名下，雙方約定乙僅得代為管理。詎乙未經甲之同意，擅自將 A 地出賣並移轉登記於惡意知情之丙。試問：甲得否向丙請求塗銷登記並返還 A 地？乙之處分行為效力如何？",
+
+            "📜 112司法官民法"
+
+        ),
+
+        (
+
+            "甲為具有辨識能力之成年人，為謀殺仇人乙，預先服下大量酒精以壯膽，隨後在辨識能力顯著降低之狀態下持刀砍殺乙致死。試問：甲之行為應如何論處？是否成立原因自由行為？",
+
+            "⚔️ 111律師刑法"
+
+        ),
+
+        (
+
+            "主管機關以甲公司違反環境保護法規為由，作成裁處新臺幣 100 萬元罰鍰並命停工之行政處分。嗣後主管機關發現該處分適用法規有誤，欲依行政程序法第 117 條予以撤銷。試問：甲公司得否主張信賴保護？撤銷之法定要件為何？",
+
+            "🏢 110司法官行政法"
+
+        ),
+
+        (
+
+            "A 上市公司董事長甲指示公司財務部門，以公司資金高價承接甲實質控制但業績嚴重虧損之 B 公司股權，造成 A 公司受有數千萬元之重大損害。試問：甲應負何種民刑事責任？公司法第 23 條與證交法第 171 條特別背信罪如何適用？",
+
+            "💼 111律師商事法"
+
+        )
+
+    ]
+
+    for m_col, (eq_text, eq_label) in zip([c_m1, c_m2, c_m3, c_m4], sample_exam_qs):
+
+        with m_col:
+
+            if st.button(eq_label, key=f"btn_sample_eq_{eq_label}", use_container_width=True):
+
+                st.session_state["m4_target_question"] = eq_text
+
+                st.session_state["m4_text_area_input"] = eq_text
+
+                st.rerun()
+
     target_q = st.text_area(
 
         "請確認申論題題目（可直接修改或補充）：",
@@ -12317,6 +12371,38 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
 
 
+    # 🌟 人性化體驗升級：生活與實務高頻情境一鍵帶入
+
+    st.markdown("**💡 常見實務情境範例（點擊一鍵帶入問題）**：")
+
+    c_q1, c_q2, c_q3, c_q4, c_q5 = st.columns(5)
+
+    sample_scenarios = [
+
+        ("車齡2年8個月自用小客車發生車禍，修復工資6萬元、零件費用14萬元，依定率遞減法折舊應賠償多少？", "🚘 車輛折舊試算"),
+
+        ("房東於租約到期後藉故屋況瑕疵苛扣2個月押金不還，承租人該如何依租賃條例合法要回？請草擬存證信函。", "🏠 租賃押金自救"),
+
+        ("借名登記出名人擅自出賣登記於其名下之不動產給第三人，其處分效力如何？最高法院大法庭裁定見解為何？", "🏷️ 借名登記爭點"),
+
+        ("把別人的油漆塗在自己汽車上，依民法添附規定所有權歸誰？何人應向何人為償金請求？", "🎨 動產添附歸屬"),
+
+        ("雇主以業務緊縮為由預告解雇勞工，勞工工作滿3年6個月，法定資遣費及預告工資應如何計算？", "💼 資遣費精算")
+
+    ]
+
+    for q_col, (s_txt, s_lbl) in zip([c_q1, c_q2, c_q3, c_q4, c_q5], sample_scenarios):
+
+        with q_col:
+
+            if st.button(s_lbl, key=f"btn_hot_qa_{s_lbl}", use_container_width=True):
+
+                st.session_state["current_qa_question_input"] = s_txt
+
+                st.session_state["txt_unified_law_search"] = s_txt
+
+                st.rerun()
+
     # 2. 原本那個功能也不錯可以保留 (保留在優雅收合的進階設定與專屬精算工具箱中)
 
     with st.expander("⚙️ 保留原版進階設定與專用金錢精算工具箱 (領域自選・立場選擇・輸出規格・五大多功能試算機)", expanded=False):
@@ -13937,6 +14023,44 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
 
 
 
+    # 🌟 人性化體驗升級：熱門權威裁判快速跳轉晶片
+
+    st.markdown("**🔥 熱搜權威裁判一鍵速查（點擊立即載入精鍊與判旨）**：")
+
+    c_p1, c_p2, c_p3, c_p4, c_p5 = st.columns(5)
+
+    hot_precedents = [
+
+        ("108台上大1719裁", "🏛️ 108台上大1719 (借名登記)"),
+
+        ("111憲判1", "⚖️ 111憲判1 (強制道歉案)"),
+
+        ("108台上908民", "📜 108台上908 (物上請求)"),
+
+        ("釋字785", "🛡️ 釋字785 (公務員訴訟權)"),
+
+        ("最高行109大1裁", "🏢 最高行109大1 (公法爭訟)")
+
+    ]
+
+    for p_col, (p_id, p_label) in zip([c_p1, c_p2, c_p3, c_p4, c_p5], hot_precedents):
+
+        with p_col:
+
+            if st.button(p_label, key=f"btn_hot_prec_{p_id}", use_container_width=True):
+
+                st.session_state["sum_citation_search"] = p_id
+
+                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+
+                st.session_state["sum_input_title"] = ""
+
+                st.session_state["sum_input_text"] = ""
+
+                st.session_state.pop("last_ai_sum_res", None)
+
+                st.rerun()
+
     # 第一步：先打字號 (裁判案號 / 行政函釋字號)
 
     cur_cite_val = st.session_state.get("sum_citation_search", "")
@@ -14687,6 +14811,62 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
+    # ⚡ 常用熱搜條文快捷鍵 (Quick Jump Chips)
+
+    law_pop_chips = {
+
+        "民法": [("184", "184 (侵權責任)"), ("179", "179 (不當得利)"), ("767", "767 (物上請求)"), ("148", "148 (誠信原則)"), ("247-1", "247-1 (定型化條款)"), ("758", "758 (登記效力)")],
+
+        "刑法": [("19", "19 (責任能力)"), ("22", "22 (業務正當)"), ("271", "271 (普通殺人)"), ("320", "320 (竊盜罪)"), ("339", "339 (詐欺罪)")],
+
+        "公司法": [("19", "19 (未登記責任)"), ("23", "23 (忠實義務)"), ("185", "185 (重大讓與)"), ("192-1", "192-1 (董事提名)")],
+
+        "行政程序法": [("92", "92 (行政處分)"), ("93", "93 (處分附款)"), ("117", "117 (撤銷違法處分)"), ("123", "123 (廢止合法處分)")],
+
+        "民事訴訟法": [("244", "244 (起訴狀)"), ("277", "277 (舉證責任)"), ("400", "400 (既判力)")],
+
+        "刑事訴訟法": [("156", "156 (自白法則)"), ("158-4", "158-4 (證據排除)"), ("376", "376 (三審限制)")],
+
+        "勞動基準法": [("11", "11 (預告解雇)"), ("12", "12 (懲戒解雇)"), ("14", "14 (被迫離職)"), ("17", "17 (資遣費)")],
+
+        "證券交易法": [("20", "20 (財報不實)"), ("157-1", "157-1 (內線交易)"), ("171", "171 (刑責加重)")],
+
+        "憲法訴訟法": [("59", "59 (裁判審查)"), ("65", "65 (機關爭議)")]
+
+    }
+
+    active_chips = law_pop_chips.get(selected_law, [])
+
+    if active_chips:
+
+        st.markdown("<small style='color: #666;'>⚡ <b>常用爭點條文直達</b>：</small>", unsafe_allow_html=True)
+
+        chip_cols = st.columns(len(active_chips) + (1 if search_kw else 0))
+
+        for c_idx, (art_num, art_label) in enumerate(active_chips):
+
+            with chip_cols[c_idx]:
+
+                if st.button(f"📌 {art_label}", key=f"btn_chip_{selected_law}_{art_num}", use_container_width=True):
+
+                    st.session_state["six_codes_search_kw"] = art_num
+
+                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
+
+                    st.rerun()
+
+        if search_kw:
+
+            with chip_cols[-1]:
+
+                if st.button("✖️ 清除", key=f"btn_chip_clear_{selected_law}", use_container_width=True):
+
+                    st.session_state["six_codes_search_kw"] = ""
+
+                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
+
+                    st.rerun()
+
     # 🌟 新功能：更新六法按鈕（按下去之後六法會自動聯網更新最近的修法，同步至本機大典）
 
     up_col1, up_col2 = st.columns([3, 1])
@@ -14931,7 +15111,19 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-        for idx, art in enumerate(matched_articles[:30]):
+        # 人性化漸進式條文加載：首頁預設呈現前 5 條核心條文，杜絕一次繪製 700+ 個組件造成瀏覽器卡死
+
+        if not search_kw:
+
+            display_limit = st.session_state.get("six_codes_display_limit", 5)
+
+        else:
+
+            display_limit = st.session_state.get("six_codes_search_limit", 15)
+
+        articles_to_render = matched_articles[:display_limit]
+
+        for idx, art in enumerate(articles_to_render):
 
             lname = art.get("law_name", "")
 
@@ -16108,6 +16300,30 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                         st.rerun()
 
 
+
+        if len(matched_articles) > len(articles_to_render):
+
+            st.markdown("---")
+
+            c_more1, c_more2, c_more3 = st.columns([1, 2, 1])
+
+            with c_more2:
+
+                remain_cnt = len(matched_articles) - len(articles_to_render)
+
+                next_batch = min(10, remain_cnt)
+
+                if st.button(f"⏬ 載入後續條文（已顯示 {len(articles_to_render)} / {len(matched_articles)} 條，點擊再載入 {next_batch} 條）", use_container_width=True, key="btn_load_more_six_codes_articles"):
+
+                    if not search_kw:
+
+                        st.session_state["six_codes_display_limit"] = len(articles_to_render) + 10
+
+                    else:
+
+                        st.session_state["six_codes_search_limit"] = len(articles_to_render) + 10
+
+                    st.rerun()
 
 # ----------------- 模式 9: AI 筆記智慧煉金工坊 -----------------
 
