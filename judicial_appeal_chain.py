@@ -18,6 +18,54 @@ from typing import Dict, List, Any, Optional, Tuple
 from config import JUDICIAL_1M_DIR, DATA_DIR
 
 
+
+def infer_disposition_intelligence(text: str) -> Dict[str, Any]:
+    """
+    智能分析裁判主文與判旨，精準識別審級結論與逆轉訊號（對標 Lawsnote 審級結果分析）
+    """
+    t = str(text or "")
+    if any(k in t for k in ["廢棄發回", "原判決廢棄", "發回更審", "發回臺灣高等"]):
+        return {
+            "disposition": "廢棄發回更審",
+            "badge": "🚨 【見解逆轉・原判決廢棄發回】",
+            "is_reversal": True,
+            "badge_color": "#d90429"
+        }
+    if any(k in t for k in ["撤銷改判", "原判決撤銷", "改判", "改處"]):
+        return {
+            "disposition": "撤銷原判改判",
+            "badge": "🚨 【見解逆轉・原判決撤銷改判】",
+            "is_reversal": True,
+            "badge_color": "#e63946"
+        }
+    if any(k in t for k in ["上訴駁回", "抗告駁回", "原審判決並無不合", "核無不合", "原判決並無違誤", "應予駁回"]):
+        return {
+            "disposition": "上訴駁回",
+            "badge": "✅ 【見解推進／原審確定定錨】",
+            "is_reversal": False,
+            "badge_color": "#2a9d8f"
+        }
+    if any(k in t for k in ["大字", "大法庭", "統一見解", "徵詢"]):
+        return {
+            "disposition": "最高法院大法庭裁定",
+            "badge": "🏛️ 【最高法院大法庭法律統一裁定】",
+            "is_reversal": False,
+            "badge_color": "#457b9d"
+        }
+    if any(k in t for k in ["憲判", "違憲", "合憲", "大法官解釋", "釋字"]):
+        return {
+            "disposition": "憲法法庭判決",
+            "badge": "⚖️ 【憲法法庭終局裁判】",
+            "is_reversal": True if "違憲" in t else False,
+            "badge_color": "#6a0dad"
+        }
+    return {
+        "disposition": "裁判審理終結",
+        "badge": "📄 【實體審理終結】",
+        "is_reversal": False,
+        "badge_color": "#1d3557"
+    }
+
 class JudicialAppealChainEngine:
     """
     全量裁判審級歷程與前審/後審鏈接分析引擎 (毫秒級極速版)
@@ -213,35 +261,53 @@ class JudicialAppealChainEngine:
             except Exception:
                 pass
 
-            # 4. 組織為結構化時間軸
+            # 4. 組織為結構化時間軸（結合審級結論與逆轉訊號偵測）
             timeline = []
             for p in priors:
+                p_h = p.get("holding") or ""
+                disp = infer_disposition_intelligence(p_h)
                 timeline.append({
                     "order": 1,
                     "stage": p.get("role", "第一審/前審事實審"),
                     "case_id": p.get("case_id"),
                     "court": p.get("court"),
                     "date": p.get("date"),
-                    "holding": p.get("holding")
+                    "holding": p_h,
+                    "disposition": disp["disposition"],
+                    "disposition_badge": disp["badge"],
+                    "is_reversal": disp["is_reversal"],
+                    "badge_color": disp["badge_color"]
                 })
 
+            cur_h = current_row["holding_preview"] or current_row["title"] or ""
+            cur_disp = infer_disposition_intelligence(cur_h)
             timeline.append({
                 "order": 2,
                 "stage": "📍 當前檢視裁判",
                 "case_id": cur_case_id,
                 "court": current_row["court"],
                 "date": current_row["date"],
-                "holding": current_row["holding_preview"] or current_row["title"]
+                "holding": cur_h,
+                "disposition": cur_disp["disposition"],
+                "disposition_badge": cur_disp["badge"],
+                "is_reversal": cur_disp["is_reversal"],
+                "badge_color": cur_disp["badge_color"]
             })
 
             for s in subsequents:
+                s_h = s.get("holding") or ""
+                s_disp = infer_disposition_intelligence(s_h)
                 timeline.append({
                     "order": 3,
                     "stage": s.get("role", "後續上訴/更審審級"),
                     "case_id": s.get("case_id"),
                     "court": s.get("court"),
                     "date": s.get("date"),
-                    "holding": s.get("holding")
+                    "holding": s_h,
+                    "disposition": s_disp["disposition"],
+                    "disposition_badge": s_disp["badge"],
+                    "is_reversal": s_disp["is_reversal"],
+                    "badge_color": s_disp["badge_color"]
                 })
 
             return {

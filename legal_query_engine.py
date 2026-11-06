@@ -1362,8 +1362,13 @@ def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
                 return r
     return None
 
+_CACHED_PRECEDENT_OPTIONS = None
+
 def get_all_precedent_options() -> List[str]:
-    """獲取供 UI 下拉選單快速挑選之裁判格式標籤（依審級與重要性排序）"""
+    """獲取供 UI 下拉選單快速挑選之裁判格式標籤（依審級與重要性排序，記憶體單例極速快取）"""
+    global _CACHED_PRECEDENT_OPTIONS
+    if _CACHED_PRECEDENT_OPTIONS is not None:
+        return _CACHED_PRECEDENT_OPTIONS
     catalog = get_precedents_catalog()
     options = []
     for r in catalog:
@@ -1374,7 +1379,8 @@ def get_all_precedent_options() -> List[str]:
         if cid:
             tag = f"{cid} ｜ {court} ｜ {tit[:22]}"
             options.append(tag)
-    return options
+    _CACHED_PRECEDENT_OPTIONS = options
+    return _CACHED_PRECEDENT_OPTIONS
 
 
 class LegalIssueQueryEngine:

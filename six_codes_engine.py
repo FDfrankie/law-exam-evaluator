@@ -1,3 +1,4 @@
+_ARTICLE_ANNOTATIONS_CACHE = {}
 import time
 """
 智慧六法全書與條文爭點判解註記引擎 (Annotated Six Codes & Judicial Interpretations Engine)
@@ -210,7 +211,8 @@ def load_six_codes_data() -> tuple:
 
 def clear_six_codes_cache():
     """清除六法條文與標註快取，強制重新載入最新資料庫"""
-    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS
+    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS, _ARTICLE_ANNOTATIONS_CACHE
+    _ARTICLE_ANNOTATIONS_CACHE.clear()
     _CACHED_ARTICLES = None
     _CACHED_META = None
     _CACHED_LAW_MAP = None
@@ -1081,6 +1083,11 @@ def get_precise_relevant_notes(law_name: str, article_no: str, content: str = ""
 
 def get_article_annotations(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """獲取特定條文的跨庫綜合註記（實務裁判、相關命令、實戰試題、課輔講義與純讀書筆記）"""
+    global _ARTICLE_ANNOTATIONS_CACHE
+    clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
+    cache_key = (law_name, clean_no)
+    if cache_key in _ARTICLE_ANNOTATIONS_CACHE:
+        return _ARTICLE_ANNOTATIONS_CACHE[cache_key]
     articles, meta, law_map = load_six_codes_data()
     
     # 標準化條號鍵
@@ -1120,19 +1127,21 @@ def get_article_annotations(law_name: str, article_no: str, content: str = "") -
     # 立法修正理由與歷史條文演革
     legislative_details = get_article_legislative_details(law_name=law_name, article_no=article_no, content=content)
 
-    return {
+    res = {
         "law_name": law_name,
         "article_no": article_no,
         "precedents": matched_precedents,
         "orders": matched_orders,
         "key_regulations": key_regs,
         "admin_rulings": admin_rulings,
-        "questions": matched_questions[:5],   # 🎯 關聯實戰試題與百題爭點演練
-        "handouts": matched_handouts[:5],     # 📘 關聯課輔講義與授課教材
-        "notes": matched_pure_notes[:5],      # 📝 純個人讀書筆記
+        "questions": matched_questions[:5],
+        "handouts": matched_handouts[:5],
+        "notes": matched_pure_notes[:5],
         "all_materials": anno_materials,
         "legislative_details": legislative_details
     }
+    _ARTICLE_ANNOTATIONS_CACHE[cache_key] = res
+    return res
 
 
 def clean_history_text(text: str) -> str:
