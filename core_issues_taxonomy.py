@@ -919,3 +919,14 @@ def get_subject_topics_taxonomy(subject_name: str) -> dict:
         "【實務爭議】最高法院具體裁判與大法庭裁定爭議要點": "最高司法機關權威判旨、通說與有力學說之見解對立與折衝",
         "【程序救濟】法定救濟途徑、當事人適格與訴訟類型選定": "原告適格、管轄權歸屬、救濟期間與權利保護必要性"
     }
+
+
+def load_all_existing_stage1_mcqs(*args, **kwargs):
+    from exam_generator import load_all_existing_stage1_mcqs as _func
+    return _func(*args, **kwargs)
+
+
+def load_all_drive_notes(*args, **kwargs):
+    from exam_generator import load_all_drive_notes as _func
+    return _func(*args, **kwargs)
+

@@ -27,9 +27,15 @@ from core.six_codes_engine import (
     get_law_legislative_history,
     get_article_legislative_details,
     synthesize_article_legislative_details,
+    get_moj_article_url,
+    get_ly_article_url,
+    get_judicial_article_url,
+    get_constitutional_article_url,
+    render_formatted_article_html,
     clear_six_codes_cache,
     load_six_codes_data
 )
+from legal_cross_reference_engine import get_cross_reference_engine
 from core.six_codes_updater import update_law_amendments, load_amendments_history
 from core.admin_rulings_engine import (
     get_law_key_regulations,
@@ -259,48 +265,193 @@ def render_workspace():
             exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
             with st.expander(exp_label, expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
                 if art.get("is_latest_amendment"):
-                    st.success(f"🆕 **此條文為立法院最新三讀通過並經總統府公布之修正條文！** (施行日期：{art.get('modified_date', '最新公布')})")
-                    if art.get("amendment_reason"):
-                        st.markdown(f"🏛️ **官方立法理由：** {art.get('amendment_reason')}")
-                    if art.get("exam_points"):
-                        st.markdown(f"✍️ **國考作答熱點：** {art.get('exam_points')}")
-                st.markdown(f"> **📜 條文全文**：\n> {content}")
+                    st.markdown(
+                        f'<div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 6px; padding: 6px 14px; margin-bottom: 8px; color: #065f46; font-size: 0.9rem; font-weight: 600;">'
+                        f'🆕 立法院最新修正公布條文（施行日期：{art.get("modified_date", "最新公布")} ｜ 官方修正理由與對照請參見「立法理由與修法沿革」頁籤）</div>',
+                        unsafe_allow_html=True
+                    )
+
+                # 📜 條文核心本文：以高階法學排版呈現（段落項款縮排、但書與準用高亮）
+                st.markdown(render_formatted_article_html(content, f"📜 【{lname} 第{ano}條】現行有效條文全文"), unsafe_allow_html=True)
+
+                # ⚡ 條文專屬快捷工具列 (Quick Action Bar：複製條文、全國法規、立法院、司法院、憲法法庭)
+                tbar1, tbar2, tbar3, tbar4, tbar5 = st.columns([1.2, 1.2, 1.2, 1.2, 1.2])
+                with tbar1:
+                    clean_copy_text = f"《{lname}》第 {ano} 條：\n{content}"
+                    with st.popover("📋 複製條文全文", use_container_width=True):
+                        st.caption("點選右上角圖示或框內反白即可一鍵複製標準法條引註格式：")
+                        st.code(clean_copy_text, language="text")
+                with tbar2:
+                    st.link_button("📜 全國法規", get_moj_article_url(lname, ano), use_container_width=True, help="直通法務部全國法規資料庫官方條文")
+                with tbar3:
+                    st.link_button("🏛️ 立院公報", get_ly_article_url(lname, ano), use_container_width=True, help="直通立法院法律系統三讀審查與歷次公報")
+                with tbar4:
+                    st.link_button("⚖️ 司法院判解", get_judicial_article_url(lname, ano), use_container_width=True, help="直通司法院法學檢索系統查詢本條文裁判")
+                with tbar5:
+                    st.link_button("🏛️ 憲法法庭", get_constitutional_article_url(lname, ano), use_container_width=True, help="直通憲法法庭裁判及大法官解釋庫")
+
+                st.markdown("---")
 
                 tab_prec, tab_orders_rulings, tab_legis, tab_materials, tab_ai = st.tabs([
                     f"🏛️ 權威司法判解 ({len(precedents)} 筆)",
                     f"📋 關聯法規命令、施行細則與主管機關行政函釋 ({len(key_regulations)} 部法規・{len(admin_rulings)} 筆函釋)",
-                    f"🕰️ 立法理由與歷史條文 ({total_amends_display} 次修法對照)",
+                    f"📜 立法理由與歷史條文 ({total_amends_display} 次修法對照)",
                     f"📘 關聯名師講義與個人手寫讀書筆記 ({len(combined_materials)} 份・線上閱讀 PDF)",
                     "🤖 AI 深度釋析與作答模版"
                 ])
 
                 with tab_prec:
-                    if precedents:
-                        for p_idx, p in enumerate(precedents):
-                            st.markdown(f"**【{p.get('level')}】`{p.get('case_id')}`** ｜ **{p.get('title')}**")
-                            st.info(f"**核心要旨/主文：**\n{p.get('holding')}")
-                            if p.get('scholarly_views'):
-                                st.caption(f"📚 **學說實務對比：** {p.get('scholarly_views')}")
-                            if p.get('exam_application_hint'):
-                                st.success(f"✍️ **國考作答指示：** {p.get('exam_application_hint')}")
+                    all_prec_pool = []
+                    seen_p_cases = set()
 
-                            c_p1, c_p2 = st.columns(2)
-                            with c_p1:
-                                if st.button(f"⚡ 產出本判決 AI 深度摘要", key=f"btn_tab_sum_{idx}_{p_idx}", use_container_width=True):
-                                    st.session_state["sum_citation_search"] = p.get("case_id", "")
-                                    st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-                                    st.session_state["app_mode"] = MODE_SUMMARIZER
-                                    st.rerun()
-                            with c_p2:
-                                if st.button(f"🔄 帶入進行案例橫向比對", key=f"btn_tab_cmp_{idx}_{p_idx}", use_container_width=True):
-                                    st.session_state["target_compare_case_a"] = p.get("case_id", "")
-                                    st.session_state["target_compare_topic"] = f"{lname} {ano} 相關裁判見解分歧"
-                                    st.session_state["m5_sub_mode_idx"] = 4
-                                    st.session_state["app_mode"] = MODE_SEARCH
-                                    st.rerun()
-                            st.markdown("---")
+                    for p in precedents:
+                        cid = p.get("case_id") or p.get("title") or ""
+                        if cid and cid not in seen_p_cases:
+                            seen_p_cases.add(cid)
+                            all_prec_pool.append({
+                                "case_id": p.get("case_id", cid),
+                                "court": p.get("court") or ("憲法法庭" if "憲" in cid else "最高法院"),
+                                "level": p.get("level", "裁判要旨"),
+                                "date": p.get("date", "經典判解"),
+                                "title": p.get("title", cid),
+                                "holding": p.get("holding") or p.get("title") or p.get("issue") or "",
+                                "laws_cited": p.get("laws_cited", f"{lname}第{ano}條"),
+                                "scholarly_views": p.get("scholarly_views", ""),
+                                "exam_application_hint": p.get("exam_application_hint", ""),
+                                "official_url": p.get("official_url", "https://judgment.judicial.gov.tw/FJUD/default.aspx")
+                            })
+
+                    try:
+                        cre_engine = get_cross_reference_engine()
+                        if cre_engine:
+                            extra_judgments = cre_engine.get_landmark_judgments_for_statute(lname, ano, limit=30)
+                            for sj in extra_judgments:
+                                s_cid = sj.get("case_id") or sj.get("title") or ""
+                                if s_cid and s_cid not in seen_p_cases:
+                                    seen_p_cases.add(s_cid)
+                                    all_prec_pool.append({
+                                        "case_id": s_cid,
+                                        "court": sj.get("court", "最高法院"),
+                                        "level": sj.get("level", "實務精選"),
+                                        "date": sj.get("date", "最新判解"),
+                                        "title": sj.get("title", s_cid),
+                                        "holding": sj.get("holding", ""),
+                                        "laws_cited": sj.get("laws_cited", f"{lname}第{ano}條"),
+                                        "scholarly_views": sj.get("scholarly_views", ""),
+                                        "exam_application_hint": sj.get("exam_application_hint", ""),
+                                        "official_url": sj.get("official_url", "https://judgment.judicial.gov.tw/FJUD/default.aspx")
+                                    })
+                    except Exception:
+                        pass
+
+                    f_col1, f_col2, f_col3 = st.columns([2, 1.2, 1.2])
+                    with f_col1:
+                        prec_search_kw = st.text_input(
+                            f"🔍 在本條判解中即時搜尋：",
+                            placeholder="輸入字號（如 108台上大1636）、要旨或爭點關鍵詞...",
+                            key=f"ws_prec_search_kw_{idx}"
+                        )
+                    with f_col2:
+                        court_filter_opts = ["全部審級", "憲判字 / 大法官解釋", "最高法院 大法庭/判例", "最高法院 裁判", "高等法院", "地方法院"]
+                        sel_court_filter = st.selectbox("審級篩選：", court_filter_opts, key=f"ws_prec_court_{idx}")
+                    with f_col3:
+                        sort_opts = ["🏆 權威層級優先", "📅 裁判日期（新至舊）", "📅 裁判日期（舊至新）"]
+                        sel_sort = st.selectbox("排序方式：", sort_opts, key=f"ws_prec_sort_{idx}")
+
+                    filtered_precs = list(all_prec_pool)
+                    if prec_search_kw and prec_search_kw.strip():
+                        skw = prec_search_kw.strip().lower()
+                        filtered_precs = [
+                            p for p in filtered_precs
+                            if skw in p.get("case_id", "").lower()
+                            or skw in p.get("holding", "").lower()
+                            or skw in str(p.get("laws_cited", "")).lower()
+                            or skw in p.get("title", "").lower()
+                            or skw in p.get("court", "").lower()
+                        ]
+
+                    if sel_court_filter != "全部審級":
+                        if "憲" in sel_court_filter:
+                            filtered_precs = [p for p in filtered_precs if any(k in p.get("case_id", "") or k in p.get("level", "") or k in p.get("court", "") for k in ["憲", "釋字", "大法官"])]
+                        elif "大法庭" in sel_court_filter:
+                            filtered_precs = [p for p in filtered_precs if any(k in p.get("case_id", "") or k in p.get("level", "") for k in ["大字", "大法庭", "判例", "民刑庭總會"])]
+                        elif "最高法院" in sel_court_filter:
+                            filtered_precs = [p for p in filtered_precs if "最高" in p.get("court", "") or "台上" in p.get("case_id", "") or "台抗" in p.get("case_id", "")]
+                        elif "高等法院" in sel_court_filter:
+                            filtered_precs = [p for p in filtered_precs if any(k in p.get("court", "") or k in p.get("case_id", "") for k in ["高等", "上字", "上易", "抗字"])]
+                        elif "地方法院" in sel_court_filter:
+                            filtered_precs = [p for p in filtered_precs if any(k in p.get("court", "") or k in p.get("case_id", "") for k in ["地方法院", "訴字", "簡字", "簡上"])]
+
+                    if sel_sort == "🏆 權威層級優先":
+                        def _authority_score(p):
+                            cid = p.get("case_id", "") + p.get("level", "")
+                            if "憲判" in cid or "釋字" in cid: return 100
+                            if "大法庭" in cid or "大字" in cid: return 90
+                            if "判例" in cid or "總會決議" in cid: return 80
+                            if "最高法院" in p.get("court", "") or "台上" in cid: return 70
+                            if "高等法院" in p.get("court", ""): return 50
+                            return 30
+                        filtered_precs.sort(key=_authority_score, reverse=True)
+                    elif sel_sort == "📅 裁判日期（新至舊）":
+                        filtered_precs.sort(key=lambda p: str(p.get("date", "")), reverse=True)
+                    elif sel_sort == "📅 裁判日期（舊至新）":
+                        filtered_precs.sort(key=lambda p: str(p.get("date", "")))
+
+                    st.caption(f"🏛️ 檢索篩選結果：共 **{len(filtered_precs)}** 則權威裁判")
+
+                    if filtered_precs:
+                        for p_idx, p in enumerate(filtered_precs[:25]):
+                            p_cid = p.get("case_id", "")
+                            p_court = p.get("court", "最高法院")
+                            p_level = p.get("level", "裁判要旨")
+                            p_date = p.get("date", "")
+                            p_holding = p.get("holding", "")
+                            p_laws = p.get("laws_cited", "")
+                            if isinstance(p_laws, list):
+                                p_laws = "、".join([str(x) for x in p_laws[:8]])
+
+                            p_disp = p_cid if p_cid.startswith(p_court) else f"{p_court} {p_cid}"
+                            card_title = f"📌 【{p_level}】`{p_disp}` ｜ 📅 {p_date}"
+
+                            with st.expander(card_title, expanded=(p_idx == 0)):
+                                st.info(f"**核心裁判要旨 / 主文：**\n{p_holding}")
+
+                                if p_laws:
+                                    st.markdown(f'<div style="background: rgba(37,99,235,0.06); border-radius: 4px; padding: 4px 8px; margin: 6px 0; font-size: 0.85rem; color: #1e40af;"><b>📋 引用相關條文：</b> {p_laws}</div>', unsafe_allow_html=True)
+
+                                if p.get("scholarly_views"):
+                                    st.caption(f"📚 **學說實務對比：** {p['scholarly_views']}")
+                                if p.get("exam_application_hint"):
+                                    st.success(f"✍️ **國考作答指示：** {p['exam_application_hint']}")
+
+                                b_col1, b_col2, b_col3, b_col4 = st.columns([1.2, 1.2, 1.2, 1])
+                                with b_col1:
+                                    if st.button("⚡ AI 深度精鍊", key=f"ws_btn_prec_sum_{idx}_{p_idx}", use_container_width=True):
+                                        st.session_state["sum_citation_search"] = p_cid
+                                        st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
+                                        st.session_state["sum_input_title"] = p_cid
+                                        st.session_state["sum_input_text"] = p_holding
+                                        st.session_state.pop("last_ai_sum_res", None)
+                                        st.session_state["app_mode"] = MODE_SUMMARIZER
+                                        st.rerun()
+                                with b_col2:
+                                    if st.button("🔍 另開法學研究頁", key=f"ws_btn_prec_research_{idx}_{p_idx}", use_container_width=True):
+                                        st.session_state["ai_query_input_text"] = f"{p_cid} 裁判要旨與爭點研析"
+                                        st.session_state["lp_search_query"] = p_cid
+                                        st.session_state["lb_input_statute"] = f"{lname}第{ano}條"
+                                        st.session_state["m5_sub_mode_idx"] = 1
+                                        st.session_state["app_mode"] = MODE_SEARCH
+                                        st.rerun()
+                                with b_col3:
+                                    if st.button("🌿 查看審級歷程", key=f"ws_btn_prec_appeal_{idx}_{p_idx}", use_container_width=True):
+                                        st.session_state["target_history_case_id"] = p_cid
+                                        st.session_state["m5_sub_mode_idx"] = 2
+                                        st.session_state["app_mode"] = MODE_SEARCH
+                                        st.rerun()
+                                with b_col4:
+                                    st.link_button("🔗 司法院原文", p.get("official_url", "https://judgment.judicial.gov.tw/FJUD/default.aspx"), use_container_width=True)
                     else:
-                        st.caption("本機權威判解庫中目前無直接標註此條文之大法庭裁定，可前往【統一法學檢索樞紐】或由 AI 進行歷審精選裁判與學說補強。")
+                        st.info("查無符合篩選條件之司法裁判，請更換關鍵字或審級篩選。")
 
                 with tab_orders_rulings:
                     st.markdown(f"#### 📋 【{lname} {ano}】關聯法規命令、施行細則與主管機關行政函釋")

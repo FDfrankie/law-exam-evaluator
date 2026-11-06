@@ -186,6 +186,20 @@ def safe_requests_get(url: str, session=None, **kwargs):
             "請顯式設定環境變數 LEGAL_ALLOW_INSECURE_SSL=1。"
         ) from e
 
+# 系統核心導航模式常數
+MODE_HOME = "🏠 系統首頁"
+MODE_EVAL = "📝 試卷批改"
+MODE_GEN = "🎯 模擬命題"
+MODE_BANK = "📚 歷年真題"
+MODE_ANS = "✍️ 擬答生成"
+MODE_SEARCH = "🔍 法學檢索"
+MODE_QA = "💬 法律問答"
+MODE_SUMMARIZER = "📑 裁判精鍊"
+MODE_SIX_CODES = "⚖️ 智慧六法"
+MODE_SFT = "📥 法學筆記"
+MODE_INGEST = "📦 裁判入庫"
+MODE_DEV_MANAGER = "🛠️ 檔案總管"
+
 if __name__ == "__main__":
     init_directories()
     print("API Key Status:", "Configured" if GEMINI_API_KEY else "Not configured")
