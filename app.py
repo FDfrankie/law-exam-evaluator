@@ -362,19 +362,33 @@ except Exception:
 try:
     from document_exporter import (
         export_evaluation_docx,
+        export_evaluation_pdf,
         export_model_answer_docx,
+        export_model_answer_pdf,
         export_legal_notice_docx,
+        export_legal_notice_pdf,
+        export_mediation_pdf,
         export_textbook_docx,
+        export_textbook_pdf,
         export_mcq_exam_docx,
-        export_litigation_pleading_docx
+        export_mcq_exam_pdf,
+        export_litigation_advice_docx,
+        export_litigation_advice_pdf
     )
 except Exception:
     def export_evaluation_docx(*args, **kwargs): return b""
+    def export_evaluation_pdf(*args, **kwargs): return b""
     def export_model_answer_docx(*args, **kwargs): return b""
+    def export_model_answer_pdf(*args, **kwargs): return b""
     def export_legal_notice_docx(*args, **kwargs): return b""
+    def export_legal_notice_pdf(*args, **kwargs): return b""
+    def export_mediation_pdf(*args, **kwargs): return b""
     def export_textbook_docx(*args, **kwargs): return b""
+    def export_textbook_pdf(*args, **kwargs): return b""
     def export_mcq_exam_docx(*args, **kwargs): return b""
-    def export_litigation_pleading_docx(*args, **kwargs): return b""
+    def export_mcq_exam_pdf(*args, **kwargs): return b""
+    def export_litigation_advice_docx(*args, **kwargs): return b""
+    def export_litigation_advice_pdf(*args, **kwargs): return b""
 
 try:
     from judicial_appeal_chain import get_appeal_chain_engine as _raw_get_appeal_chain_engine, JudicialAppealChainEngine
@@ -1875,12 +1889,13 @@ def render_textbook_learning_view():
             pass
 
         st.divider()
-        col_down_md, col_down_doc, col_fin = st.columns([1, 1.2, 1])
+        col_down_md, col_down_doc, col_down_pdf, col_fin = st.columns([1, 1.2, 1.2, 1])
+        clean_tb_name = sel_topic['title'].replace('：', '_').replace(' ', '_')
         with col_down_md:
             st.download_button(
                 label="📥 匯出 Markdown 筆記",
                 data=rendered_text,
-                file_name=f"{sel_topic['title'].replace('：', '_').replace(' ', '_')}.md",
+                file_name=f"{clean_tb_name}.md",
                 mime="text/markdown",
                 use_container_width=True,
                 key=f"btn_dl_tb_{sel_topic['id']}"
@@ -1889,15 +1904,28 @@ def render_textbook_learning_view():
             try:
                 tb_docx = export_textbook_docx(sel_subject, sel_chapter, sel_topic['title'], rendered_text)
                 st.download_button(
-                    label="📄 匯出正式 Word (.docx) 講義",
+                    label="📄 匯出 Word (.docx) 講義",
                     data=tb_docx,
-                    file_name=f"{sel_subject}_{sel_topic['title'].replace('：', '_').replace(' ', '_')}.docx",
+                    file_name=f"{sel_subject}_{clean_tb_name}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     use_container_width=True,
                     key=f"btn_dl_tb_docx_{sel_topic['id']}"
                 )
             except Exception as e_tb_doc:
                 st.caption(f"Word 匯出待命：{e_tb_doc}")
+        with col_down_pdf:
+            try:
+                tb_pdf = export_textbook_pdf(sel_subject, sel_chapter, sel_topic['title'], rendered_text)
+                st.download_button(
+                    label="📕 匯出 PDF 講義",
+                    data=tb_pdf,
+                    file_name=f"{sel_subject}_{clean_tb_name}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    key=f"btn_dl_tb_pdf_{sel_topic['id']}"
+                )
+            except Exception as e_tb_pdf:
+                st.caption(f"PDF 匯出待命：{e_tb_pdf}")
         with col_fin:
             if sel_topic["id"] not in completed_set:
                 if st.button("🎉 研讀完畢！點此標記完成", type="primary", use_container_width=True, key=f"btn_fin_{sel_topic['id']}"):
@@ -2984,14 +3012,14 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                     if eval_cits:
                         render_citation_quick_cards(eval_cits, key_prefix="eval_cit_cards")
 
-                    # 閱卷診斷報告 Word / Markdown 匯出
+                    # 閱卷診斷報告 Word / PDF / Markdown 匯出
                     st.divider()
-                    col_ev_doc, col_ev_md = st.columns([1, 1])
+                    col_ev_doc, col_ev_pdf, col_ev_md = st.columns([1, 1, 1])
                     with col_ev_doc:
                         try:
                             eval_docx = export_evaluation_docx(result, st.session_state.get("question_text_content", ""))
                             st.download_button(
-                                "📄 匯出正式閱卷評閱診斷報告 (.docx)",
+                                "📄 匯出閱卷診斷報告 (.docx)",
                                 data=eval_docx,
                                 file_name="司律申論試卷_閱卷診斷報告.docx",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -3000,6 +3028,19 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
                             )
                         except Exception as e_evd:
                             st.caption(f"Word 匯出待命：{e_evd}")
+                    with col_ev_pdf:
+                        try:
+                            eval_pdf = export_evaluation_pdf(result, st.session_state.get("question_text_content", ""))
+                            st.download_button(
+                                "📕 匯出閱卷診斷報告 (.pdf)",
+                                data=eval_pdf,
+                                file_name="司律申論試卷_閱卷診斷報告.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key="btn_dl_eval_pdf"
+                            )
+                        except Exception as e_evp:
+                            st.caption(f"PDF 匯出待命：{e_evp}")
                     with col_ev_md:
                         st.download_button(
                             "💾 匯出評閱報告 (.md)",
@@ -3863,37 +3904,52 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                     st.write("")
 
-                col_submit, col_export_md, col_export_doc, col_reset = st.columns([1.2, 1, 1.2, 0.8])
+                col_submit, col_export_md, col_export_doc, col_export_pdf, col_reset = st.columns([1.2, 1, 1.1, 1.1, 0.8])
                 with col_submit:
                     if st.button("🏁 交卷立即線上批改評分", type="primary", use_container_width=True):
                         st.session_state["stage1_graded"] = True
                         st.session_state["stage1_user_answers"] = user_answers
                         st.rerun()
 
+                exam_fn_base = f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題"
                 with col_export_md:
                     md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
                     st.download_button(
                         label="💾 下載試卷 (.md)",
                         data=md_content,
-                        file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.md",
+                        file_name=f"{exam_fn_base}.md",
                         mime="text/markdown",
                         use_container_width=True
                     )
 
+                u_ans_for_doc = st.session_state.get("stage1_user_answers", user_answers) if st.session_state.get("stage1_graded") else None
                 with col_export_doc:
                     try:
-                        u_ans_for_doc = st.session_state.get("stage1_user_answers", user_answers) if st.session_state.get("stage1_graded") else None
                         docx_content = export_mcq_exam_docx(exam_data, u_ans_for_doc)
                         st.download_button(
                             label="📄 匯出全真試卷 (.docx)",
                             data=docx_content,
-                            file_name=f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題.docx",
+                            file_name=f"{exam_fn_base}.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             use_container_width=True,
                             key="btn_dl_mcq_docx"
                         )
                     except Exception as e_mcqd:
                         st.caption(f"Word 匯出待命：{e_mcqd}")
+
+                with col_export_pdf:
+                    try:
+                        pdf_content = export_mcq_exam_pdf(exam_data, u_ans_for_doc)
+                        st.download_button(
+                            label="📕 匯出全真試卷 (.pdf)",
+                            data=pdf_content,
+                            file_name=f"{exam_fn_base}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="btn_dl_mcq_pdf"
+                        )
+                    except Exception as e_mcqp:
+                        st.caption(f"PDF 匯出待命：{e_mcqp}")
 
                 with col_reset:
                     if st.button("🔄 重新測驗", use_container_width=True, key="btn_reset_stage1"):
@@ -4625,13 +4681,13 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                     except Exception:
                         pass
 
-                    # 示範擬答 Word / Markdown 匯出
-                    col_ans_doc, col_ans_md = st.columns([1, 1])
+                    # 示範擬答 Word / PDF / Markdown 匯出
+                    col_ans_doc, col_ans_pdf, col_ans_md = st.columns([1, 1, 1])
                     with col_ans_doc:
                         try:
                             ans_docx = export_model_answer_docx(target_q, ans, m4_subject)
                             st.download_button(
-                                "📄 匯出二試榜首示範擬答 (.docx)",
+                                "📄 匯出示範擬答 (.docx)",
                                 data=ans_docx,
                                 file_name=f"高分示範擬答_{m4_subject}.docx",
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -4640,6 +4696,19 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                             )
                         except Exception as e_andoc:
                             st.caption(f"Word 匯出待命：{e_andoc}")
+                    with col_ans_pdf:
+                        try:
+                            ans_pdf = export_model_answer_pdf(target_q, ans, m4_subject)
+                            st.download_button(
+                                "📕 匯出示範擬答 (.pdf)",
+                                data=ans_pdf,
+                                file_name=f"高分示範擬答_{m4_subject}.pdf",
+                                mime="application/pdf",
+                                use_container_width=True,
+                                key="btn_dl_m4_pdf"
+                            )
+                        except Exception as e_anpdf:
+                            st.caption(f"PDF 匯出待命：{e_anpdf}")
                     with col_ans_md:
                         st.download_button(
                             "💾 下載示範擬答 (.md)",
@@ -6527,10 +6596,10 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
             if "qa_generated_notice" in st.session_state:
                 st.text_area("存證信函草稿內文（可直接複製）：", value=st.session_state["qa_generated_notice"], height=260, key="txt_area_notice_out")
-                c_dl_txt, c_dl_doc = st.columns(2)
+                c_dl_txt, c_dl_doc, c_dl_pdf = st.columns(3)
                 with c_dl_txt:
                     st.download_button(
-                        "💾 下載存證信函草稿 (.txt)",
+                        "💾 下載存證信函 (.txt)",
                         data=st.session_state["qa_generated_notice"],
                         file_name="存證信函草稿.txt",
                         mime="text/plain",
@@ -6545,7 +6614,7 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                             subject="郵局存證信函"
                         )
                         st.download_button(
-                            "📄 匯出郵局標準格式 Word (.docx)",
+                            "📄 匯出 Word (.docx)",
                             data=n_docx,
                             file_name=f"郵局存證信函_{n_recv}.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -6554,9 +6623,27 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                         )
                     except Exception as e_ndoc:
                         st.caption(f"Word 匯出待命：{e_ndoc}")
+                with c_dl_pdf:
+                    try:
+                        n_pdf = export_legal_notice_pdf(
+                            st.session_state["qa_generated_notice"],
+                            sender_name=n_sender,
+                            receiver_name=n_recv,
+                            subject="郵局存證信函"
+                        )
+                        st.download_button(
+                            "📕 匯出 PDF (.pdf)",
+                            data=n_pdf,
+                            file_name=f"郵局存證信函_{n_recv}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="btn_dl_notice_pdf"
+                        )
+                    except Exception as e_npdf:
+                        st.caption(f"PDF 匯出待命：{e_npdf}")
 
         # 調解聲請要旨區
-        with st.expander("🏛️ 一鍵生成【鄉鎮市區調解聲請要旨與談判方案】", expanded=False):
+        with st.expander("🏛️ 一鍵生成【鄉鎮市區調解聲請要旨與談判方案】（Word / PDF 匯出）", expanded=False):
             if st.button("📝 生成調解聲請要旨與和解方案", key="btn_gen_mediation", use_container_width=True):
                 with st.spinner("正在擬定公所調解委員會聲請要旨與談判退讓底線..."):
                     engine = LegalQAEngine()
@@ -6568,10 +6655,10 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
 
             if "qa_generated_mediation" in st.session_state:
                 st.markdown(st.session_state["qa_generated_mediation"])
-                c_med_md, c_med_doc = st.columns(2)
+                c_med_md, c_med_doc, c_med_pdf = st.columns(3)
                 with c_med_md:
                     st.download_button(
-                        "💾 下載調解聲請要旨 (.md)",
+                        "💾 下載調解要旨 (.md)",
                         data=st.session_state["qa_generated_mediation"],
                         file_name="調解委員會聲請要旨.md",
                         mime="text/markdown",
@@ -6586,7 +6673,7 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                             subject="鄉鎮市區調解委員會聲請要旨"
                         )
                         st.download_button(
-                            "📄 匯出標準調解聲請書 Word (.docx)",
+                            "📄 匯出 Word (.docx)",
                             data=med_docx,
                             file_name="鄉鎮市區調解委員會聲請要旨.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -6595,90 +6682,112 @@ elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題"
                         )
                     except Exception as e_mdoc:
                         st.caption(f"Word 匯出待命：{e_mdoc}")
+                with c_med_pdf:
+                    try:
+                        med_pdf = export_mediation_pdf(
+                            st.session_state["qa_generated_mediation"],
+                            applicant="聲請人",
+                            respondent="對造人",
+                            subject="鄉鎮市區調解委員會聲請要旨"
+                        )
+                        st.download_button(
+                            "📕 匯出 PDF (.pdf)",
+                            data=med_pdf,
+                            file_name="鄉鎮市區調解委員會聲請要旨.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="btn_dl_med_pdf"
+                        )
+                    except Exception as e_mpdf:
+                        st.caption(f"PDF 匯出待命：{e_mpdf}")
 
-        # 法院訴訟書類區（民事準備書（一）狀 / 起訴狀 / 答辯狀）
-        with st.expander("⚖️ 一鍵生成【法院正式訴狀 / 民事準備書狀 / 起訴狀 / 答辯狀】與 Word (.docx) 匯出", expanded=False):
-            st.markdown("依據司法院民事訴訟書類格式規範，將諮詢案情與法學研析直接提煉為具備**訴之聲明、事實及理由、攻擊防禦、最高法院指標判解引述與證據清單**之正式司法書狀。")
+        # 訴訟建議與程序策略評估區（純訴訟策略評估與舉證責任指引，不提供起訴狀/答辯狀正式法院書類以杜絕濫訴風險）
+        with st.expander("⚖️ 一鍵生成【訴訟程序策略、管轄指引與舉證實務評估】（Word / PDF 匯出）", expanded=False):
+            st.info("💡 **【法務指引說明】**：本系統僅提供實體爭點分析、管轄法院評估、舉證責任分配及訴訟風險策略指引，**不提供直接向法院呈遞之訴訟書狀**。若需正式遞狀，請委任律師或洽法院訴訟輔導科依標準司法書狀例稿辦理。")
 
-            p_col1, p_col2, p_col3 = st.columns(3)
-            with p_col1:
-                pleading_type = st.selectbox(
-                    "書狀種類：",
-                    ["民事準備書（一）狀", "民事起訴狀", "民事答辯狀", "民事準備書（二）狀", "民事聲請調解狀"],
-                    key="sel_pleading_type"
+            la_col1, la_col2, la_col3 = st.columns(3)
+            with la_col1:
+                party_role = st.selectbox(
+                    "當事人訴訟地位：",
+                    ["原告 / 聲請人", "被告 / 相對人", "刑事告訴人 / 告訴代理人", "第三人 / 參加人"],
+                    key="sel_la_party_role"
                 )
-            with p_col2:
-                court_dest = st.text_input("受訴法院：", value="臺灣臺北地方法院民事庭", key="txt_pleading_court")
-            with p_col3:
-                claim_amt = st.text_input("訴訟標的金額或價額：", value="新臺幣              元整", key="txt_pleading_claim_amt")
+            with la_col2:
+                current_stage = st.selectbox(
+                    "目前案件階段：",
+                    ["起訴前評估與保全證據", "第一審地方法院審理中", "第二審高等法院上訴審", "督促程序（支付命令/本票裁定）", "強制執行階段"],
+                    key="sel_la_stage"
+                )
+            with la_col3:
+                case_claim_amt = st.text_input("爭議標的或標的金額（可選）：", value="新臺幣              元整", key="txt_la_claim_amt")
 
-            p_col4, p_col5, p_col6 = st.columns(3)
-            with p_col4:
-                plaintiff_name = st.text_input("原告姓名/法定代理人：", value="【原告姓名】", key="txt_pleading_plaintiff")
-            with p_col5:
-                defendant_name = st.text_input("被告姓名/法定代理人：", value="【被告姓名】", key="txt_pleading_defendant")
-            with p_col6:
-                case_no_str = st.text_input("案號與股別：", value="113 年度訴字第      號（    股）", key="txt_pleading_caseno")
-
-            if st.button("⚖️ 立即擬定司法院正式標準訴狀", key="btn_gen_pleading", use_container_width=True, type="primary"):
-                with st.spinner("AI 司法幕僚正在根據案件事實、實體法條與最高法院裁判要旨草擬正式民事訴狀..."):
+            if st.button("⚖️ 立即生成訴訟程序策略與實務指引評估", key="btn_gen_lit_advice", use_container_width=True, type="primary"):
+                with st.spinner("AI 司法幕僚正在根據案件事實、訴訟法管轄規範與舉證責任分配擬定程序策略建議..."):
                     engine = LegalQAEngine()
-                    c_no = case_no_str
-                    c_branch = "    股"
-                    if "（" in case_no_str and "）" in case_no_str:
-                        parts = case_no_str.split("（")
-                        c_no = parts[0].strip()
-                        c_branch = parts[1].replace("）", "").strip()
-                    pleading_text = engine.generate_court_pleading(
+                    advice_text = engine.generate_litigation_advice(
                         question=qa_q,
                         legal_advice=qa_ans,
-                        pleading_type=pleading_type,
-                        plaintiff=plaintiff_name,
-                        defendant=defendant_name,
-                        court=court_dest,
-                        claim_amount=claim_amt,
-                        case_no=c_no,
-                        case_branch=c_branch
+                        party_role=party_role,
+                        stage=current_stage,
+                        case_type="民事/一般"
                     )
-                    st.session_state["qa_generated_pleading"] = pleading_text
-                    st.session_state["qa_pleading_meta"] = {
-                        "title": pleading_type,
-                        "court": court_dest,
-                        "case_no": c_no,
-                        "branch": c_branch,
-                        "claim_amount": claim_amt,
-                        "plaintiff": plaintiff_name,
-                        "defendant": defendant_name,
-                        "body_text": pleading_text
+                    st.session_state["qa_generated_litigation_advice"] = advice_text
+                    st.session_state["qa_litigation_advice_meta"] = {
+                        "party_role": party_role,
+                        "stage": current_stage,
+                        "claim_amt": case_claim_amt,
+                        "title": f"訴訟策略指引評估_{party_role.split('/')[0].strip()}"
                     }
 
-            if "qa_generated_pleading" in st.session_state and st.session_state["qa_generated_pleading"]:
-                st.markdown(st.session_state["qa_generated_pleading"])
-                c_pl_md, c_pl_doc = st.columns(2)
-                with c_pl_md:
+            if "qa_generated_litigation_advice" in st.session_state and st.session_state["qa_generated_litigation_advice"]:
+                st.markdown(st.session_state["qa_generated_litigation_advice"])
+                c_la_md, c_la_doc, c_la_pdf = st.columns(3)
+                la_meta = st.session_state.get("qa_litigation_advice_meta", {})
+                with c_la_md:
                     st.download_button(
-                        f"💾 下載{st.session_state.get('qa_pleading_meta', {}).get('title', '民事訴狀')} (.md)",
-                        data=st.session_state["qa_generated_pleading"],
-                        file_name=f"{st.session_state.get('qa_pleading_meta', {}).get('title', '民事訴狀')}.md",
+                        "💾 下載策略建議 (.md)",
+                        data=st.session_state["qa_generated_litigation_advice"],
+                        file_name=f"{la_meta.get('title', '訴訟策略建議')}.md",
                         mime="text/markdown",
                         use_container_width=True,
-                        key="btn_dl_pleading_md"
+                        key="btn_dl_la_md"
                     )
-                with c_pl_doc:
+                with c_la_doc:
                     try:
-                        p_meta = st.session_state.get("qa_pleading_meta", {})
-                        p_meta["body_text"] = st.session_state["qa_generated_pleading"]
-                        p_docx = export_litigation_pleading_docx(p_meta)
+                        la_docx = export_litigation_advice_docx(
+                            st.session_state["qa_generated_litigation_advice"],
+                            party_role=la_meta.get("party_role", "當事人"),
+                            stage=la_meta.get("stage", "程序評估"),
+                            case_subject="法律諮詢案"
+                        )
                         st.download_button(
-                            f"📄 匯出司法院標準規範 Word (.docx)",
-                            data=p_docx,
-                            file_name=f"{p_meta.get('title', '民事訴狀')}.docx",
+                            "📄 匯出策略指引 Word (.docx)",
+                            data=la_docx,
+                            file_name=f"{la_meta.get('title', '訴訟策略建議')}.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             use_container_width=True,
-                            key="btn_dl_pleading_docx"
+                            key="btn_dl_la_docx"
                         )
-                    except Exception as e_pldoc:
-                        st.caption(f"Word 匯出待命：{e_pldoc}")
+                    except Exception as e_ladoc:
+                        st.caption(f"Word 匯出待命：{e_ladoc}")
+                with c_la_pdf:
+                    try:
+                        la_pdf = export_litigation_advice_pdf(
+                            st.session_state["qa_generated_litigation_advice"],
+                            party_role=la_meta.get("party_role", "當事人"),
+                            stage=la_meta.get("stage", "程序評估"),
+                            case_subject="法律諮詢案"
+                        )
+                        st.download_button(
+                            "📕 匯出策略指引 PDF (.pdf)",
+                            data=la_pdf,
+                            file_name=f"{la_meta.get('title', '訴訟策略建議')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="btn_dl_la_pdf"
+                        )
+                    except Exception as e_lapdf:
+                        st.caption(f"PDF 匯出待命：{e_lapdf}")
 
         # 延伸連動導航
         st.write("")
@@ -7069,11 +7178,11 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
 
         st.divider()
         st.subheader("🔗 摘要成果一鍵轉化為司律考卷戰力：")
-        s_act1, s_act2, s_act3, s_act4 = st.columns(4)
+        s_act1, s_act2, s_act2_pdf, s_act3, s_act4 = st.columns([1, 1, 1, 1, 1])
         clean_act_title = re.sub(r'[^0-9a-zA-Z\u4e00-\u9fa5]', '_', active_title)[:15]
         with s_act1:
             st.download_button(
-                "📥 下載 Markdown 報告",
+                "📥 下載 Markdown",
                 data=sum_res.get("markdown_result", ""),
                 file_name=f"AI摘要_{clean_act_title}.md",
                 mime="text/markdown",
@@ -7089,7 +7198,7 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
                 pass
             if docx_bytes:
                 st.download_button(
-                    "📄 下載 Word (.docx) 檔",
+                    "📄 下載 Word (.docx)",
                     data=docx_bytes,
                     file_name=f"AI裁判精鍊_{clean_act_title}.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -7097,6 +7206,24 @@ elif app_mode == MODE_SUMMARIZER or any(k in app_mode for k in ["精鍊", "裁�
                 )
             else:
                 st.button("📄 Word 產生中", disabled=True, use_container_width=True)
+        with s_act2_pdf:
+            pdf_bytes = None
+            try:
+                summarizer_eng = get_judgment_summarizer()
+                if summarizer_eng:
+                    pdf_bytes = summarizer_eng.generate_summary_pdf(sum_res)
+            except Exception:
+                pass
+            if pdf_bytes:
+                st.download_button(
+                    "📕 下載 PDF (.pdf)",
+                    data=pdf_bytes,
+                    file_name=f"AI裁判精鍊_{clean_act_title}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            else:
+                st.button("📕 PDF 產生中", disabled=True, use_container_width=True)
         with s_act3:
             if st.button("📝 帶入試卷評分", use_container_width=True, key="btn_sum_to_eval"):
                 st.session_state["question_text_content"] = f"【核心爭點題目】：\n請就【{active_title}】之案例事實與爭點深入申論其法律效果與實務見解。"

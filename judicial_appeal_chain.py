@@ -41,8 +41,12 @@ class JudicialAppealChainEngine:
                 self.index_db_path = cand
 
     def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.index_db_path), timeout=3.0)
+        conn = sqlite3.connect(str(self.index_db_path), timeout=30.0)
         conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA busy_timeout = 30000;")
+        except Exception:
+            pass
         return conn
 
     def get_appeal_chain(
@@ -147,13 +151,13 @@ class JudicialAppealChainEngine:
                         p_meta = None
                         if p_y and p_w and p_n:
                             p_meta = conn.execute(
-                                "SELECT date, holding_preview, title FROM judgments_meta WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
+                                "SELECT court, date, holding_preview, title FROM judgments_meta WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
                                 (p_y, p_w, p_n)
                             ).fetchone()
 
                         priors.append({
                             "case_id": p_cid,
-                            "court": p_court or (p_meta["court"] if p_meta else "事實審法院"),
+                            "court": p_court or (p_meta["court"] if p_meta and p_meta["court"] else "事實審法院"),
                             "year": p_y,
                             "word": p_w,
                             "no": p_n,
@@ -175,20 +179,37 @@ class JudicialAppealChainEngine:
                     "relation": "PRIOR"
                 })
 
-            # 3. 查詢後審關聯 (Subsequent Instances) - 透過 judgment_redirects 快速索引
+            # 3. 查詢審級重定向與後審關聯 (Redirects & Subsequents)
             try:
-                redirs = conn.execute(
-                    "SELECT substantive_prior_id, discard_reason, court FROM judgment_redirects WHERE dismissed_case_id = ? LIMIT 3",
+                # 3a. 若其他案件將本案列為 substantive_prior，代表該案件為本案之後續上訴/駁回裁定 (SUBSEQUENT)
+                sub_redirs = conn.execute(
+                    "SELECT dismissed_case_id, discard_reason, court FROM judgment_redirects WHERE substantive_prior_id = ? LIMIT 5",
                     (cur_case_id,)
                 ).fetchall()
-                for rd in redirs:
+                for rd in sub_redirs:
                     subsequents.append({
-                        "case_id": rd["substantive_prior_id"],
-                        "court": rd["court"] or "上級審法院",
-                        "role": "移轉或上訴關聯裁判",
+                        "case_id": rd["dismissed_case_id"],
+                        "court": rd["court"] or "上訴審法院",
+                        "role": "上訴或審級關聯裁判",
                         "holding": rd["discard_reason"] or "",
                         "relation": "SUBSEQUENT"
                     })
+
+                # 3b. 若本案本身為 dismissed_case，其 substantive_prior_id 為其對應之實質前審裁判 (PRIOR)
+                prior_redirs = conn.execute(
+                    "SELECT substantive_prior_id, discard_reason, court FROM judgment_redirects WHERE dismissed_case_id = ? LIMIT 3",
+                    (cur_case_id,)
+                ).fetchall()
+                for rd in prior_redirs:
+                    p_cid = rd["substantive_prior_id"]
+                    if p_cid and not any(p.get("case_id") == p_cid for p in priors):
+                        priors.append({
+                            "case_id": p_cid,
+                            "court": rd["court"] or "前審實體法院",
+                            "role": "實質前審裁判",
+                            "holding": rd["discard_reason"] or "",
+                            "relation": "PRIOR"
+                        })
             except Exception:
                 pass
 

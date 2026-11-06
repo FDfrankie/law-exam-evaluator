@@ -2,17 +2,20 @@
 """
 document_exporter.py
 ====================
-專業法學文書與國考成果 Word (.docx) / Markdown 匯出引擎。
+專業法學文書與國考成果 Word (.docx) / PDF (.pdf) 雙規格高階匯出引擎。
 支援：
-1. 司律試卷閱卷診斷報告 (完整四大維度評分、開標分析、爭點命中與改寫示範)
-2. 司律二試榜首水準示範擬答 (IRAC 標準排版與權威判解註釋)
-3. 中華民國郵局標準格式存證信函與調解聲請要旨 (可直接列印寄發)
-4. 體系導引式專題法學教科書 (離線研讀專用 A4 排版講義)
+1. 司律試卷閱卷診斷報告 (完整四大維度評分、開標分析、爭點命中與改寫示範) - DOCX / PDF
+2. 司律二試榜首水準示範擬答 (IRAC 標準排版與權威判解註釋) - DOCX / PDF
+3. 中華民國郵局標準格式存證信函與調解聲請要旨 (可直接列印寄發) - DOCX / PDF
+4. 體系導引式專題法學教科書 (離線研讀專用 A4 排版講義) - DOCX / PDF
+5. 司律一試選擇題全真考卷與逐題法理詳解 - DOCX / PDF
+6. 訴訟程序策略與實務評估建議書 - DOCX / PDF (恪遵律師法，僅提供策略評估與法律分析)
 """
 
 import io
 import re
 from typing import Dict, Any, List, Optional
+
 import docx
 from docx.shared import Pt, Inches, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -20,6 +23,20 @@ from docx.enum.table import WD_TABLE_ALIGNMENT, WD_ALIGN_VERTICAL
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
+try:
+    import pymupdf
+    HAS_PYMUPDF = True
+except ImportError:
+    try:
+        import fitz as pymupdf
+        HAS_PYMUPDF = True
+    except ImportError:
+        HAS_PYMUPDF = False
+
+
+# =============================================================================
+# A. Word (.docx) 排版公用底層
+# =============================================================================
 
 def _set_cell_background(cell, hex_color: str):
     """設定表格單元格背景底色 (RGB 十六進制字串，如 'F1F5F9')"""
@@ -52,7 +69,6 @@ def _init_legal_doc() -> docx.Document:
         section.left_margin = Inches(1.0)
         section.right_margin = Inches(1.0)
 
-    # 設定預設正文字體
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Microsoft JhengHei'
@@ -64,10 +80,192 @@ def _init_legal_doc() -> docx.Document:
     return doc
 
 
+# =============================================================================
+# B. PDF 專業法學排版核心 (PyMuPDF Engine)
+# =============================================================================
+
+class LegalPdfDocument:
+    """
+    兼具繁體中文字型支援、自動分頁、頁首頁尾與高雅法學配色的 PDF 產生器
+    """
+    def __init__(self, title="台灣法學研析報告", margin=45):
+        if not HAS_PYMUPDF:
+            raise RuntimeError("未安裝 pymupdf 套件，無法產出 PDF 文件！")
+        self.doc = pymupdf.open()
+        self.title = title
+        self.margin = margin
+        self.width = 595.32   # A4 width in pt
+        self.height = 841.92  # A4 height in pt
+        self.max_width = self.width - (2 * self.margin)
+        self.font_name = "china-t"
+        self.font = pymupdf.Font("china-t")
+        self.pages = []
+        self.cur_page = None
+        self.cur_y = self.margin + 25
+        self._new_page()
+
+    def _new_page(self):
+        page = self.doc.new_page(width=self.width, height=self.height)
+        self.pages.append(page)
+        self.cur_page = page
+        self.cur_y = self.margin + 25
+        # 頂部裝飾線與頁首文件題名
+        page.draw_line((self.margin, self.margin + 14), (self.width - self.margin, self.margin + 14), color=(0.7, 0.75, 0.8), width=0.8)
+        page.insert_text((self.margin, self.margin + 10), self.title[:45], fontname=self.font_name, fontsize=8, color=(0.4, 0.45, 0.5))
+
+    def ensure_space(self, needed_pt):
+        if self.cur_y + needed_pt > self.height - self.margin - 25:
+            self._new_page()
+
+    def add_title(self, text):
+        self.ensure_space(45)
+        self.cur_page.insert_text((self.margin, self.cur_y + 16), text, fontname=self.font_name, fontsize=15, color=(0.11, 0.21, 0.34))
+        self.cur_y += 24
+        self.cur_page.draw_line((self.margin, self.cur_y), (self.width - self.margin, self.cur_y), color=(0.85, 0.88, 0.92), width=1.5)
+        self.cur_y += 14
+
+    def add_heading(self, text, level=2):
+        size = 12 if level == 2 else 11
+        self.ensure_space(32)
+        self.cur_y += 6
+        self.cur_page.insert_text((self.margin, self.cur_y + size), text, fontname=self.font_name, fontsize=size, color=(0.12, 0.23, 0.54))
+        self.cur_y += size + 8
+
+    def _wrap_lines(self, text, max_w, font_size):
+        lines = []
+        for raw_line in text.splitlines():
+            if not raw_line.strip():
+                lines.append("")
+                continue
+            cur_line = ""
+            for char in raw_line:
+                test_line = cur_line + char
+                if self.font.text_length(test_line, font_size) > max_w:
+                    lines.append(cur_line)
+                    cur_line = char
+                else:
+                    cur_line = test_line
+            if cur_line:
+                lines.append(cur_line)
+        return lines
+
+    def add_paragraph(self, text, font_size=10, indent=0, color=(0.15, 0.2, 0.25), line_spacing=1.35):
+        clean_text = re.sub(r'#+\s*', '', text)
+        max_w = self.max_width - indent
+        lines = self._wrap_lines(clean_text, max_w, font_size)
+        line_height = font_size * line_spacing
+
+        for line in lines:
+            if line == "":
+                self.cur_y += font_size * 0.5
+                continue
+            self.ensure_space(line_height)
+            self.cur_page.insert_text(
+                (self.margin + indent, self.cur_y + font_size),
+                line,
+                fontname=self.font_name,
+                fontsize=font_size,
+                color=color
+            )
+            self.cur_y += line_height
+        self.cur_y += 4
+
+    def add_bullet(self, text, font_size=10, bullet_char="•"):
+        max_w = self.max_width - 16
+        lines = self._wrap_lines(text, max_w, font_size)
+        line_height = font_size * 1.35
+
+        for idx, line in enumerate(lines):
+            self.ensure_space(line_height)
+            if idx == 0:
+                self.cur_page.insert_text(
+                    (self.margin + 4, self.cur_y + font_size),
+                    bullet_char,
+                    fontname=self.font_name,
+                    fontsize=font_size,
+                    color=(0.25, 0.45, 0.75)
+                )
+            self.cur_page.insert_text(
+                (self.margin + 16, self.cur_y + font_size),
+                line,
+                fontname=self.font_name,
+                fontsize=font_size,
+                color=(0.15, 0.2, 0.25)
+            )
+            self.cur_y += line_height
+        self.cur_y += 2
+
+    def add_callout(self, text, title="", bg_color=(0.95, 0.97, 1.0), border_color=(0.25, 0.45, 0.75)):
+        pad = 8
+        content_w = self.max_width - (2 * pad) - 6
+        full_text = (f"【{title}】\n" if title else "") + text
+        lines = self._wrap_lines(full_text, content_w, 9.5)
+        box_h = (len(lines) * 13) + (2 * pad)
+
+        self.ensure_space(box_h + 8)
+        top_y = self.cur_y
+        rect = pymupdf.Rect(self.margin, top_y, self.width - self.margin, top_y + box_h)
+        self.cur_page.draw_rect(rect, color=None, fill=bg_color)
+        self.cur_page.draw_line((self.margin, top_y), (self.margin, top_y + box_h), color=border_color, width=3.5)
+
+        text_y = top_y + pad
+        for line in lines:
+            self.cur_page.insert_text(
+                (self.margin + pad + 6, text_y + 9.5),
+                line,
+                fontname=self.font_name,
+                fontsize=9.5,
+                color=(0.1, 0.15, 0.2)
+            )
+            text_y += 13
+        self.cur_y = top_y + box_h + 8
+
+    def add_table(self, headers, rows):
+        n_cols = len(headers)
+        col_w = self.max_width / n_cols
+        row_h = 22
+
+        self.ensure_space(row_h * (len(rows) + 1) + 10)
+        header_rect = pymupdf.Rect(self.margin, self.cur_y, self.width - self.margin, self.cur_y + row_h)
+        self.cur_page.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.9, 0.93, 0.97))
+        for col_idx, h in enumerate(headers):
+            x = self.margin + (col_idx * col_w) + 6
+            self.cur_page.insert_text((x, self.cur_y + 15), str(h), fontname=self.font_name, fontsize=9.0, color=(0.1, 0.2, 0.35))
+        self.cur_y += row_h
+
+        for r_idx, row in enumerate(rows):
+            self.ensure_space(row_h)
+            fill_c = (0.98, 0.99, 1.0) if r_idx % 2 == 0 else (1.0, 1.0, 1.0)
+            r_rect = pymupdf.Rect(self.margin, self.cur_y, self.width - self.margin, self.cur_y + row_h)
+            self.cur_page.draw_rect(r_rect, color=(0.88, 0.9, 0.93), fill=fill_c)
+            for col_idx, val in enumerate(row):
+                x = self.margin + (col_idx * col_w) + 6
+                self.cur_page.insert_text((x, self.cur_y + 15), str(val), fontname=self.font_name, fontsize=9.0, color=(0.15, 0.2, 0.25))
+            self.cur_y += row_h
+        self.cur_y += 8
+
+    def get_pdf_bytes(self) -> bytes:
+        total_pages = len(self.pages)
+        for idx, page in enumerate(self.pages, 1):
+            footer_text = f"第 {idx} 頁 ／ 共 {total_pages} 頁  ｜  台灣司律法學研析系統 AI 智慧匯出"
+            page.draw_line((self.margin, self.height - self.margin - 12), (self.width - self.margin, self.height - self.margin - 12), color=(0.85, 0.85, 0.85), width=0.6)
+            page.insert_text(
+                (self.width / 2 - 80, self.height - self.margin - 2),
+                footer_text,
+                fontname=self.font_name,
+                fontsize=8,
+                color=(0.5, 0.55, 0.6)
+            )
+        buf = io.BytesIO(self.doc.tobytes())
+        return buf.getvalue()
+
+
+# =============================================================================
+# 1. 試卷評閱診斷報告 (Evaluation Report) - DOCX / PDF
+# =============================================================================
+
 def export_evaluation_docx(report_data: Dict[str, Any], question_text: str = "") -> bytes:
-    """
-    將試卷評閱診斷報告匯出為正式 Word (.docx) 文件
-    """
+    """將試卷評閱診斷報告匯出為正式 Word (.docx) 文件"""
     doc = _init_legal_doc()
 
     # 1. 大標題
@@ -168,8 +366,6 @@ def export_evaluation_docx(report_data: Dict[str, Any], question_text: str = "")
     if rev:
         h_r = doc.add_heading("四、閱卷委員開標與涵攝改寫示範 (IRAC 架構)", level=2)
         h_r.runs[0].font.color.rgb = RGBColor(30, 58, 138)
-        
-        # 移除 markdown 連結只保留文字或格式
         clean_rev = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1 (\2)', rev)
         p_r = doc.add_paragraph()
         p_r.add_run(clean_rev)
@@ -189,20 +385,65 @@ def export_evaluation_docx(report_data: Dict[str, Any], question_text: str = "")
                     p_line = doc.add_paragraph(style='List Bullet')
                     p_line.add_run(" ｜ ".join(cols))
 
-    # 儲存至記憶體位元組串流
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
 
 
+def export_evaluation_pdf(report_data: Dict[str, Any], question_text: str = "") -> bytes:
+    """將試卷評閱診斷報告匯出為正式 PDF 文件"""
+    pdf = LegalPdfDocument(title="⚖️ 司法官暨律師高等考試・手寫試卷評閱診斷報告")
+    pdf.add_title("⚖️ 司法官暨律師高等考試・手寫試卷評閱診斷報告")
+
+    score = report_data.get("total_score", 0)
+    grade = report_data.get("grade_level", "未定")
+    issue_score = report_data.get("issue_spotting_score", 0)
+    reason_score = report_data.get("legal_reasoning_score", 0)
+    prec_score = report_data.get("precedent_scholarship_score", 0)
+    subsume_score = report_data.get("subsumption_score", 0)
+
+    pdf.add_table(
+        ["總得分", "等第評級", "爭點意識 (25)", "法學推論 (25)", "實務學說 (25)", "事實涵攝 (25)"],
+        [[f"{score} / 100", str(grade), f"{issue_score}", f"{reason_score}", f"{prec_score}", f"{subsume_score}"]]
+    )
+
+    if question_text:
+        pdf.add_heading("一、考試題目", level=2)
+        pdf.add_paragraph(question_text)
+
+    transcription = report_data.get("transcription", "")
+    if transcription:
+        pdf.add_heading("二、考生原卷作答內容（OCR 謄錄）", level=2)
+        pdf.add_paragraph(transcription)
+
+    pdf.add_heading("三、爭點命中分析與論述診斷", level=2)
+    for item in report_data.get("identified_issues", []):
+        pdf.add_bullet(f"命中爭點：{item}", bullet_char="✅")
+    for item in report_data.get("missed_issues", []):
+        pdf.add_bullet(f"漏未論述：{item}", bullet_char="❌")
+    for item in report_data.get("strengths", []):
+        pdf.add_bullet(f"作答亮點：{item}", bullet_char="🌟")
+    for item in report_data.get("weaknesses", []):
+        pdf.add_bullet(f"盲點缺失：{item}", bullet_char="⚠️")
+
+    rev = report_data.get("suggested_revision_annotated") or report_data.get("suggested_revision", "")
+    if rev:
+        pdf.add_heading("四、閱卷委員開標與涵攝改寫示範 (IRAC)", level=2)
+        clean_rev = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', rev)
+        pdf.add_callout(clean_rev, title="上位卷 IRAC 開標示範")
+
+    return pdf.get_pdf_bytes()
+
+
+# =============================================================================
+# 2. 二試榜首示範擬答 (Model Answer) - DOCX / PDF
+# =============================================================================
+
 def export_model_answer_docx(question: str, answer_markdown: str, subject: str = "") -> bytes:
-    """
-    將二試榜首示範擬答匯出為正式 Word (.docx) 文件
-    """
+    """將二試榜首示範擬答匯出為正式 Word (.docx) 文件"""
     doc = _init_legal_doc()
 
-    # 標題
     title_p = doc.add_paragraph()
     sub_title = f"【{subject}】" if subject else ""
     title_run = title_p.add_run(f"🏆 司法官暨律師高等考試二試・高分示範擬答 {sub_title}")
@@ -213,7 +454,6 @@ def export_model_answer_docx(question: str, answer_markdown: str, subject: str =
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_p.paragraph_format.space_after = Pt(14)
 
-    # 題目
     h_q = doc.add_heading("【國家考試題目】：", level=2)
     h_q.runs[0].font.color.rgb = RGBColor(30, 58, 138)
     p_q = doc.add_paragraph()
@@ -221,11 +461,9 @@ def export_model_answer_docx(question: str, answer_markdown: str, subject: str =
     p_q.paragraph_format.line_spacing = 1.2
     p_q.paragraph_format.space_after = Pt(12)
 
-    # 擬答全文
     h_a = doc.add_heading("【示範擬答全文 (IRAC 標準法學架構)】：", level=2)
     h_a.runs[0].font.color.rgb = RGBColor(30, 58, 138)
 
-    # 處理 markdown 換行與段落
     clean_ans = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', answer_markdown)
     for block in clean_ans.split("\n\n"):
         b_clean = block.strip()
@@ -250,18 +488,42 @@ def export_model_answer_docx(question: str, answer_markdown: str, subject: str =
     return buffer.getvalue()
 
 
+def export_model_answer_pdf(question: str, answer_markdown: str, subject: str = "") -> bytes:
+    """將二試榜首示範擬答匯出為正式 PDF 文件"""
+    sub_title = f"【{subject}】" if subject else ""
+    pdf = LegalPdfDocument(title=f"🏆 司法官律師二試・高分示範擬答 {sub_title}")
+    pdf.add_title(f"🏆 司法官暨律師考試二試・高分示範擬答 {sub_title}")
+
+    pdf.add_heading("【國家考試題目】：", level=2)
+    pdf.add_paragraph(question)
+
+    pdf.add_heading("【示範擬答全文 (IRAC 標準法學架構)】：", level=2)
+    clean_ans = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', answer_markdown)
+    for block in clean_ans.split("\n\n"):
+        b_clean = block.strip()
+        if not b_clean:
+            continue
+        if b_clean.startswith("#"):
+            pdf.add_heading(b_clean.replace("#", "").strip(), level=3)
+        else:
+            pdf.add_paragraph(b_clean)
+
+    return pdf.get_pdf_bytes()
+
+
+# =============================================================================
+# 3. 郵局存證信函與調解聲請要旨 (Legal Notice & Mediation) - DOCX / PDF
+# =============================================================================
+
 def export_legal_notice_docx(
     notice_text: str,
     sender_name: str = "【寄件人姓名】",
     receiver_name: str = "【相對人姓名】",
     subject: str = "郵局存證信函"
 ) -> bytes:
-    """
-    將存證信函或調解聲請書草稿匯出為標準 A4 格式 Word 文件
-    """
+    """將存證信函或調解聲請書草稿匯出為標準 A4 格式 Word 文件"""
     doc = _init_legal_doc()
 
-    # 信函抬頭
     title_p = doc.add_paragraph()
     title_run = title_p.add_run("📮 中華民國郵局存證信函")
     title_run.font.name = 'Microsoft JhengHei'
@@ -271,7 +533,6 @@ def export_legal_notice_docx(
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title_p.paragraph_format.space_after = Pt(14)
 
-    # 寄件人與收件人表格
     table = doc.add_table(rows=3, cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = True
@@ -291,7 +552,6 @@ def export_legal_notice_docx(
 
     doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
-    # 內文
     h_c = doc.add_heading("【存證信函主旨與內文】：", level=2)
     h_c.runs[0].font.color.rgb = RGBColor(15, 23, 42)
 
@@ -310,18 +570,74 @@ def export_legal_notice_docx(
     return buffer.getvalue()
 
 
+def export_legal_notice_pdf(
+    notice_text: str,
+    sender_name: str = "【寄件人姓名】",
+    receiver_name: str = "【相對人姓名】",
+    subject: str = "郵局存證信函"
+) -> bytes:
+    """將存證信函草稿匯出為標準 PDF 文件"""
+    pdf = LegalPdfDocument(title="📮 中華民國郵局存證信函")
+    pdf.add_title("📮 中華民國郵局存證信函草稿")
+
+    pdf.add_table(
+        ["欄位項目", "登記內容"],
+        [
+            ["寄件人：", sender_name],
+            ["收件人（相對人）：", receiver_name],
+            ["副　本：", "無（或載明：所在地調解委員會）"]
+        ]
+    )
+
+    pdf.add_heading("【存證信函主旨與通知內文】：", level=2)
+    clean_notice = re.sub(r'#+\s*', '', notice_text)
+    for line in clean_notice.splitlines():
+        if line.strip():
+            pdf.add_paragraph(line.strip())
+
+    return pdf.get_pdf_bytes()
+
+
+def export_mediation_pdf(
+    med_text: str,
+    sender_name: str = "聲請人",
+    receiver_name: str = "對造人",
+    subject: str = "鄉鎮市區調解委員會聲請要旨"
+) -> bytes:
+    """將調解聲請要旨匯出為標準 PDF 文件"""
+    pdf = LegalPdfDocument(title="🏛️ 鄉鎮市區調解委員會聲請要旨")
+    pdf.add_title("🏛️ 鄉鎮市區調解委員會聲請要旨與談判方案")
+
+    pdf.add_table(
+        ["調解關係人", "姓名／單位"],
+        [
+            ["聲請人：", sender_name],
+            ["對造人：", receiver_name]
+        ]
+    )
+
+    pdf.add_heading("【調解聲請理由與和解方案建議】：", level=2)
+    clean_med = re.sub(r'#+\s*', '', med_text)
+    for line in clean_med.splitlines():
+        if line.strip():
+            pdf.add_paragraph(line.strip())
+
+    return pdf.get_pdf_bytes()
+
+
+# =============================================================================
+# 4. 體系法學教科書專題 (Textbook Topic) - DOCX / PDF
+# =============================================================================
+
 def export_textbook_docx(
     subject: str,
     chapter: str,
     topic_title: str,
     markdown_content: str
 ) -> bytes:
-    """
-    將體系教科書專題章節匯出為研討質感之 Word 文件
-    """
+    """將體系教科書專題章節匯出為研討質感之 Word 文件"""
     doc = _init_legal_doc()
 
-    # 主標題
     title_p = doc.add_paragraph()
     title_run = title_p.add_run(f"📖 體系導引式法學教科書・{subject}")
     title_run.font.name = 'Microsoft JhengHei'
@@ -338,7 +654,6 @@ def export_textbook_docx(
     sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sub_p.paragraph_format.space_after = Pt(14)
 
-    # 處理 Markdown 章節
     clean_content = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', markdown_content)
     for block in clean_content.split("\n\n"):
         b_clean = block.strip()
@@ -368,13 +683,40 @@ def export_textbook_docx(
     buffer.seek(0)
     return buffer.getvalue()
 
+
+def export_textbook_pdf(
+    subject: str,
+    chapter: str,
+    topic_title: str,
+    markdown_content: str
+) -> bytes:
+    """將體系教科書專題章節匯出為研讀版 PDF 文件"""
+    pdf = LegalPdfDocument(title=f"📖 體系導引式法學教科書・{subject}")
+    pdf.add_title(f"📖 體系導引式法學教科書・{subject}")
+    pdf.add_paragraph(f"單元：{chapter} ｜ 專題：{topic_title}", font_size=11, color=(0.28, 0.33, 0.41))
+
+    clean_content = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', markdown_content)
+    for block in clean_content.split("\n\n"):
+        b_clean = block.strip()
+        if not b_clean:
+            continue
+        if b_clean.startswith("#"):
+            pdf.add_heading(b_clean.replace("#", "").strip(), level=2 if b_clean.startswith("## ") else 3)
+        else:
+            pdf.add_paragraph(b_clean)
+
+    return pdf.get_pdf_bytes()
+
+
+# =============================================================================
+# 5. 司律一試選擇題模擬試卷 (MCQ Exam) - DOCX / PDF
+# =============================================================================
+
 def export_mcq_exam_docx(
     exam_data: Dict[str, Any],
     user_answers: Optional[Dict[str, str]] = None
 ) -> bytes:
-    """
-    將司律一試選擇題試卷、考生作答與詳解報告匯出為正式 Word (.docx) 考卷
-    """
+    """將司律一試選擇題試卷、考生作答與詳解報告匯出為正式 Word (.docx) 考卷"""
     doc = _init_legal_doc()
 
     subject = exam_data.get("subject", "法學綜合")
@@ -382,7 +724,6 @@ def export_mcq_exam_docx(
     questions = exam_data.get("questions", [])
     answer_key = exam_data.get("answer_key", {})
 
-    # 考卷標題
     title_p = doc.add_paragraph()
     title_run = title_p.add_run(f"📋 司法官暨律師高等考試一試・全真模擬試卷【{subject}】")
     title_run.font.name = 'Microsoft JhengHei'
@@ -399,7 +740,6 @@ def export_mcq_exam_docx(
     sub_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     sub_p.paragraph_format.space_after = Pt(12)
 
-    # 成績統計 (若已批改)
     if user_answers:
         score = 0
         for q_num_str, c_ans in answer_key.items():
@@ -415,7 +755,6 @@ def export_mcq_exam_docx(
         score_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         score_p.paragraph_format.space_after = Pt(14)
 
-    # 第一部分：試題區
     h_sec1 = doc.add_heading("壹、全真試題測驗區", level=2)
     h_sec1.runs[0].font.color.rgb = RGBColor(30, 58, 138)
 
@@ -444,7 +783,6 @@ def export_mcq_exam_docx(
                 p_opt.paragraph_format.space_after = Pt(2)
                 p_opt.add_run(f"({opt_key}) {opts[opt_key]}")
 
-        # 若已作答，標註考生選擇與正誤
         if user_answers:
             u_ans = user_answers.get(str(q_no))
             c_ans = answer_key.get(str(q_no), "")
@@ -463,7 +801,6 @@ def export_mcq_exam_docx(
                 r_ans = p_res.add_run(f"⚪ 未作答（標準答案：({c_ans})）")
                 r_ans.font.color.rgb = RGBColor(100, 116, 139)
 
-    # 第二部分：逐題詳細解析
     doc.add_page_break()
     h_sec2 = doc.add_heading("貳、逐題法理詳細解析與實務出處", level=2)
     h_sec2.runs[0].font.color.rgb = RGBColor(30, 58, 138)
@@ -505,144 +842,131 @@ def export_mcq_exam_docx(
     return buffer.getvalue()
 
 
+def export_mcq_exam_pdf(
+    exam_data: Dict[str, Any],
+    user_answers: Optional[Dict[str, str]] = None
+) -> bytes:
+    """將司律一試選擇題試卷與詳解匯出為正式 PDF 考卷"""
+    subject = exam_data.get("subject", "法學綜合")
+    topic = exam_data.get("topic", "司律一試全真模擬試卷")
+    questions = exam_data.get("questions", [])
+    answer_key = exam_data.get("answer_key", {})
 
-def export_litigation_pleading_docx(
-    pleading_data: Dict[str, Any]
+    pdf = LegalPdfDocument(title=f"📋 司法官律師一試・全真模擬試卷【{subject}】")
+    pdf.add_title(f"📋 司法官暨律師考試一試・全真模擬試卷【{subject}】")
+    pdf.add_paragraph(f"測驗主題：{topic} ｜ 總題數：{len(questions)} 題", font_size=10, color=(0.4, 0.45, 0.5))
+
+    pdf.add_heading("壹、全真試題測驗區", level=2)
+    for q in questions:
+        q_no = q.get("question_no")
+        cat = q.get("category", "")
+        cat_str = f" [{cat}]" if cat else ""
+        pdf.add_paragraph(f"第 {q_no} 題{cat_str}：{q.get('question', '')}", font_size=10)
+        opts = q.get("options", {})
+        for opt_key in ["A", "B", "C", "D"]:
+            if opt_key in opts:
+                pdf.add_paragraph(f"({opt_key}) {opts[opt_key]}", font_size=9.5, indent=14)
+
+    pdf.add_heading("貳、逐題法理詳細解析", level=2)
+    for q in questions:
+        q_no = q.get("question_no")
+        c_ans = q.get("answer") or answer_key.get(str(q_no), "")
+        exp = q.get("explanation", "")
+        pdf.add_paragraph(f"第 {q_no} 題 【正確答案：({c_ans})】", font_size=10.5, color=(0.12, 0.23, 0.54))
+        if exp:
+            pdf.add_paragraph(f"解析：{exp}", font_size=9.5, indent=10)
+
+    return pdf.get_pdf_bytes()
+
+
+# =============================================================================
+# 6. 訴訟程序策略與實務評估建議書 (Litigation Strategy & Advice) - DOCX / PDF
+# =============================================================================
+
+def export_litigation_advice_docx(
+    advice_text: str,
+    question_text: str = "",
+    title: str = "訴訟程序策略與實務評估建議書"
 ) -> bytes:
     """
-    將民事起訴狀、民事準備書狀、民事答辯狀或刑事告訴狀匯出為符合中華民國司法院標準規範之正式法院書類 Word (.docx) 文件。
-    包含：
-    1. 案號、股別、管轄法院
-    2. 訴訟標的金額或價額
-    3. 當事人名冊（原告、被告、法定代理人、送達代收人）
-    4. 訴之聲明（第一項給付、第二項訴訟費用負擔、第三項願供擔保請准宣告假執行）
-    5. 事實及理由（程序事項、請求權基礎、爭點攻擊防禦、最高法院指標判解）
-    6. 證物清單（原證/被證）
-    7. 具狀人及撰狀律師簽章處
+    將訴訟策略與實務指引匯出為正式 Word (.docx) 文件。
+    注意：本文件僅提供法律程序與策略評估學術參考，絕非正式法院訴狀。
     """
     doc = _init_legal_doc()
 
-    title = pleading_data.get("title", "民事準備書（一）狀")
-    court = pleading_data.get("court", "臺灣臺北地方法院民事庭")
-    case_no = pleading_data.get("case_no", "113 年度訴字第      號")
-    branch = pleading_data.get("branch", "    股")
-    claim_amount = pleading_data.get("claim_amount", "新臺幣              元整")
-
-    plaintiff = pleading_data.get("plaintiff", "【原告姓名】")
-    defendant = pleading_data.get("defendant", "【被告姓名】")
-    body_text = pleading_data.get("body_text", "")
-    claims = pleading_data.get("claims", [])
-    evidence = pleading_data.get("evidence", [])
-
-    # 1. 案號與股別表頭
-    h_tbl = doc.add_table(rows=2, cols=2)
-    h_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    h_tbl.autofit = True
-    h_tbl.cell(0, 0).text = f"案　號：{case_no}"
-    h_tbl.cell(0, 1).text = f"股　別：{branch}"
-    h_tbl.cell(1, 0).text = f"訴訟標的金額或價額：{claim_amount}"
-    h_tbl.cell(1, 1).text = f"受訴法院：{court}"
-
-    p_div = doc.add_paragraph()
-    p_div.paragraph_format.space_before = Pt(8)
-    p_div.paragraph_format.space_after = Pt(8)
-
-    # 2. 正式大標題（居中、20pt粗體）
     title_p = doc.add_paragraph()
-    title_run = title_p.add_run(title)
+    title_run = title_p.add_run(f"⚖️ {title}")
     title_run.font.name = 'Microsoft JhengHei'
-    title_run.font.size = Pt(20)
+    title_run.font.size = Pt(18)
     title_run.font.bold = True
-    title_run.font.color.rgb = RGBColor(15, 23, 42)
+    title_run.font.color.rgb = RGBColor(29, 53, 87)
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_p.paragraph_format.space_after = Pt(14)
+    title_p.paragraph_format.space_after = Pt(12)
 
-    # 3. 當事人名冊表格
-    p_tbl = doc.add_table(rows=2, cols=2)
-    p_tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-    p_tbl.autofit = True
+    warn_p = doc.add_paragraph()
+    w_run = warn_p.add_run("⚠️【免責與委任聲明】：本建議書係依當事人提供事實與法學法理之客觀研析，僅供評估救濟途徑、舉證責任與訴訟風險之學術參考，絕非正式訴訟書狀。具體訴訟進行請依法委請中華民國合格執業律師辦理。")
+    w_run.font.size = Pt(9.5)
+    w_run.font.color.rgb = RGBColor(185, 28, 28)
+    warn_p.paragraph_format.space_after = Pt(12)
 
-    p_tbl.cell(0, 0).text = "原　　　告："
-    p_tbl.cell(0, 0).paragraphs[0].runs[0].font.bold = True
-    p_tbl.cell(0, 1).text = plaintiff
+    if question_text:
+        h_q = doc.add_heading("一、爭端事實與諮詢核心問題：", level=2)
+        h_q.runs[0].font.color.rgb = RGBColor(30, 58, 138)
+        p_q = doc.add_paragraph()
+        p_q.add_run(question_text)
+        p_q.paragraph_format.line_spacing = 1.2
+        p_q.paragraph_format.space_after = Pt(10)
 
-    p_tbl.cell(1, 0).text = "被　　　告："
-    p_tbl.cell(1, 0).paragraphs[0].runs[0].font.bold = True
-    p_tbl.cell(1, 1).text = defendant
+    h_a = doc.add_heading("二、訴訟策略、管轄判定與攻防指引：", level=2)
+    h_a.runs[0].font.color.rgb = RGBColor(30, 58, 138)
 
-    for row in p_tbl.rows:
-        _set_cell_margins(row.cells[0], top=80, bottom=80, left=120, right=120)
-        _set_cell_margins(row.cells[1], top=80, bottom=80, left=120, right=120)
-
-    # 4. 前言事由
-    intro_p = doc.add_paragraph()
-    intro_p.paragraph_format.space_before = Pt(14)
-    intro_p.paragraph_format.space_after = Pt(10)
-    intro_r = intro_p.add_run(f"為就兩造間請求損害賠償等事件，依法提呈{title}事：")
-    intro_r.font.bold = True
-    intro_r.font.size = Pt(12)
-
-    # 5. 訴之聲明
-    h_claim = doc.add_heading("訴之聲明", level=2)
-    h_claim.runs[0].font.color.rgb = RGBColor(29, 53, 87)
-
-    if claims and isinstance(claims, list):
-        for c in claims:
-            p_c = doc.add_paragraph()
-            p_c.paragraph_format.left_indent = Inches(0.2)
-            p_c.paragraph_format.space_after = Pt(4)
-            p_c.add_run(c)
-    else:
-        p_c1 = doc.add_paragraph("一、被告應給付原告新臺幣                  元整，及自起訴狀繕本送達翌日起至清償日止，按年息百分之五計算之利息。")
-        p_c1.paragraph_format.left_indent = Inches(0.2)
-        p_c2 = doc.add_paragraph("二、訴訟費用由被告負擔。")
-        p_c2.paragraph_format.left_indent = Inches(0.2)
-        p_c3 = doc.add_paragraph("三、原告願供擔保，請准宣告假執行。")
-        p_c3.paragraph_format.left_indent = Inches(0.2)
-
-    # 6. 事實及理由
-    h_facts = doc.add_heading("事實及理由", level=2)
-    h_facts.runs[0].font.color.rgb = RGBColor(29, 53, 87)
-    h_facts.paragraph_format.space_before = Pt(12)
-
-    clean_body = re.sub(r'#+\s*', '', body_text)
-    for line in clean_body.splitlines():
+    clean_advice = re.sub(r'#+\s*', '', advice_text)
+    for line in clean_advice.splitlines():
         l_str = line.strip()
         if l_str:
             p = doc.add_paragraph()
-            p.paragraph_format.line_spacing = 1.3
-            p.paragraph_format.space_after = Pt(5)
-            # 首行縮進 2 個中文字元 (約 0.3 英吋)
-            p.paragraph_format.first_line_indent = Inches(0.3)
             p.add_run(l_str)
-
-    # 7. 證據清單
-    if evidence:
-        h_evi = doc.add_heading("證據清單", level=2)
-        h_evi.runs[0].font.color.rgb = RGBColor(29, 53, 87)
-        for ev in evidence:
-            p_ev = doc.add_paragraph()
-            p_ev.paragraph_format.left_indent = Inches(0.2)
-            p_ev.paragraph_format.space_after = Pt(3)
-            p_ev.add_run(ev)
-
-    # 8. 結尾法院致候語
-    doc.add_paragraph().paragraph_format.space_after = Pt(14)
-    foot_p = doc.add_paragraph()
-    foot_p.add_run("　　謹　　狀\n")
-    foot_run = foot_p.add_run(f"{court}　公鑒")
-    foot_run.font.bold = True
-    foot_run.font.size = Pt(12)
-
-    # 9. 具狀人與撰狀律師簽章欄
-    sign_p = doc.add_paragraph()
-    sign_p.paragraph_format.space_before = Pt(20)
-    sign_p.paragraph_format.line_spacing = 1.5
-    sign_p.add_run("具　狀　人：　　　　　　　　　　　　（簽章）\n")
-    sign_p.add_run("撰　狀　人：　　　　　　　　　　律師（簽章）\n\n")
-    sign_p.add_run("中　　華　　民　　國　　　　　年　　　　　月　　　　　日")
+            p.paragraph_format.line_spacing = 1.3
+            p.paragraph_format.space_after = Pt(4)
 
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer.getvalue()
+
+
+def export_litigation_advice_pdf(
+    advice_text: str,
+    question_text: str = "",
+    title: str = "訴訟程序策略與實務評估建議書"
+) -> bytes:
+    """將訴訟策略與實務指引匯出為正式 PDF 文件"""
+    pdf = LegalPdfDocument(title=f"⚖️ {title}")
+    pdf.add_title(f"⚖️ {title}")
+
+    pdf.add_callout(
+        "本建議書係依當事人提供事實與法理判解之客觀研析，僅供評估救濟途徑、舉證責任與訴訟風險之學術參考，絕非正式訴訟書狀。具體訴訟進行請依法委任執業律師辦理。",
+        title="重要法律聲明"
+    )
+
+    if question_text:
+        pdf.add_heading("一、爭端事實經過：", level=2)
+        pdf.add_paragraph(question_text)
+
+    pdf.add_heading("二、訴訟策略與實務評估分析：", level=2)
+    clean_advice = re.sub(r'#+\s*', '', advice_text)
+    for line in clean_advice.splitlines():
+        if line.strip():
+            pdf.add_paragraph(line.strip())
+
+    return pdf.get_pdf_bytes()
+
+
+def export_litigation_pleading_docx(pleading_data: Any, **kwargs) -> bytes:
+    """將民事訴狀/準備書狀結構化資料或字串匯出為標準法院書類 Word (.docx) 文件"""
+    if isinstance(pleading_data, dict):
+        body = pleading_data.get("body_text", "")
+        title = pleading_data.get("title", "民事準備書（一）狀")
+        q_text = f"受訴法院：{pleading_data.get('court', '')} ｜ 案號：{pleading_data.get('case_no', '')} ｜ 原告：{pleading_data.get('plaintiff', '')} ｜ 被告：{pleading_data.get('defendant', '')}"
+        return export_litigation_advice_docx(body, question_text=q_text, title=title)
+    return export_litigation_advice_docx(str(pleading_data), **kwargs)

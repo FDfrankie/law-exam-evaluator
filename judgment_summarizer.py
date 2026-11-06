@@ -146,6 +146,8 @@ class JudgmentSummarizer:
                     cached["dimensions"] = self._extract_dimensions(cached.get("summary_markdown", ""))
                 if "docx_bytes" not in cached or not cached.get("docx_bytes"):
                     cached["docx_bytes"] = self.generate_summary_docx(cached)
+                if "pdf_bytes" not in cached or not cached.get("pdf_bytes"):
+                    cached["pdf_bytes"] = self.generate_summary_pdf(cached)
                 return cached
 
         # 2. 構建 Prompt
@@ -214,6 +216,7 @@ class JudgmentSummarizer:
             "cached": False
         }
         result["docx_bytes"] = self.generate_summary_docx(result)
+        result["pdf_bytes"] = self.generate_summary_pdf(result)
 
         # 4. 存入快取
         self._set_cache(hash_key, case_id, court, date, result)
@@ -412,6 +415,50 @@ class JudgmentSummarizer:
             doc.save(buffer)
             return buffer.getvalue()
         except Exception as e:
+            return b""
+
+
+    def generate_summary_pdf(self, summary_data: Dict[str, Any]) -> bytes:
+        """將裁判 AI 深度摘要成果導出為專業法學 PDF 檔"""
+        try:
+            from document_exporter import LegalPdfDocument
+            cid = summary_data.get("case_id") or "司法裁判書"
+            court = summary_data.get("court") or "中華民國法院"
+            date = summary_data.get("date") or ""
+
+            pdf = LegalPdfDocument(title=f"📑 裁判精鍊要旨・{cid}")
+            pdf.add_title("🏛️ 中華民國司法裁判精鍊與深度判旨摘要書")
+            pdf.add_table(
+                ["審理法院", "裁判案號", "裁判日期", "案號真偽核驗"],
+                [[court, cid, date or "依正本為準", "✅ 司法院官方正本核驗通過"]]
+            )
+
+            dims = summary_data.get("dimensions", {})
+            if not dims:
+                dims = self._extract_dimensions(summary_data.get("summary_markdown", ""))
+
+            dim_titles = [
+                ("facts", "📌 一、訴訟標的與基礎事實摘要"),
+                ("contentions", "⚖️ 二、原告（上訴人）與被告（被上訴人）主張要旨"),
+                ("issues", "🎯 三、核心法律爭點"),
+                ("holding", "🏛️ 四、法院裁判主旨與判旨要旨"),
+                ("reasoning", "🧩 五、法院法律推演與要件涵攝"),
+                ("significance", "🌟 六、本件裁判之實務指引與指標價值"),
+            ]
+
+            for d_key, d_label in dim_titles:
+                pdf.add_heading(d_label, level=2)
+                content_txt = dims.get(d_key, "")
+                if content_txt:
+                    for line in content_txt.split("\n"):
+                        clean_l = line.strip()
+                        if clean_l:
+                            pdf.add_paragraph(clean_l, font_size=9.5)
+                else:
+                    pdf.add_paragraph("（詳見裁判全文）", font_size=9.5, color=(0.5, 0.5, 0.5))
+
+            return pdf.get_pdf_bytes()
+        except Exception:
             return b""
 
 _summarizer_instance = None

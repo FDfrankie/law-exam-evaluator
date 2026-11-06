@@ -987,53 +987,67 @@ class LegalQAEngine:
 """
         return self._call_model(prompt, temperature=0.2)
 
-    def generate_court_pleading(
+    def generate_litigation_advice(
         self,
         question: str,
         legal_advice: str,
-        pleading_type: str = "民事準備書（一）狀",
-        plaintiff: str = "【原告姓名】",
-        defendant: str = "【被告姓名】",
-        court: str = "臺灣臺北地方法院民事庭",
-        claim_amount: str = "新臺幣              元整",
-        case_no: str = "113 年度訴字第      號",
-        case_branch: str = "    股"
+        party_role: str = "原告 / 聲請人",
+        stage: str = "起訴前評估與保全證據",
+        case_type: str = "民事/一般",
+        **kwargs
     ) -> str:
         """
-        根據爭議事實與法學研析，自動撰擬符合司法院民事訴訟法標準規範之民事準備書狀/起訴狀/答辯狀。
+        根據爭議事實與法學研析，產生具體之【訴訟程序策略、管轄指引與舉證實務評估建議】。
+        注意：本系統嚴格恪遵律師法與避免濫訴規範，僅提供實體爭點分析、管轄法院評估、舉證責任分配
+        及訴訟風險策略指引，絕不自動撰擬或產出向法院呈遞之訴訟書狀（起訴狀/答辯狀/告訴狀）。
         """
-        prompt = f"""請以精通臺灣民事訴訟實務、具備司法官與合法律師合格資質之高階法學幕僚筆觸，為當事人草擬一份完全合乎司法院標準規範之【{pleading_type}】：
+        user_role = kwargs.get("user_role", party_role)
+        case_stage = kwargs.get("case_stage", stage)
+
+        prompt = f"""請以精通臺灣司法實務之高階法學幕僚筆觸，為當事人提供一份客觀、縝密的【訴訟策略與實務評估建議書】：
 
 【案件事實經過】：
 {question}
 
-【專業法學研析與權益主張】：
+【專業法學研析與爭議要點】：
 {legal_advice[:1500]}
 
-【訴狀基本參數】：
-- 書狀名稱：{pleading_type}
-- 案件案由：請求損害賠償等事件
-- 案件標頭：案號：{case_no} ｜ 股別：{case_branch} ｜ 訴訟標的金額或價額：{claim_amount}
-- 受訴管轄法院：{court}
-- 當事人：原告 {plaintiff} ｜ 被告 {defendant}
+【評估參數】：
+- 當前訴訟或救濟階段：{case_stage}
+- 當事人訴訟地位：{user_role}
+- 案件類型：{case_type}
 
-【訴狀撰寫標準規範】：
-1. 嚴格包含以下法定核心章節：
-   - 案號、股別、管轄法院與訴訟標的價額
-   - 當事人基本資料（原告、被告）
-   - 【訴之聲明】（一、實體給付與遲延利息起算日；二、訴訟費用負擔；三、原告願供擔保請准宣告假執行）
-   - 【事實及理由】：
-     - 一、程序事項（管轄權、程序要件說明）
-     - 二、實體法律關係與請求權基礎（明確列出民法等實體法條依據）
-     - 三、事實經過與構成要件之密緻涵攝（針對人、事、時、地、物詳加論述）
-     - 四、引用最高法院指標裁判與大法庭見解（立論鏗鏘有力、杜絕虛構案號）
-     - 五、證據清單說明（原證一、原證二）
-   - 結尾法院致候語（謹狀 {court} 公鑒）
-   - 具狀人、撰狀律師簽章欄位與撰狀日期
-2. 語氣嚴謹、標題清晰（大標題一、二、三，中標題(一)、(二)，小標題1.、2.），文理暢達具備法院實戰說服力！
+【建議書標準輸出架構】：
+1. 📌 **管轄法院與先期程序評估**：
+   - 依法定管轄原則（民事訴訟法第1條以原就被原則、第10條不動產專屬管轄、第24條合意管轄等），分析適格之受訴管轄法院。
+   - 是否屬民事訴訟法第403條強制調解事件？有無聲請支付命令或督促程序之實益？
+2. ⚖️ **請求權基礎與構成要件檢討**：
+   - 明確指出本案實體法最有力之請求權基礎條文。
+   - 檢討各構成要件之成就情況與可能之消滅時效抗辯風險。
+3. 🛡️ **舉證責任分配與證據補強指引**：
+   - 依民事訴訟法第277條舉證責任分配法則，條列我方必須負擔舉證之待證事實。
+   - 建議應蒐集並保全之核心證據清單（如對話紀錄、匯款水單、受傷診斷書、契約書面等）。
+4. ⚔️ **對造可能防禦抗辯與破防攻防策略**：
+   - 預判對方可能提出之主要抗辯（如過失相抵、無損害、時效消滅、瑕疵擔保免除等）。
+   - 建議我方可行之反駁或破防主張。
+5. 💡 **訴訟成本效益與和解談判底線衡量**：
+   - 訴訟費用負擔估算（裁判費、送達費）、可能之訴訟審級期間耗時。
+   - 評估是否接受調解或和解之利益衡平建議。
+6. ⚠️ **法律免責與專業委任聲明**：
+   - 醒目標註：「本建議書係基於法學理論與現行實務判解之研究分析，僅供當事人理解法律程序與評估訴訟風險之學術參考，絕非向法院呈遞之正式司法訴狀。各具體個案之事實與訴訟攻防極具個殊性，於正式開啟訴訟程序時，強烈建請當事人依法委任中華民國合格執業律師進行代理或閱卷，以確保憲法保障之實質訴訟權益。」
 """
-        return self._call_model(prompt, temperature=0.1)
-
+        raw_advice = self._call_model(prompt, temperature=0.1)
+        try:
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            case_ver = verifier.verify_and_decorate_response(raw_advice, context_topic=question, auto_badge=True)
+            if case_ver.get("annotated_text"):
+                raw_advice = case_ver["annotated_text"]
+            if case_ver.get("audit_markdown"):
+                raw_advice += "\n\n" + case_ver["audit_markdown"]
+        except Exception:
+            pass
+        return raw_advice
 
     def verify_citations_against_dataset(self, text: str) -> Dict[str, Any]:
         """

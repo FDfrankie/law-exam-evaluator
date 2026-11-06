@@ -650,32 +650,59 @@ def get_all_administrative_rulings() -> List[Dict[str, Any]]:
     _CACHED_MASTER_INTERPRETATIONS = unified
     return _CACHED_MASTER_INTERPRETATIONS
 
-def get_admin_rulings_for_article(law_name: str, article_no: str) -> List[Dict[str, Any]]:
-    """獲取特定法典與條號（如公司法 248、公司法 206、著作權法 3 條）匹配之權威主管機關函釋"""
+def get_admin_rulings_for_article(
+    law_name: str,
+    article_no: str,
+    fallback_to_law_level: bool = False
+) -> List[Dict[str, Any]]:
+    """
+    獲取特定法典與條號（如公司法 248、公司法 206、著作權法 3 條）精確匹配之權威主管機關函釋。
+    嚴格採用正則邊界比對，杜絕子字串誤判（如查詢第2條不可誤中第20條）。
+    預設 fallback_to_law_level=False，找不到即回傳空清單，嚴禁張冠李戴傾倒整部法典之無關函釋。
+    """
     clean_no = re.sub(r'[第條\s]', '', str(article_no)).replace('之', '-')
     all_rulings = get_all_administrative_rulings()
     
     matched = []
-    # 1. 優先完全命中該條號
+    ano_re = re.compile(rf'第\s*{re.escape(clean_no)}\s*條(?![之\d])')
+    range_re = re.compile(r'第\s*(\d+)\s*(?:至|～|-)\s*(\d+)\s*條')
+    clean_no_int = int(clean_no) if clean_no.isdigit() else None
+
     for r in all_rulings:
         r_law = r.get("law_name", "")
-        r_clean_no = r.get("article_no_clean", "")
+        r_clean_no = str(r.get("article_no_clean", ""))
         r_cited = r.get("articles_cited", [])
         
         is_law_match = (r_law == law_name or r_law in law_name or law_name in r_law)
-        
+        if not is_law_match:
+            continue
+            
         is_art_match = False
         if clean_no:
             if r_clean_no == clean_no:
                 is_art_match = True
-            elif any(f"第{clean_no}條" in c or f"{clean_no}條" in c for c in r_cited):
-                is_art_match = True
+            elif r_cited:
+                for c in r_cited:
+                    if ano_re.search(c):
+                        is_art_match = True
+                        break
+                    if clean_no_int is not None:
+                        rm = range_re.search(c)
+                        if rm:
+                            try:
+                                s_no = int(rm.group(1))
+                                e_no = int(rm.group(2))
+                                if s_no <= clean_no_int <= e_no:
+                                    is_art_match = True
+                                    break
+                            except Exception:
+                                pass
                 
-        if is_law_match and is_art_match:
+        if is_art_match:
             matched.append(r)
 
-    # 2. 若精確條號無專屬函釋，則返回該法律之代表性重大函釋（最多 8 筆）
-    if not matched:
+    # 僅在顯式要求回退全法級別時才返回代表性重大函釋；條文單條查閱時預設嚴格不傾倒無關函釋
+    if not matched and fallback_to_law_level:
         law_rulings = [r for r in all_rulings if r.get("law_name") == law_name or law_name in r.get("law_name", "")]
         matched = law_rulings[:8]
 

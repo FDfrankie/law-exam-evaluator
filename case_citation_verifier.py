@@ -1,22 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Case Citation Anti-Hallucination & Ground-Truth Verification Engine
-==================================================================
-專門防範與攔截 AI 法律生成中常見之「虛構案號」、「字號錯置」與「幻覺裁判」問題。
-對標 Lawsnote、七法 Laws.club 與 Casetext CoCounsel 之法學真實性校驗機制：
-
-1. 精準正則萃取：覆蓋台灣最高法院、高等法院、地方法院、憲法法庭判決、大法官解釋、
-   最高法院大法庭裁定、民事庭會議決議與高等法院法律座談會字號。
-2. 毫秒級雙庫實體核驗：
-   - 百萬實體裁判庫 (4,006,156 筆裁判，以 idx_meta_ywn 複合索引 1ms 檢驗)
-   - 權威判例與決議庫 (judicial_authority.db: 11,625 筆代表性先例)
-   - 憲法法庭裁判全集與歷年大法官解釋典藏 (O(1) 字典極速比對)
-3. 防偽標籤與官方連結：
-   - 已核驗案號自動附加 [✅ 實體裁判庫核驗 | 司法院正本檢索] 官方超連結
-   - 虛構案號自動攔截並標註 [⚠️ 查無實體判決警示 (防偽攔截)]
-4. 自動附帶「🏛️ 裁判案號真實性核驗清單」，列明案由、審級、裁判日期與法理要旨。
-"""
-
 import os
 import re
 import json
@@ -107,10 +88,15 @@ class CaseCitationVerifier:
 
         self.authority_db_path = Path(DATA_DIR) / "judicial_authority.db"
         self.precedents_json_path = Path(RAW_DATA_DIR) / "precedents_catalog.json"
-        if not self.precedents_json_path.exists():
-            cand_p = Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json"
-            if cand_p.exists():
-                self.precedents_json_path = cand_p
+        for cand_prec in [
+            Path(DATA_DIR) / "precedents_catalog.json",
+            Path(RAW_DATA_DIR) / "precedents_catalog.json",
+            Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json",
+            Path(__file__).resolve().parent / "data" / "precedents_catalog.json"
+        ]:
+            if cand_prec.exists():
+                self.precedents_json_path = cand_prec
+                break
 
         self.const_dir = Path(CONSTITUTIONAL_DIR)
 
@@ -299,7 +285,16 @@ class CaseCitationVerifier:
     # =========================================================================
     # 2. 跨資料庫多維防偽核驗 (Dual-DB Verification Engine)
     # =========================================================================
-    def verify_citation(self, cit: Dict[str, Any]) -> Dict[str, Any]:
+    def verify_citation(self, cit: Any) -> Dict[str, Any]:
+        if isinstance(cit, str):
+            extracted = self.extract_citations(cit)
+            if extracted:
+                cit = extracted[0]
+            else:
+                cit = {"raw": cit, "normalized": cit, "court": "", "year": "", "word": "", "no": ""}
+        elif not isinstance(cit, dict):
+            cit = {"raw": str(cit), "normalized": str(cit), "court": "", "year": "", "word": "", "no": ""}
+
         result = {
             "raw": cit.get("raw", ""),
             "normalized": cit.get("normalized", ""),
@@ -330,9 +325,9 @@ class CaseCitationVerifier:
             raw_res = cit.get("raw", "")
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=2.0) as a_conn:
+                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
                         a_conn.row_factory = sqlite3.Row
-                        p_query = f"%{y}%決議%"
+                        p_query = f"%{y}%{n}%決議%" if n else f"%{y}%決議%"
                         r_row = a_conn.execute(
                             "SELECT case_no, precedent_id, title, holding, reasoning, source_url FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
                             (p_query, p_query)
@@ -360,28 +355,30 @@ class CaseCitationVerifier:
         if category == "CONSTITUTIONAL":
             const_map = self._get_const_file_map()
             for fn, fp in const_map.items():
-                if y in fn and w in fn and n in fn:
-                    try:
-                        with open(fp, "r", encoding="utf-8") as c_fh:
-                            c_data = json.load(c_fh)
-                            result["is_verified"] = True
-                            result["match_source"] = "CONSTITUTIONAL_CORPUS"
-                            result["case_id"] = c_data.get("case_no") or f"憲法法庭 {y} 年{w}字第 {n} 號判決"
-                            result["title"] = c_data.get("title", "")
-                            result["holding"] = c_data.get("holding") or c_data.get("main_text", "")
-                            result["date"] = c_data.get("date", "")
-                            result["official_url"] = f"https://cons.judicial.gov.tw/docdata.aspx?fid=38&id={urllib.parse.quote(result['case_id'])}"
-                            return result
-                    except Exception:
-                        pass
+                if y in fn and w in fn:
+                    m_fn_no = re.search(r'第?(\d+)號', fn)
+                    if m_fn_no and m_fn_no.group(1) == n:
+                        try:
+                            with open(fp, "r", encoding="utf-8") as c_fh:
+                                c_data = json.load(c_fh)
+                                result["is_verified"] = True
+                                result["match_source"] = "CONSTITUTIONAL_CORPUS"
+                                result["case_id"] = c_data.get("case_no") or f"憲法法庭 {y} 年{w}字第 {n} 號判決"
+                                result["title"] = c_data.get("title", "")
+                                result["holding"] = c_data.get("holding") or c_data.get("main_text", "")
+                                result["date"] = c_data.get("date", "")
+                                result["official_url"] = f"https://cons.judicial.gov.tw/docdata.aspx?fid=38&id={urllib.parse.quote(result['case_id'])}"
+                                return result
+                        except Exception:
+                            pass
 
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=2.0) as a_conn:
+                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
                         a_conn.row_factory = sqlite3.Row
                         row = a_conn.execute(
-                            "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND case_no LIKE ? AND case_no LIKE ? LIMIT 1",
-                            (f"%{y}%", f"%{n}%")
+                            "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND case_no LIKE ? AND (case_no LIKE ? OR case_no LIKE ?) LIMIT 1",
+                            (f"%{y}%", f"%第{n}號%", f"%第 {n} 號%")
                         ).fetchone()
                         if row:
                             result["is_verified"] = True
@@ -418,11 +415,11 @@ class CaseCitationVerifier:
 
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=2.0) as a_conn:
+                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
                         a_conn.row_factory = sqlite3.Row
                         row = a_conn.execute(
-                            "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND (case_no LIKE ? OR id LIKE ?) LIMIT 1",
-                            (f"%釋字第{n}號%", f"%{n}%")
+                            "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND (case_no LIKE ? OR case_no LIKE ?) LIMIT 1",
+                            (f"%釋字第{n}號%", f"%釋字第 {n} 號%")
                         ).fetchone()
                         if row:
                             result["is_verified"] = True
@@ -441,8 +438,12 @@ class CaseCitationVerifier:
         # ---------------------------------------------------------------------
         if y and n and self.index_db_path.exists():
             try:
-                with sqlite3.connect(str(self.index_db_path), timeout=2.0) as m_conn:
+                with sqlite3.connect(str(self.index_db_path), timeout=30.0) as m_conn:
                     m_conn.row_factory = sqlite3.Row
+                    try:
+                        m_conn.execute("PRAGMA busy_timeout = 30000;")
+                    except Exception:
+                        pass
 
                     word_candidates = [w]
                     if w == "台上":
@@ -478,62 +479,91 @@ class CaseCitationVerifier:
                 pass
 
         # ---------------------------------------------------------------------
-        # 檢驗情境 D: 判例精選庫與最高法院決議/大法庭
+        # 檢驗情境 D: 判例精選庫與最高法院決議/大法庭（嚴格防偽比對）
         # ---------------------------------------------------------------------
+        def is_exact_case_match(target_str: str) -> bool:
+            """精確驗證案號之年度與字號，嚴格防止數字子字串誤命中 (如 1 誤中 1234)"""
+            if not target_str:
+                return False
+            if y and y not in target_str:
+                return False
+            if n:
+                m = re.search(r'(?:第|\s|^)(\d+)\s*號', target_str)
+                if m:
+                    if m.group(1) != n:
+                        return False
+                else:
+                    m2 = re.search(r'(\d+)\s*(?:號)?$', target_str)
+                    if m2 and m2.group(1) != n:
+                        return False
+            if w:
+                w_clean = re.sub(r'字$', '', w).strip()
+                if w_clean not in target_str and w not in target_str:
+                    return False
+            return True
+
         precs = self._get_precedents_catalog()
         for p in precs:
             p_id = str(p.get("precedent_id") or p.get("case_id") or "")
-            if y and n and (y in p_id) and (n in p_id):
-                if not w or (w in p_id) or (w.replace("字", "") in p_id):
-                    result["is_verified"] = True
-                    result["match_source"] = "PRESTIGIOUS_PRECEDENTS_CATALOG"
-                    result["case_id"] = p.get("case_id") or p_id
-                    result["court"] = p.get("court") or result["court"]
-                    result["date"] = p.get("date") or ""
-                    result["title"] = p.get("title") or ""
-                    result["holding"] = p.get("holding") or ""
-                    result["laws_cited"] = p.get("laws_cited") or ""
-                    result["official_url"] = p.get("source_url") or self.build_official_judicial_url(result["case_id"])
-                    return result
+            if is_exact_case_match(p_id):
+                result["is_verified"] = True
+                result["match_source"] = "PRESTIGIOUS_PRECEDENTS_CATALOG"
+                result["case_id"] = p.get("case_id") or p_id
+                result["court"] = p.get("court") or result["court"]
+                result["date"] = p.get("date") or ""
+                result["title"] = p.get("title") or ""
+                result["holding"] = p.get("holding") or ""
+                result["laws_cited"] = p.get("laws_cited") or ""
+                result["official_url"] = p.get("source_url") or self.build_official_judicial_url(result["case_id"])
+                return result
 
         if self.authority_db_path.exists():
             try:
-                with sqlite3.connect(str(self.authority_db_path), timeout=2.0) as a_conn:
+                with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
                     a_conn.row_factory = sqlite3.Row
-                    p_query = f"%{y}%{n}%"
-                    p_row = a_conn.execute(
+                    try:
+                        a_conn.execute("PRAGMA busy_timeout = 30000;")
+                    except Exception:
+                        pass
+                    # 準確比對案號：year 匹配且包含第 n 號
+                    exact_p1 = f"%{y}%第{n}號%"
+                    exact_p2 = f"%{y}%第 {n} 號%"
+                    exact_p3 = f"%{y}%{n}號%"
+                    p_rows = a_conn.execute(
                         "SELECT case_no, precedent_id, court, title, holding, reasoning, laws_cited, source_url "
-                        "FROM precedents WHERE case_no LIKE ? OR precedent_id LIKE ? LIMIT 1",
-                        (p_query, p_query)
-                    ).fetchone()
-                    if p_row:
-                        c_no = p_row["case_no"] or p_row["precedent_id"] or ""
-                        if not w or (w in c_no) or (w.replace("字", "") in c_no) or ("上" in w and "上" in c_no):
+                        "FROM precedents WHERE (case_no LIKE ? OR case_no LIKE ? OR case_no LIKE ? OR precedent_id LIKE ? OR precedent_id LIKE ?) LIMIT 5",
+                        (exact_p1, exact_p2, exact_p3, exact_p1, exact_p2)
+                    ).fetchall()
+                    for r_cand in p_rows:
+                        c_no = r_cand["case_no"] or r_cand["precedent_id"] or ""
+                        if is_exact_case_match(c_no):
                             result["is_verified"] = True
                             result["match_source"] = "AUTHORITY_DB_PRECEDENT"
                             result["case_id"] = c_no
-                            result["court"] = p_row["court"] or result["court"] or "最高法院"
-                            result["title"] = p_row["title"] or ""
-                            result["holding"] = p_row["holding"] or p_row["reasoning"] or ""
-                            result["laws_cited"] = p_row["laws_cited"] or ""
-                            result["official_url"] = p_row["source_url"] or self.build_official_judicial_url(result["case_id"])
+                            result["court"] = r_cand["court"] or result["court"] or "最高法院"
+                            result["title"] = r_cand["title"] or ""
+                            result["holding"] = r_cand["holding"] or r_cand["reasoning"] or ""
+                            result["laws_cited"] = r_cand["laws_cited"] or ""
+                            result["official_url"] = r_cand["source_url"] or self.build_official_judicial_url(result["case_id"])
                             return result
 
-                    auth_row = a_conn.execute(
+                    auth_rows = a_conn.execute(
                         "SELECT case_no, court, title, holding, reasoning, laws_cited "
-                        "FROM authority_records WHERE case_no LIKE ? AND case_no LIKE ? LIMIT 1",
-                        (f"%{y}%", f"%{n}%")
-                    ).fetchone()
-                    if auth_row:
-                        result["is_verified"] = True
-                        result["match_source"] = "AUTHORITY_DB_RECORDS"
-                        result["case_id"] = auth_row["case_no"]
-                        result["court"] = auth_row["court"] or result["court"]
-                        result["title"] = auth_row["title"] or ""
-                        result["holding"] = auth_row["holding"] or auth_row["reasoning"] or ""
-                        result["laws_cited"] = auth_row["laws_cited"] or ""
-                        result["official_url"] = self.build_official_judicial_url(result["case_id"])
-                        return result
+                        "FROM authority_records WHERE case_no LIKE ? AND (case_no LIKE ? OR case_no LIKE ? OR case_no LIKE ?) LIMIT 5",
+                        (f"%{y}%", exact_p1, exact_p2, exact_p3)
+                    ).fetchall()
+                    for auth_row in auth_rows:
+                        c_no = auth_row["case_no"] or ""
+                        if is_exact_case_match(c_no):
+                            result["is_verified"] = True
+                            result["match_source"] = "AUTHORITY_DB_RECORDS"
+                            result["case_id"] = c_no
+                            result["court"] = auth_row["court"] or result["court"]
+                            result["title"] = auth_row["title"] or ""
+                            result["holding"] = auth_row["holding"] or auth_row["reasoning"] or ""
+                            result["laws_cited"] = auth_row["laws_cited"] or ""
+                            result["official_url"] = self.build_official_judicial_url(result["case_id"])
+                            return result
             except Exception:
                 pass
 
@@ -542,7 +572,7 @@ class CaseCitationVerifier:
         result["warning"] = (
             f"⚠️【查無實體判決警示】經比對全國 400 萬筆裁判庫與權威判例資料庫，"
             f"查無「{cit.get('raw')}」之實體裁判文書。為防範 AI 幻覺生成不存在之假案號，"
-            f"請勿直接援引於國考答卷或訴狀，建請以系統下方推薦之實體權威裁判見解為準。"
+            f"請勿直接援引於國考答卷，建請以系統下方推薦之實體權威裁判見解為準。"
         )
         return result
 
@@ -651,7 +681,7 @@ class CaseCitationVerifier:
         if fakes:
             md_lines.append("\n> [!WARNING] **防偽攔截提示**：")
             for f in fakes:
-                md_lines.append(f"> - 案號 **{f.get('raw')}** 經比對全量裁判大庫查無實體判決，研判為 AI 模型參數機率拼貼產生之幻覺字號。在國家考試作答或實務訴狀中，切勿援引未經核驗之案號！")
+                md_lines.append(f"> - 案號 **{f.get('raw')}** 經比對全量裁判大庫查無實體判決，研判為 AI 模型參數機率拼貼產生之幻覺字號。在國家考試作答或法學研析中，切勿援引未經核驗之案號！")
 
         return "\n".join(md_lines)
 
