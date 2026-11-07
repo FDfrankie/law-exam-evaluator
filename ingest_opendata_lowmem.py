@@ -413,6 +413,8 @@ def low_memory_ingest(
         existing_case_ids = set()
         try:
             db_target_path = getattr(engine, "index_db_path", None)
+            if hasattr(engine, "_init_index_db"):
+                engine._init_index_db()
             if hasattr(engine, "_get_conn"):
                 try:
                     conn = engine._get_conn(db_target_path) if db_target_path else engine._get_conn()
@@ -425,8 +427,11 @@ def low_memory_ingest(
                 cur.execute("SELECT case_id FROM judgments_meta")
                 existing_case_ids = {row[0] for row in cur.fetchall() if row[0]}
             except Exception:
-                cur.execute("SELECT case_id FROM judgments")
-                existing_case_ids = {row[0] for row in cur.fetchall() if row[0]}
+                try:
+                    cur.execute("SELECT case_id FROM judgments")
+                    existing_case_ids = {row[0] for row in cur.fetchall() if row[0]}
+                except Exception:
+                    existing_case_ids = set()
             conn.close()
             print(f"[*] 已載入庫內現存 {len(existing_case_ids):,} 筆案號，啟動斷點秒級快速略過模式。")
         except Exception as e_load:
@@ -462,10 +467,14 @@ def low_memory_ingest(
                         existing_case_ids.update(r["case_id"] for r in batch_buffer if r.get("case_id"))
                     batch_buffer.clear()
                     break
-                except sqlite3.OperationalError as oe:
+                except (sqlite3.OperationalError, sqlite3.DatabaseError) as oe:
+                    err_msg = str(oe).lower()
                     if attempt < max_flush_retries - 1:
                         backoff = (attempt + 1) * 3.0
                         print(f"\n[!] 批次落盤遇到暫態異常 ({oe})，等待 {backoff:.1f} 秒後進行第 {attempt + 2}/{max_flush_retries} 次重試...")
+                        if "file is not a database" in err_msg or "malformed" in err_msg:
+                            if hasattr(engine, "_init_index_db"):
+                                engine._init_index_db(force=True)
                         time.sleep(backoff)
                     else:
                         raise

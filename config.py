@@ -78,6 +78,15 @@ GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
 
 
 def resolve_data_subdir(name: str) -> Path:
+    if name == "judicial_1m_db":
+        custom_1m = os.getenv("JUDICIAL_1M_DIR")
+        if custom_1m and Path(custom_1m).exists():
+            return Path(custom_1m)
+        # 本機高速 SSD (D:\ 或 C:\) 優先，杜絕 Google Drive 雲端同步衝突與鎖定異常
+        for local_cand in [Path(r"D:\LawExamData\judicial_1m_db"), Path(r"C:\LawExamData\judicial_1m_db")]:
+            if local_cand.exists() and (local_cand / "judicial_1m_index.db").exists():
+                return local_cand
+
     p_data = DATA_DIR / name
     if p_data.exists():
         return p_data

@@ -79,6 +79,32 @@ class MillionJudgmentsSQLiteEngine:
        適配 Google Drive 雲端硬碟同步（避免單一 25 GB 大檔重複同步卡死），點閱全文毫秒級解壓。
     """
 
+    @staticmethod
+    def is_valid_db(db_path: Path) -> bool:
+        """
+        驗證 SQLite 資料庫檔案是否真實存在且具備有效之 SQLite 3 Header。
+        能精準過濾 Google Drive 虛擬檔案系統 (WinFsp/CBFS) 產生之未水合幽靈檔 (Unhydrated Ghost Files)
+        （即 st_size 回報非 0 但 read(16) 回傳 b'' 導致 'file is not a database' 的假檔案）。
+        """
+        if not db_path:
+            return False
+        try:
+            p = Path(db_path)
+            if not p.exists():
+                return False
+            sz = p.stat().st_size
+            if sz == 0:
+                return False
+            with open(p, "rb") as f:
+                head = f.read(16)
+            if head != b"SQLite format 3\x00":
+                return False
+            with sqlite3.connect(str(p), timeout=5) as test_conn:
+                test_conn.execute("PRAGMA schema_version;").fetchone()
+            return True
+        except Exception:
+            return False
+
     def __init__(self, base_dir: Path = None, inbox_dir: Path = None):
         # 1. 優先辨識自訂或候選目錄
         if base_dir:
@@ -111,8 +137,8 @@ class MillionJudgmentsSQLiteEngine:
             self.base_dir / "judicial_exam_core.db"
         ]
 
-        found_master = next((p for p in master_candidates if p.exists() and p.stat().st_size > 1024), None)
-        found_core = next((p for p in core_candidates if p.exists() and p.stat().st_size > 1024), None)
+        found_master = next((p for p in master_candidates if p.exists() and self.is_valid_db(p)), None)
+        found_core = next((p for p in core_candidates if p.exists() and self.is_valid_db(p)), None)
 
         if found_master:
             self.index_db_path = found_master
@@ -152,18 +178,41 @@ class MillionJudgmentsSQLiteEngine:
         conn = None
         for c_attempt in range(max_connect_retries):
             try:
-                # 針對 Google Drive 雲端同步虛擬磁碟：自動清理因網路暫態中斷遺留之 0 位元鎖定檔
+                # 針對 Google Drive 雲端同步虛擬磁碟：自動清理 0 位元鎖定檔或未水合損壞檔
                 if db_path.exists():
                     try:
-                        if db_path.stat().st_size == 0:
-                            db_path.unlink()
+                        if db_path.stat().st_size == 0 or not self.is_valid_db(db_path):
+                            corrupted_bak = db_path.with_name(f"{db_path.name}.corrupted_{int(time.time())}.bak")
+                            print(f"[!] 偵測到無效或損壞之資料庫: {db_path}，自動隔離至 {corrupted_bak.name} 並重新初始化...")
+                            try:
+                                db_path.rename(corrupted_bak)
+                            except Exception:
+                                try:
+                                    db_path.unlink()
+                                except Exception:
+                                    pass
                     except Exception:
                         pass
                 conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
                 break
-            except sqlite3.OperationalError as oe:
+            except (sqlite3.OperationalError, sqlite3.DatabaseError) as oe:
                 err_msg = str(oe).lower()
-                if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and c_attempt < max_connect_retries - 1:
+                if "file is not a database" in err_msg or "malformed" in err_msg:
+                    corrupted_bak = db_path.with_name(f"{db_path.name}.corrupted_{int(time.time())}.bak")
+                    print(f"[!] SQLite 資料庫損壞 ({oe}): {db_path}，自動隔離至 {corrupted_bak.name} 並重新建立...")
+                    try:
+                        if conn:
+                            conn.close()
+                    except Exception:
+                        pass
+                    try:
+                        if db_path.exists():
+                            db_path.rename(corrupted_bak)
+                    except Exception:
+                        pass
+                    conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
+                    break
+                elif ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and c_attempt < max_connect_retries - 1:
                     time.sleep((c_attempt + 1) * 1.5)
                 else:
                     raise
@@ -171,10 +220,6 @@ class MillionJudgmentsSQLiteEngine:
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=120000;")
 
-        # 針對 Google Drive 虛擬檔案系統 (CBFS/WinFsp) 與網路硬碟防護：
-        # WAL 模式需要共享記憶體 primitives (.db-shm)，在雲端同步虛擬磁碟上會與 Google Drive 背景同步
-        # 發生鎖定衝突 (Win32 ERROR_LOCK_VIOLATION)，被 SQLite 回報為 disk I/O error。
-        # 在雲端或虛擬磁碟環境下強制採用 TRUNCATE 模式，既有極佳的交易速度，又完全免疫 .db-shm 崩潰問題。
         path_str = str(db_path).replace(chr(92), "/")
         is_cloud_sync = any(k in path_str for k in ["我的雲端硬碟", "Google Drive", "G:/", "g:/", "OneDrive"])
 
@@ -198,9 +243,20 @@ class MillionJudgmentsSQLiteEngine:
     def _init_index_db(self, force: bool = False):
         if not force and getattr(self, "_index_db_initialized", False):
             return
-        if not force and self.index_db_path.exists() and self.index_db_path.stat().st_size > 0:
-            self._index_db_initialized = True
-            return
+        if not force and self.index_db_path.exists():
+            if self.is_valid_db(self.index_db_path):
+                self._index_db_initialized = True
+                return
+            else:
+                corrupted_bak = self.index_db_path.with_name(f"{self.index_db_path.name}.corrupted_{int(time.time())}.bak")
+                print(f"[!] 偵測到損壞或未水合之主索引庫: {self.index_db_path}，自動隔離至 {corrupted_bak.name} 並重建全新主庫...")
+                try:
+                    self.index_db_path.rename(corrupted_bak)
+                except Exception:
+                    try:
+                        self.index_db_path.unlink()
+                    except Exception:
+                        pass
 
         with self._get_conn(self.index_db_path) as conn:
             conn.execute("""
@@ -517,12 +573,16 @@ class MillionJudgmentsSQLiteEngine:
                             """, new_fts_rows)
                         conn.commit()
                     break
-                except sqlite3.OperationalError as oe:
+                except (sqlite3.OperationalError, sqlite3.DatabaseError) as oe:
                     err_msg = str(oe).lower()
                     if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and attempt < max_retries - 1:
                         backoff = (attempt + 1) * 2.0
                         print(f"[!] 主索引庫寫入遇到暫態異常 ({oe})，等待 {backoff:.1f} 秒後進行第 {attempt + 2}/{max_retries} 次重試...")
                         time.sleep(backoff)
+                    elif "file is not a database" in err_msg or "malformed" in err_msg:
+                        print(f"[!] 主索引庫損壞 ({oe})，自動觸發自癒修復並重新初始化...")
+                        self._init_index_db(force=True)
+                        time.sleep(1.0)
                     else:
                         raise
 
@@ -538,12 +598,18 @@ class MillionJudgmentsSQLiteEngine:
                             """, blob_rows)
                             sconn.commit()
                         break
-                    except sqlite3.OperationalError as soe:
+                    except (sqlite3.OperationalError, sqlite3.DatabaseError) as soe:
                         err_msg = str(soe).lower()
                         if ("disk i/o" in err_msg or "locked" in err_msg or "busy" in err_msg) and s_attempt < max_retries - 1:
                             backoff = (s_attempt + 1) * 2.0
                             print(f"[!] 分片庫 ({s_key}) 寫入遇到暫態異常 ({soe})，等待 {backoff:.1f} 秒重試...")
                             time.sleep(backoff)
+                        elif "file is not a database" in err_msg or "malformed" in err_msg:
+                            print(f"[!] 分片庫 ({s_key}) 損壞 ({soe})，重新建立該分片...")
+                            if hasattr(self, "_initialized_shards"):
+                                self._initialized_shards.discard(s_path)
+                            self._init_shard_db(s_key)
+                            time.sleep(1.0)
                         else:
                             raise
 
@@ -726,6 +792,18 @@ class MillionJudgmentsSQLiteEngine:
         """
         if not dismissed_case_id or not substantive_prior_id:
             return False
+        self._init_index_db()
+        try:
+            with self._get_conn(self.index_db_path) as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO judgment_redirects (dismissed_case_id, substantive_prior_id, discard_reason, court)
+                    VALUES (?, ?, ?, ?)
+                """, (dismissed_case_id.strip(), substantive_prior_id.strip(), (discard_reason or "").strip(), (court or "").strip()))
+                conn.commit()
+            return True
+        except Exception as e:
+            print(f"[record_redirect error] {e}")
+            return False
 
     def batch_record_redirects(self, redirects: list) -> int:
         """批次落盤程序駁回轉導映射 (避免逐筆 commit 拖慢雲端虛擬硬碟)"""
@@ -743,18 +821,6 @@ class MillionJudgmentsSQLiteEngine:
         except Exception as e:
             print(f"[batch_record_redirects error] {e}")
             return 0
-        self._init_index_db()
-        try:
-            with self._get_conn(self.index_db_path) as conn:
-                conn.execute("""
-                    INSERT OR REPLACE INTO judgment_redirects (dismissed_case_id, substantive_prior_id, discard_reason, court)
-                    VALUES (?, ?, ?, ?)
-                """, (dismissed_case_id.strip(), substantive_prior_id.strip(), (discard_reason or "").strip(), (court or "").strip()))
-                conn.commit()
-            return True
-        except Exception as e:
-            print(f"[record_redirect error] {e}")
-            return False
 
     def get_redirect_target(self, case_id: str) -> Optional[Dict[str, Any]]:
         """
