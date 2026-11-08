@@ -110,6 +110,77 @@ def extract_statute_citations_from_text(text: str) -> List[Dict[str, Any]]:
             })
     return citations
 
+def format_statute_citations_display(laws_input) -> List[str]:
+    """
+    將 OpenData 裁判引註條文陣列（如 ['山坡地保育利用條例', '第', '37', '條', '民法', '第', '71、113...']）
+    或其字串形式，精準轉換為使用者易讀的法條徽章列表（如：['山坡地保育利用條例 第 37 條', '民法 第 71、113、179 條']）。
+    徹底杜絕 Python 原始 list repr、括號引號與零散數字。
+    """
+    import ast
+    if not laws_input:
+        return []
+    
+    tokens = []
+    if isinstance(laws_input, list):
+        tokens = [str(x).strip() for x in laws_input if str(x).strip()]
+    elif isinstance(laws_input, str):
+        raw_s = laws_input.strip()
+        if raw_s.startswith("[") and raw_s.endswith("]"):
+            try:
+                parsed = ast.literal_eval(raw_s)
+                if isinstance(parsed, list):
+                    tokens = [str(x).strip() for x in parsed if str(x).strip()]
+            except Exception:
+                pass
+        if not tokens:
+            parts = re.split(r'[,、;\n\r]+', raw_s)
+            return [p.strip() for p in parts if p.strip()]
+
+    if not tokens:
+        return []
+
+    # 若原本即為標準完整法條引註（如 ['民法第184條', '刑法第271條']）
+    if all('第' in t and any(sfx in t for sfx in ['法', '條例', '規則', '辦法', '細則']) for t in tokens if len(t) > 3):
+        return tokens
+
+    # 分組重組 OpenData 條文碎片：法規名 + '第' + 條號 + '條(...)'
+    law_suffixes = ('法', '條例', '辦法', '規則', '細則', '準則', '要點', '規程', '標準', '憲法增修條文', '憲法')
+    grouped = []
+    current_law = ""
+    current_articles = []
+
+    for tok in tokens:
+        is_law = (
+            any(tok.endswith(sfx) for sfx in law_suffixes) or 
+            tok in ["民法", "刑法", "憲法", "貪污治罪條例", "公司法", "保險法", "票據法", "證券交易法", "法院組織法"]
+        ) and not re.search(r'^\d', tok) and '第' not in tok
+        
+        if is_law:
+            if current_law:
+                art_str = "、".join(current_articles) if current_articles else ""
+                disp = f"{current_law} 第 {art_str} 條" if art_str else current_law
+                grouped.append(disp)
+            current_law = tok
+            current_articles = []
+        elif tok in ['第', '條'] or tok.startswith('條（') or tok.startswith('條('):
+            continue
+        elif current_law:
+            clean_tok = re.sub(r'條.*$', '', tok).replace('第', '').strip()
+            nums = [n.strip() for n in re.split(r'[、,]+', clean_tok) if n.strip()]
+            for n in nums:
+                if n and n not in current_articles:
+                    current_articles.append(n)
+        else:
+            if tok and not tok.isdigit():
+                grouped.append(tok)
+
+    if current_law:
+        art_str = "、".join(current_articles) if current_articles else ""
+        disp = f"{current_law} 第 {art_str} 條" if art_str else current_law
+        grouped.append(disp)
+
+    return grouped
+
 class LegalCrossReferenceEngine:
     """
     法條、行政命令與裁判交叉關聯網絡核心引擎

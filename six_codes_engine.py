@@ -297,11 +297,57 @@ def get_laws_in_branch(branch_name: str) -> List[str]:
 
     return available or list(law_map.keys())[:10]
 
+_CHORDER_ARTICLES_CACHE: Dict[str, List[Dict[str, Any]]] = {}
+
+def get_articles_from_national_orders(law_name: str) -> List[Dict[str, Any]]:
+    """從全國行政法規命令庫 (ChOrder.json / ChLaw.json: 10,452 部法規) 極速調閱法定條文全文"""
+    global _CHORDER_ARTICLES_CACHE
+    if not law_name:
+        return []
+    clean = law_name.strip()
+    if clean in _CHORDER_ARTICLES_CACHE:
+        return _CHORDER_ARTICLES_CACHE[clean]
+    
+    cand_paths = [
+        Path(DATA_DIR) / "national_laws" / "ChOrder.json",
+        Path("G:/我的雲端硬碟/LawExamData/national_laws/ChOrder.json"),
+        Path(__file__).resolve().parent / "data" / "national_laws" / "ChOrder.json",
+        Path(DATA_DIR) / "national_laws" / "ChLaw.json",
+        Path("G:/我的雲端硬碟/LawExamData/national_laws/ChLaw.json"),
+    ]
+    for cp in cand_paths:
+        if cp.exists():
+            try:
+                with open(cp, "r", encoding="utf-8-sig") as f:
+                    data = json.load(f)
+                laws = data.get("Laws", []) if isinstance(data, dict) else []
+                for item in laws:
+                    lname = item.get("LawName", "").strip()
+                    if lname == clean or (len(clean) >= 4 and (clean in lname or lname in clean)):
+                        res = [
+                            {
+                                "law_name": lname,
+                                "article_no": a.get("ArticleNo", "").strip(),
+                                "content": a.get("ArticleContent", "").strip(),
+                                "category": item.get("LawCategory", "")
+                            }
+                            for a in item.get("LawArticles", [])
+                        ]
+                        if res:
+                            _CHORDER_ARTICLES_CACHE[clean] = res
+                            return res
+            except Exception:
+                pass
+    return []
+
 def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
     """獲取指定法典或法規命令的全部法定條文全文"""
+    if not law_name:
+        return []
+    clean_name = law_name.strip()
     articles, meta, law_map = load_six_codes_data()
-    if law_name in law_map:
-        return law_map[law_name]
+    if clean_name in law_map:
+        return law_map[clean_name]
     
     # 支援常見法典簡稱雙向對照
     alias_map = {
@@ -310,27 +356,33 @@ def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
         "憲法": "中華民國憲法",
         "中華民國憲法": "憲法"
     }
-    target_alias = alias_map.get(law_name) or COMMON_LAW_ALIASES.get(law_name)
+    target_alias = alias_map.get(clean_name) or COMMON_LAW_ALIASES.get(clean_name)
     if target_alias and target_alias in law_map:
         return law_map[target_alias]
         
     for k in law_map:
-        if len(law_name) >= 2 and (law_name in k or k in law_name):
+        if len(clean_name) >= 2 and (clean_name in k or k in clean_name):
             return law_map[k]
 
     reg_map = meta.get("regulations_map", {})
     for parent_l, ords in reg_map.items():
         for ord_item in ords:
-            if ord_item.get("name") == law_name and ord_item.get("articles"):
+            if ord_item.get("name") == clean_name and ord_item.get("articles"):
                 return [
                     {
-                        "law_name": law_name,
+                        "law_name": clean_name,
                         "article_no": a.get("article_no", ""),
                         "content": a.get("content", ""),
                         "category": ord_item.get("category", "")
                     }
                     for a in ord_item.get("articles", [])
                 ]
+
+    # 全面串接全國行政法規命令庫 (ChOrder.json / ChLaw.json: 10,452 部法規)
+    chorder_arts = get_articles_from_national_orders(clean_name)
+    if chorder_arts:
+        return chorder_arts
+
     return []
 
 def normalize_article_no(ano_str: str) -> str:
@@ -341,6 +393,34 @@ def normalize_article_no(ano_str: str) -> str:
     clean = clean.replace('之', '-')
     return clean
 
+def is_case_citation_query(kw: str) -> bool:
+    """判斷使用者搜尋關鍵字是否為司法裁判、判例或大法庭案號"""
+    if not kw:
+        return False
+    case_indicators = [
+        r'\d+\s*年度',
+        r'(?<!\d)\d{2,3}\s*年\b',
+        r'字第\s*\d+\s*號',
+        r'\b\d+\s*號\b',
+        r'台上[大四一二三]?',
+        r'台抗',
+        r'台聲',
+        r'上易',
+        r'判例',
+        r'判決',
+        r'裁定',
+        r'大法庭',
+        r'憲判',
+        r'釋字',
+        r'總會決議',
+        r'座談會',
+        r'原判例'
+    ]
+    for pat in case_indicators:
+        if re.search(pat, kw):
+            return True
+    return False
+
 def parse_article_query(keyword: str, known_laws: List[str] = None):
     """
     從關鍵字精準解析法規名稱、條號與文字關鍵字。
@@ -349,11 +429,13 @@ def parse_article_query(keyword: str, known_laws: List[str] = None):
     - '184-1' / '184之1' -> target_no='184-1', is_pure_no=True
     - '民法184' / '民法第184條' -> detected_law='民法', target_no='184', is_pure_no=True
     - '純粹經濟上損失' -> target_no=None, is_pure_no=False, text_kw='純粹經濟上損失'
+    - '最高法院 108年度台上大字第1636號 民事判例' -> is_case_query=True, target_no=None (杜絕誤將年份當條號)
     """
     kw = keyword.strip()
     detected_law = ""
+    is_case = is_case_citation_query(kw)
     
-    if known_laws:
+    if known_laws and not is_case:
         for l in sorted(known_laws, key=len, reverse=True):
             if kw.startswith(l):
                 detected_law = l
@@ -364,7 +446,14 @@ def parse_article_query(keyword: str, known_laws: List[str] = None):
                 kw = kw.replace(l, "").strip()
                 break
 
-    m_no = re.search(r'(?:第\s*)?(\d+)(?:\s*(?:條\s*)?之\s*(\d+)|\s*-\s*(\d+))?(?:\s*條)?', kw)
+    if is_case:
+        # 司法裁判、案號與判例查詢：絕不將年份誤當條號（例如 108年度台上大1636 絕不得誤配 108 條）
+        target_no = None
+        is_pure_no = False
+        text_kw = kw
+        return detected_law, target_no, is_pure_no, text_kw, True
+
+    m_no = re.search(r'(?<![年\d])(?<!年度)(?:第\s*)?(\d+)(?:\s*(?:條\s*)?之\s*(\d+)|\s*-\s*(\d+))?(?:\s*條)?', kw)
     target_no = None
     is_pure_no = False
     text_kw = kw
@@ -382,26 +471,31 @@ def parse_article_query(keyword: str, known_laws: List[str] = None):
         else:
             text_kw = rem
             
-    return detected_law, target_no, is_pure_no, text_kw
+    return detected_law, target_no, is_pure_no, text_kw, False
 
 def search_articles(keyword: str, selected_law: str = "", selected_branch: str = "") -> List[Dict[str, Any]]:
     """依據關鍵字、條號或法規精準搜尋條文（杜絕子字串誤判，如搜尋 184 不得匹配 1184）"""
     articles, meta, law_map = load_six_codes_data()
     raw_kw = keyword.strip()
 
-    detected_law, target_no, is_pure_no, text_kw = parse_article_query(raw_kw, list(law_map.keys()))
+    parsed = parse_article_query(raw_kw, list(law_map.keys()))
+    if len(parsed) == 5:
+        detected_law, target_no, is_pure_no, text_kw, is_case_query = parsed
+    else:
+        detected_law, target_no, is_pure_no, text_kw = parsed
+        is_case_query = False
     
     # 決定目標法典（關鍵字內偵測到的法名優先，如「民法184」優先鎖定民法）
     target_law = detected_law or selected_law
     
-    # 決定搜尋母體
+    # 決定搜尋母體：嚴格尊重使用者選擇之法規，杜絕非該法規條文（如憲法）錯置外溢
     pool = []
-    if target_law and target_law in law_map:
-        pool = law_map[target_law]
+    if target_law:
+        pool = get_law_articles(target_law)
     elif selected_branch:
         laws = get_laws_in_branch(selected_branch)
         for l in laws:
-            pool.extend(law_map.get(l, []))
+            pool.extend(get_law_articles(l))
     else:
         pool = articles
 
@@ -429,6 +523,35 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
                 scored_results.append((score, a))
         scored_results.sort(key=lambda x: -x[0])
         return [item[1] for item in scored_results]
+
+    prec_index = meta.get("precedents_article_index", {})
+    scored_results = []
+
+    # 針對司法裁判案號查詢的智慧關聯引導
+    if is_case_query:
+        clean_case_kw = re.sub(r'[\s]+', '', raw_kw)
+        for a in pool:
+            ano = a.get("article_no", "")
+            content = a.get("content", "")
+            lname = a.get("law_name", "")
+            norm_ano = normalize_article_no(ano)
+            score = 0
+            
+            # 比對該條文之標註判解中是否收錄該案號
+            a_precs = prec_index.get(f"{lname}_{norm_ano}", []) or prec_index.get(f"{lname}_第{norm_ano}條", [])
+            for p in a_precs:
+                p_cid = p.get("case_id", "") or p.get("title", "")
+                if clean_case_kw in p_cid.replace(" ", "") or p_cid.replace(" ", "") in clean_case_kw:
+                    score += 500
+                elif any(tok in p_cid for tok in ["1636", "大字", "大法庭", "台上"] if len(tok) >= 4 and tok in clean_case_kw):
+                    score += 100
+            
+            if raw_kw in content:
+                score += 150
+            if score > 0:
+                scored_results.append((score, a))
+        scored_results.sort(key=lambda x: -x[0])
+        return [item[1] for item in scored_results[:50]]
 
     prec_index = meta.get("precedents_article_index", {})
     scored_results = []
@@ -1924,59 +2047,82 @@ def format_legal_article_text(text: str) -> str:
     return t
 
 
+def sanitize_article_title(title: str) -> str:
+    """防禦性清理條文標題中任何重複的『第第』或『條條』與多餘空白"""
+    if not title:
+        return ""
+    t = str(title).strip()
+    t = re.sub(r'第\s*第\s*', '第 ', t)
+    t = re.sub(r'條\s*條\s*', '條', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
 def render_formatted_article_html(content: str, title: str = "") -> str:
     """
-    將條文內容轉為高階法學排版 HTML 卡片（比照七法、法律人）：
-    - 項次標記（第 1 項、第 2 項...）
-    - 款項縮排（一、二、...）
-    - 目次縮排（(一)、(二)...）
+    將條文內容轉為高階法學排版 HTML 卡片（比照七法 Laws.club、法律人 Lawman）：
+    - 徹底根除「第第」、「條條」重複標題問題
+    - 嚴謹區隔 項 (Paragraph)、款 (Item)、目 (Sub-item)
+    - 徹底修復「十一」、「十二」等款項被切碎並誤認為新段落項次的 regex 漏洞
     - 但書與準用關鍵法學色彩高亮
     """
     if not content or not isinstance(content, str):
         return ""
     
-    raw_paras = [p.strip() for p in content.replace('\r\n', '\n').replace('\r', '\n').split('\n') if p.strip()]
-    has_multiple_paras = len(raw_paras) > 1
+    clean_title = sanitize_article_title(title)
+    raw_lines = [line.strip() for line in content.replace('\r\n', '\n').replace('\r', '\n').split('\n') if line.strip()]
+    if not raw_lines:
+        return ""
 
     lines_html = []
     lines_html.append('<div style="background: rgba(37, 99, 235, 0.03); border: 1px solid rgba(37, 99, 235, 0.2); border-left: 5px solid #2563eb; border-radius: 8px; padding: 16px 20px; margin: 12px 0; font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Roboto, \'Noto Sans TC\', sans-serif; line-height: 1.85;">')
-    if title:
-        lines_html.append(f'<div style="font-weight: 700; color: #1e293b; font-size: 1.05rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;"><span>{title}</span></div>')
+    if clean_title:
+        lines_html.append(f'<div style="font-weight: 700; color: #1e293b; font-size: 1.05rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;"><span>{clean_title}</span></div>')
 
-    for p_idx, para in enumerate(raw_paras):
-        # 拆解款 (一、二、三...)
-        sub_items = re.split(r'(?=[一二三四五六七八九十百]+[、\s])', para)
-        if len(sub_items) > 1 and not sub_items[0].strip():
-            sub_items = sub_items[1:]
+    # 檢驗是否有明確的項次（如 "1   ", "2   "）或純多段落
+    has_numbered_paras = any(re.match(r'^\d+\s+', l) for l in raw_lines)
+    narrative_paras_count = sum(1 for l in raw_lines if not re.match(r'^[一二三四五六七八九十百]+[、\s]', l) and not re.match(r'^[（(][一二三四五六七八九十百]+[)）]', l))
+    show_para_badges = has_numbered_paras or narrative_paras_count > 1
 
-        para_inner = []
-        for item in sub_items:
-            # 檢查是否為款
-            m_sub = re.match(r'^([一二三四五六七八九十百]+[、\s])(.*)', item)
-            if m_sub:
-                prefix, body = m_sub.groups()
-                body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
-                body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
-                para_inner.append(f'<div style="padding-left: 28px; text-indent: -28px; margin: 4px 0; color: #334155;"><strong style="color: #0f172a;">{prefix}</strong>{body}</div>')
-                continue
+    current_para_num = 0
 
-            # 檢查是否為目
-            m_item = re.match(r'^([（(][一二三四五六七八九十百]+[)）])(.*)', item)
-            if m_item:
-                prefix, body = m_item.groups()
-                body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
-                body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
-                para_inner.append(f'<div style="padding-left: 48px; text-indent: -20px; margin: 3px 0; color: #475569;"><strong style="color: #1e293b;">{prefix}</strong>{body}</div>')
-                continue
-
-            # 一般段落內文
-            body = item
+    for l in raw_lines:
+        # 1. 檢查是否為款 (Item): 一、, 二、, 十一、, 十一  ...
+        m_item = re.match(r'^([一二三四五六七八九十百]+[、\s]+)(.*)', l)
+        if m_item:
+            prefix, body = m_item.groups()
             body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
             body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
-            p_badge = f'<span style="background: #e2e8f0; color: #475569; font-size: 0.78rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-right: 8px;">第 {p_idx+1} 項</span>' if has_multiple_paras else ''
-            para_inner.append(f'<div style="margin: 6px 0; color: #1e293b; font-size: 1.02rem;">{p_badge}{body}</div>')
+            lines_html.append(f'<div style="padding-left: 28px; text-indent: -28px; margin: 4px 0; color: #334155;"><strong style="color: #0f172a;">{prefix}</strong>{body}</div>')
+            continue
 
-        lines_html.append(''.join(para_inner))
+        # 2. 檢查是否為目 (Sub-item): (一), （一）...
+        m_subitem = re.match(r'^([（(][一二三四五六七八九十百]+[)）]\s*)(.*)', l)
+        if m_subitem:
+            prefix, body = m_subitem.groups()
+            body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+            body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+            lines_html.append(f'<div style="padding-left: 48px; text-indent: -20px; margin: 3px 0; color: #475569;"><strong style="color: #1e293b;">{prefix}</strong>{body}</div>')
+            continue
+
+        # 3. 檢查是否為帶編號之項 (Numbered Paragraph): 1   左列事項...
+        m_para = re.match(r'^(\d+)\s+(.*)', l)
+        if m_para:
+            current_para_num = int(m_para.group(1))
+            body = m_para.group(2)
+            body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+            body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+            p_badge = f'<span style="background: #e2e8f0; color: #475569; font-size: 0.78rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-right: 8px;">第 {current_para_num} 項</span>'
+            lines_html.append(f'<div style="margin: 6px 0; color: #1e293b; font-size: 1.02rem;">{p_badge}{body}</div>')
+            continue
+
+        # 4. 一般敘述段落 (Unnumbered Paragraph)
+        current_para_num += 1
+        body = l
+        body = re.sub(r'(但)([^。；]+[。；]?)', r'<span style="background: rgba(245, 158, 11, 0.18); color: #b45309; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>\2', body)
+        body = re.sub(r'(準用)', r'<span style="background: rgba(59, 130, 246, 0.18); color: #1d4ed8; padding: 1px 4px; border-radius: 3px; font-weight: 600;">\1</span>', body)
+        p_badge = f'<span style="background: #e2e8f0; color: #475569; font-size: 0.78rem; font-weight: 700; padding: 2px 7px; border-radius: 4px; margin-right: 8px;">第 {current_para_num} 項</span>' if show_para_badges else ''
+        lines_html.append(f'<div style="margin: 6px 0; color: #1e293b; font-size: 1.02rem;">{p_badge}{body}</div>')
 
     lines_html.append('</div>')
     return ''.join(lines_html)

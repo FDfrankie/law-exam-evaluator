@@ -10210,6 +10210,18 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
                                     full_txt = ""
 
+                            if not full_txt:
+
+                                try:
+
+                                    from landmark_grand_chamber_engine import get_grand_chamber_full_text
+
+                                    full_txt = get_grand_chamber_full_text(c_id)
+
+                                except Exception:
+
+                                    pass
+
                             if full_txt:
 
                                 st.text_area("裁判全文內容", value=full_txt, height=280, key=f"m5_txt_full_{idx}", disabled=True)
@@ -10811,6 +10823,18 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                                 except Exception:
 
                                     full_txt = ""
+
+                            if not full_txt:
+
+                                try:
+
+                                    from landmark_grand_chamber_engine import get_grand_chamber_full_text
+
+                                    full_txt = get_grand_chamber_full_text(c_id)
+
+                                except Exception:
+
+                                    pass
 
                             if full_txt:
 
@@ -14818,65 +14842,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-    # ⚡ 常用熱搜條文快捷鍵 (Quick Jump Chips)
 
-    law_pop_chips = {
-
-        "民法": [("184", "184 (侵權責任)"), ("179", "179 (不當得利)"), ("767", "767 (物上請求)"), ("148", "148 (誠信原則)"), ("247-1", "247-1 (定型化條款)"), ("758", "758 (登記效力)")],
-
-        "刑法": [("19", "19 (責任能力)"), ("22", "22 (業務正當)"), ("271", "271 (普通殺人)"), ("320", "320 (竊盜罪)"), ("339", "339 (詐欺罪)")],
-
-        "公司法": [("19", "19 (未登記責任)"), ("23", "23 (忠實義務)"), ("185", "185 (重大讓與)"), ("192-1", "192-1 (董事提名)")],
-
-        "行政程序法": [("92", "92 (行政處分)"), ("93", "93 (處分附款)"), ("117", "117 (撤銷違法處分)"), ("123", "123 (廢止合法處分)")],
-
-        "民事訴訟法": [("244", "244 (起訴狀)"), ("277", "277 (舉證責任)"), ("400", "400 (既判力)")],
-
-        "刑事訴訟法": [("156", "156 (自白法則)"), ("158-4", "158-4 (證據排除)"), ("376", "376 (三審限制)")],
-
-        "勞動基準法": [("11", "11 (預告解雇)"), ("12", "12 (懲戒解雇)"), ("14", "14 (被迫離職)"), ("17", "17 (資遣費)")],
-
-        "證券交易法": [("20", "20 (財報不實)"), ("157-1", "157-1 (內線交易)"), ("171", "171 (刑責加重)")],
-
-        "憲法訴訟法": [("59", "59 (裁判審查)"), ("65", "65 (機關爭議)")],
-
-        "中華民國刑法": [("19", "19 (責任能力)"), ("22", "22 (業務正當)"), ("271", "271 (普通殺人)"), ("320", "320 (竊盜罪)"), ("339", "339 (詐欺罪)")],
-
-        "中華民國憲法": [("7", "7 (平等原則)"), ("8", "8 (人身自由)"), ("15", "15 (財產工作)"), ("22", "22 (概括基本權)"), ("23", "23 (比例原則)")]
-
-    }
-
-    active_chips = law_pop_chips.get(selected_law, [])
-
-    if active_chips:
-
-        st.markdown("<small style='color: #666;'>⚡ <b>常用爭點條文直達</b>：</small>", unsafe_allow_html=True)
-
-        chip_cols = st.columns(len(active_chips) + (1 if search_kw else 0))
-
-        for c_idx, (art_num, art_label) in enumerate(active_chips):
-
-            with chip_cols[c_idx]:
-
-                if st.button(f"📌 {art_label}", key=f"btn_chip_{selected_law}_{art_num}", use_container_width=True):
-
-                    st.session_state["six_codes_search_kw"] = art_num
-
-                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
-
-                    st.rerun()
-
-        if search_kw:
-
-            with chip_cols[-1]:
-
-                if st.button("✖️ 清除", key=f"btn_chip_clear_{selected_law}", use_container_width=True):
-
-                    st.session_state["six_codes_search_kw"] = ""
-
-                    st.session_state["six_codes_kw_rev"] = st.session_state.get("six_codes_kw_rev", 0) + 1
-
-                    st.rerun()
 
     # 🌟 新功能：更新六法按鈕（按下去之後六法會自動聯網更新最近的修法，同步至本機大典）
 
@@ -15272,7 +15238,10 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-            exp_label = f"📖 【{lname} {ano}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
+            clean_ano_num = normalize_article_no(ano) or str(ano).strip()
+            ano_disp = f"第 {clean_ano_num} 條" if clean_ano_num else str(ano)
+
+            exp_label = f"📖 【{lname} {ano_disp}】{badge_amend}{badge_prec}{badge_orders_rulings}{badge_legis}{badge_materials}"
 
             with st.expander(exp_label, expanded=bool(idx < 2 or art.get("is_latest_amendment"))):
 
@@ -15290,9 +15259,9 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-                # 📜 條文核心本文：以高階法學排版呈現（段落項款縮排、但書與準用高亮）
+                # 📜 條文核心本文：以高階法學排版呈現（段落項款縮排、但書與準用高亮，徹底防禦第第與條條重複）
 
-                st.markdown(render_formatted_article_html(content, f"📜 【{lname} 第{ano}條】現行有效條文全文"), unsafe_allow_html=True)
+                st.markdown(render_formatted_article_html(content, f"📜 【{lname} {ano_disp}】現行有效條文全文"), unsafe_allow_html=True)
 
                 render_clickable_legal_entities(content, key_prefix=f"six_art_{idx}_sticky")
 
@@ -15301,20 +15270,20 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                 # ⚡ 條文專屬快捷工具列 (Quick Action Bar：複製條文、全國法規、立法院、司法院、憲法法庭、法源法律網)
                 tbar1, tbar2, tbar3, tbar4, tbar5, tbar6 = st.columns([1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
                 with tbar1:
-                    clean_copy_text = f"《{lname}》第 {ano} 條：\n{content}"
+                    clean_copy_text = f"《{lname}》{ano_disp}：\n{content}"
                     with st.popover("📋 複製條文", use_container_width=True):
                         st.caption("點選右上角圖示或框內反白即可一鍵複製標準法條引註格式：")
                         st.code(clean_copy_text, language="text")
                 with tbar2:
-                    st.link_button("📜 全國法規", get_moj_article_url(lname, ano), use_container_width=True, help="直通法務部全國法規資料庫官方條文")
+                    st.link_button("📜 全國法規", get_moj_article_url(lname, clean_ano_num), use_container_width=True, help="直通法務部全國法規資料庫官方條文")
                 with tbar3:
-                    st.link_button("🏛️ 立院公報", get_ly_article_url(lname, ano), use_container_width=True, help="直通立法院法律系統三讀審查與歷次公報")
+                    st.link_button("🏛️ 立院公報", get_ly_article_url(lname, clean_ano_num), use_container_width=True, help="直通立法院法律系統三讀審查與歷次公報")
                 with tbar4:
-                    st.link_button("⚖️ 司法院判解", get_judicial_article_url(lname, ano), use_container_width=True, help="直通司法院法學檢索系統查詢本條文裁判")
+                    st.link_button("⚖️ 司法院判解", get_judicial_article_url(lname, clean_ano_num), use_container_width=True, help="直通司法院法學檢索系統查詢本條文裁判")
                 with tbar5:
-                    st.link_button("🏛️ 憲法法庭", get_constitutional_article_url(lname, ano), use_container_width=True, help="直通憲法法庭裁判及大法官解釋庫")
+                    st.link_button("🏛️ 憲法法庭", get_constitutional_article_url(lname, clean_ano_num), use_container_width=True, help="直通憲法法庭裁判及大法官解釋庫")
                 with tbar6:
-                    lawbank_query_url = f"https://www.lawbank.com.tw/treatise/plink.aspx?keyword={urllib.parse.quote(lname + '第' + str(ano) + '條')}"
+                    lawbank_query_url = f"https://www.lawbank.com.tw/treatise/plink.aspx?keyword={urllib.parse.quote(lname + ano_disp)}"
                     st.link_button("🌐 法源法律網", lawbank_query_url, use_container_width=True, help="外部直連法源法律網檢索本條文裁判與法學論文")
 
                 st.markdown("---")
@@ -15564,15 +15533,28 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                             p_date = p.get("date", "")
 
                             p_holding = p.get("holding", "")
+                            # 針對大法庭裁定進行官方權威主文與理由無縫補強
+                            if not p_holding or p_holding == p.get("title") or "未停止適用" in p_holding:
+                                try:
+                                    from landmark_grand_chamber_engine import get_grand_chamber_holding
+                                    gc_holding = get_grand_chamber_holding(p_cid)
+                                    if gc_holding:
+                                        p_holding = gc_holding
+                                except Exception:
+                                    pass
 
                             p_laws = p.get("laws_cited", "")
-                            # 動態深度萃取裁判使用之所有關聯法條（徹底解決裁判未完整標註引用法條之問題）
+                            # 動態深度萃取裁判使用之所有關聯法條（精準解析 OpenData 碎片為優雅徽章）
                             combined_laws = []
                             if p_laws:
-                                if isinstance(p_laws, list):
-                                    combined_laws.extend([str(x).strip() for x in p_laws if str(x).strip()])
-                                else:
-                                    combined_laws.extend([x.strip() for x in str(p_laws).split("、") if x.strip()])
+                                try:
+                                    from legal_cross_reference_engine import format_statute_citations_display
+                                    combined_laws.extend(format_statute_citations_display(p_laws))
+                                except Exception:
+                                    if isinstance(p_laws, list):
+                                        combined_laws.extend([str(x).strip() for x in p_laws if str(x).strip() and not str(x).strip().isdigit() and str(x).strip() not in ['第', '條']])
+                                    else:
+                                        combined_laws.extend([x.strip() for x in str(p_laws).split("、") if x.strip()])
                             if p_holding:
                                 try:
                                     from legal_cross_reference_engine import extract_statute_citations_from_text
@@ -15591,7 +15573,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                                 st.info(f"**核心裁判要旨 / 主文：**\n{p_holding}")
 
                                 if combined_laws:
-                                    law_chips_html = "".join([f'<span style="background: rgba(37,99,235,0.08); color: #1d4ed8; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(37,99,235,0.2); font-size: 0.82rem; font-weight: 600; margin-right: 6px; display: inline-block; margin-bottom: 4px;">📖 {law_item}</span>' for law_item in combined_laws[:10]])
+                                    law_chips_html = "".join([f'<span style="background: rgba(37,99,235,0.08); color: #1d4ed8; padding: 3px 10px; border-radius: 6px; border: 1px solid rgba(37,99,235,0.25); font-size: 0.84rem; font-weight: 600; margin-right: 8px; margin-bottom: 6px; display: inline-block;">📖 {law_item}</span>' for law_item in combined_laws[:12]])
                                     st.markdown(f'<div style="margin: 8px 0;"><b>📋 本裁判引用法條依據（共 {len(combined_laws)} 條）：</b><br>{law_chips_html}</div>', unsafe_allow_html=True)
 
 
