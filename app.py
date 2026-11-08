@@ -233,13 +233,72 @@ div[data-testid="stExpander"] {
     box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
 
     transform: translateY(-1px);
-
 }
 
+/* Sidebar Nav Slots / Fields (一個欄位一個欄位設計，徹底杜絕 ● 圓點) */
+div[data-testid="stSidebar"] div.stButton > button {
+    text-align: left !important;
+    justify-content: flex-start !important;
+    border-radius: 9px !important;
+    padding: 8px 13px !important;
+    font-size: 0.94rem !important;
+    font-weight: 550 !important;
+    transition: all 0.16s ease-in-out !important;
+    margin-bottom: 4px !important;
+    width: 100% !important;
+}
+div[data-testid="stSidebar"] div.stButton > button:hover {
+    transform: translateX(3px) !important;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+}
+div[data-testid="stSidebar"] div.stButton > button[kind="primary"],
+div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-primary"] {
+    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #2563eb 100%) !important;
+    color: #ffffff !important;
+    border: 1px solid #3b82f6 !important;
+    font-weight: 700 !important;
+    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.28) !important;
+}
+div[data-testid="stSidebar"] div.stButton > button[kind="secondary"],
+div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-secondary"] {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    color: #334155 !important;
+}
+div[data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover,
+div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-secondary"]:hover {
+    background: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #0f172a !important;
+}
 
+/* Horizontal Radio Button Pills (去圓點膠囊化) */
+div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {
+    display: none !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label {
+    background: #f1f5f9;
+    padding: 4px 12px !important;
+    border-radius: 9999px !important;
+    border: 1px solid #cbd5e1 !important;
+    margin-right: 6px !important;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
+    background: #e2e8f0;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) {
+    background: #2563eb !important;
+    color: white !important;
+    border-color: #1d4ed8 !important;
+}
+div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) p {
+    color: white !important;
+    font-weight: 600;
+}
 
 /* Alerts */
-
 div[data-testid="stAlert"] {
 
     border-radius: 10px !important;
@@ -3232,69 +3291,43 @@ with st.sidebar:
 
 
 
-    # 2. 雙向導航精準同步機制：
-
-    #    - 若頁面內按鈕要求切換（st.session_state["app_mode"] 被按鈕程式化變更且與前次渲染不同），同步至 Radio
-
-    #    - 若使用者於側邊欄點選 Radio，同步至 st.session_state["app_mode"]
-
-    #    - 杜絕因強制覆寫 Radio 導致的「點選後紅點跳一下但頁面不切換」現象
-
+    # 2. 雙向導航精準同步機制
     last_rendered_mode = st.session_state.get("_last_rendered_mode", None)
 
-
-
     # 檢查是否由頁面內按鈕設定了 nav_sidebar_radio_mode
-
     if "nav_sidebar_radio_mode" in st.session_state and st.session_state["nav_sidebar_radio_mode"] != last_rendered_mode and st.session_state["nav_sidebar_radio_mode"] in mode_options:
-
         st.session_state["app_mode"] = st.session_state["nav_sidebar_radio_mode"]
 
+    cur_mode = st.session_state.get("app_mode", MODE_HOME)
+    if cur_mode not in mode_options:
+        cur_mode = mode_options[0]
+        st.session_state["app_mode"] = cur_mode
 
+    st.markdown("""<div style="font-size: 0.90rem; font-weight: 700; color: #475569; margin: 6px 0 10px 2px; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; justify-content: space-between;">
+<span>🧭 功能目錄</span>
+<span style="font-size: 0.74rem; font-weight: 600; color: #2563eb; background: rgba(37,99,235,0.08); padding: 1px 7px; border-radius: 9999px;">單擊切換</span>
+</div>""", unsafe_allow_html=True)
 
-    if last_rendered_mode is None:
+    # 以獨立欄位方框呈現功能目錄（徹底取代 ● 圓點單選鈕，一個欄位一個欄位直覺點選）
+    for opt_idx, opt in enumerate(mode_options):
+        is_selected = (opt == cur_mode)
+        if st.button(
+            opt,
+            key=f"sidebar_nav_slot_{opt_idx}",
+            use_container_width=True,
+            type="primary" if is_selected else "secondary"
+        ):
+            if cur_mode != opt:
+                st.session_state["app_mode"] = opt
+                st.session_state["_last_rendered_mode"] = opt
+                st.session_state["nav_sidebar_radio_mode"] = opt
+                st.session_state["main_app_nav_radio"] = opt
+                st.rerun()
 
-        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
-
-    elif st.session_state["app_mode"] != last_rendered_mode:
-
-        # 頁面內按鈕或外部程式要求切換目標模式
-
-        st.session_state["main_app_nav_radio"] = st.session_state["app_mode"]
-
-    elif "main_app_nav_radio" in st.session_state and st.session_state["main_app_nav_radio"] in mode_options:
-
-        # 使用者點擊了側邊欄 Radio 元件
-
-        st.session_state["app_mode"] = st.session_state["main_app_nav_radio"]
-
-
-
-    cur_mode = st.session_state["app_mode"]
-
-    cur_idx = mode_options.index(cur_mode) if cur_mode in mode_options else 0
-
-    st.session_state["main_app_nav_radio"] = cur_mode
-
-    st.session_state["nav_sidebar_radio_mode"] = cur_mode
-
-
-
-    app_mode = st.radio(
-
-        "功能目錄：",
-
-        mode_options,
-
-        index=cur_idx,
-
-        key="main_app_nav_radio"
-
-    )
-
-    st.session_state["app_mode"] = app_mode
-
+    app_mode = st.session_state["app_mode"]
     st.session_state["_last_rendered_mode"] = app_mode
+    st.session_state["main_app_nav_radio"] = app_mode
+    st.session_state["nav_sidebar_radio_mode"] = app_mode
 
     api_key = get_gemini_api_key()
 
