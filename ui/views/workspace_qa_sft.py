@@ -75,12 +75,10 @@ def render_workspace():
     ])
 
     with tab_qa:
-        st.markdown("""
-            <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
-                <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
-                <p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">專為本專案特化之全能法學檢索系統：單一搜尋欄支援法條定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("""<div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
+<h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
+<p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">專為本專案特化之全能法學檢索系統：單一搜尋欄支援法條定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
+</div>""", unsafe_allow_html=True)
 
         # 1. 專屬特化單一整體搜尋欄
         qa_input_val = st.session_state.get("current_qa_question_input", "")

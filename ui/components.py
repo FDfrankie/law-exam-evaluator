@@ -28,43 +28,35 @@ def render_kpi_metrics(
     with col1:
         badge_bg = "#DCFCE7" if total_score >= 70 else ("#FEF3C7" if total_score >= 50 else "#FEE2E2")
         badge_color = "#166534" if total_score >= 70 else ("#92400E" if total_score >= 50 else "#991B1B")
-        st.markdown(f"""
-        <div class="kpi-metric-card">
-            <div class="kpi-metric-title">📊 綜合總分評定</div>
-            <div class="kpi-metric-val">{total_score} <span style="font-size:1rem;color:#64748B;">/ 100</span></div>
-            <div class="kpi-metric-badge" style="background:{badge_bg};color:{badge_color};">{grade_level}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="kpi-metric-card">
+<div class="kpi-metric-title">📊 綜合總分評定</div>
+<div class="kpi-metric-val">{total_score} <span style="font-size:1rem;color:#64748B;">/ 100</span></div>
+<div class="kpi-metric-badge" style="background:{badge_bg};color:{badge_color};">{grade_level}</div>
+</div>""", unsafe_allow_html=True)
         st.progress(min(1.0, max(0.0, total_score / 100.0)))
 
     with col2:
-        st.markdown(f"""
-        <div class="kpi-metric-card">
-            <div class="kpi-metric-title">🎯 爭點意識與定性</div>
-            <div class="kpi-metric-val">{issue_score} <span style="font-size:1rem;color:#64748B;">/ 25</span></div>
-            <div class="kpi-metric-badge" style="background:#E0E7FF;color:#3730A3;">配分比 25%</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="kpi-metric-card">
+<div class="kpi-metric-title">🎯 爭點意識與定性</div>
+<div class="kpi-metric-val">{issue_score} <span style="font-size:1rem;color:#64748B;">/ 25</span></div>
+<div class="kpi-metric-badge" style="background:#E0E7FF;color:#3730A3;">配分比 25%</div>
+</div>""", unsafe_allow_html=True)
         st.progress(min(1.0, max(0.0, issue_score / 25.0)))
 
     with col3:
-        st.markdown(f"""
-        <div class="kpi-metric-card">
-            <div class="kpi-metric-title">⚖️ 法理邏輯三段論</div>
-            <div class="kpi-metric-val">{irac_score} <span style="font-size:1rem;color:#64748B;">/ 25</span></div>
-            <div class="kpi-metric-badge" style="background:#E0E7FF;color:#3730A3;">配分比 25%</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="kpi-metric-card">
+<div class="kpi-metric-title">⚖️ 法理邏輯三段論</div>
+<div class="kpi-metric-val">{irac_score} <span style="font-size:1rem;color:#64748B;">/ 25</span></div>
+<div class="kpi-metric-badge" style="background:#E0E7FF;color:#3730A3;">配分比 25%</div>
+</div>""", unsafe_allow_html=True)
         st.progress(min(1.0, max(0.0, irac_score / 25.0)))
 
     with col4:
-        st.markdown(f"""
-        <div class="kpi-metric-card">
-            <div class="kpi-metric-title">🏛️ 實務學說與涵攝</div>
-            <div class="kpi-metric-val">{subsumption_score} <span style="font-size:1rem;color:#64748B;">/ 50</span></div>
-            <div class="kpi-metric-badge" style="background:#FEF3C7;color:#92400E;">配分比 50%</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="kpi-metric-card">
+<div class="kpi-metric-title">🏛️ 實務學說與涵攝</div>
+<div class="kpi-metric-val">{subsumption_score} <span style="font-size:1rem;color:#64748B;">/ 50</span></div>
+<div class="kpi-metric-badge" style="background:#FEF3C7;color:#92400E;">配分比 50%</div>
+</div>""", unsafe_allow_html=True)
         st.progress(min(1.0, max(0.0, subsumption_score / 50.0)))
 
 
@@ -137,18 +129,16 @@ def render_statutory_card(
     clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
     highlighted_content = highlight_statutory_keywords(content)
 
-    st.markdown(f"""
-    <div class="statute-quote-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <span style="font-size:1.15rem;font-weight:700;color:#1E3A8A;">
-                📖 {law_name} 第 {clean_no} 條
-            </span>
-        </div>
-        <div class="statute-article-body">
-            {highlighted_content}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class="statute-quote-card">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+<span style="font-size:1.15rem;font-weight:700;color:#1E3A8A;">
+📖 {law_name} 第 {clean_no} 條
+</span>
+</div>
+<div class="statute-article-body">
+{highlighted_content}
+</div>
+</div>""", unsafe_allow_html=True)
 
     if annotations:
         t_hist, t_prec, t_admin, t_notes = st.tabs([
@@ -267,10 +257,8 @@ def render_system_status_badge(is_api_ready: bool = True, library_loaded: bool =
     """側邊欄底部簡潔狀態徽章"""
     status_gemini = "🟢 Gemini 引擎就緒" if is_api_ready else "🟡 待輸入 API Key"
     status_lib = "📚 本地法學庫已載入" if library_loaded else "⏳ 資料載入中"
-    st.markdown(f"""
-    <div class="system-status-footer">
-        <div><strong>系統運行狀態</strong></div>
-        <div style="margin-top:4px;">{status_gemini}</div>
-        <div style="margin-top:2px;">{status_lib}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div class="system-status-footer">
+<div><strong>系統運行狀態</strong></div>
+<div style="margin-top:4px;">{status_gemini}</div>
+<div style="margin-top:2px;">{status_lib}</div>
+</div>""", unsafe_allow_html=True)

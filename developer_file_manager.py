@@ -867,14 +867,12 @@ def render_developer_file_manager():
         st.error("🔒 【權限不足・存取遭拒】此檔案庫總管收錄作者個人未公開之法學手寫筆記與教材檔案，未獲授權嚴禁調閱。請於左側邊欄輸入開發者金鑰解鎖。")
         return
 
-    st.markdown("""
-        <div style="padding: 16px 20px; border-radius: 10px; background: linear-gradient(135deg, #1f4068 0%, #162447 100%); color: white; margin-bottom: 20px;">
-            <h2 style="color: white; margin-bottom: 4px; font-size: 1.6rem;">🛠️ 開發者檔案庫總管 (Developer File Hub)</h2>
-            <p style="color: #e4e4e4; font-size: 0.95rem; margin-bottom: 0;">
-                支援全量個人法學講義與三星手寫筆記：<b>在線無損閱讀檢視</b>、<b>考科體系分類組織</b> 與 <b>依據法理內文 AI 智慧重命名</b>。
-            </p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown("""<div style="padding: 16px 20px; border-radius: 10px; background: linear-gradient(135deg, #1f4068 0%, #162447 100%); color: white; margin-bottom: 20px;">
+<h2 style="color: white; margin-bottom: 4px; font-size: 1.6rem;">🛠️ 開發者檔案庫總管 (Developer File Hub)</h2>
+<p style="color: #e4e4e4; font-size: 0.95rem; margin-bottom: 0;">
+支援全量個人法學講義與三星手寫筆記：<b>在線無損閱讀檢視</b>、<b>考科體系分類組織</b> 與 <b>依據法理內文 AI 智慧重命名</b>。
+</p>
+</div>""", unsafe_allow_html=True)
 
     # 確保 session state 重命名歷史清單
     if "dev_rename_history" not in st.session_state:

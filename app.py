@@ -2943,30 +2943,16 @@ def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
 
 
     # 1. 標題資訊
-
-    st.markdown(f"""
-
-    <div style="background: #f8fafc; border-left: 5px solid #1d3557; padding: 14px 18px; border-radius: 6px; margin-bottom: 12px;">
-
-        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-
-            <h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">⚖️ {case_id}</h3>
-
-            <span style="background-color: #dbeafe; color: #1e40af; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">🏷️ 精選裁判</span>
-
-            <span style="background-color: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">✅ 本案已確定</span>
-
-        </div>
-
-        <div style="margin-top: 8px; color: #475569; font-size: 0.95rem;">
-
-            <b>📌 案由摘要：</b> {cause} &nbsp;｜&nbsp; <b>📅 裁判日期：</b> {case_date} &nbsp;｜&nbsp; <b>🏛️ 審理法院：</b> {court}
-
-        </div>
-
-    </div>
-
-    """, unsafe_allow_html=True)
+    st.markdown(f"""<div style="background: #f8fafc; border-left: 5px solid #1d3557; padding: 14px 18px; border-radius: 6px; margin-bottom: 12px;">
+<div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+<h3 style="margin: 0; color: #1e293b; font-size: 1.25rem;">⚖️ {case_id}</h3>
+<span style="background-color: #dbeafe; color: #1e40af; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">🏷️ 精選裁判</span>
+<span style="background-color: #dcfce7; color: #166534; padding: 3px 8px; border-radius: 4px; font-size: 0.82rem; font-weight: 600;">✅ 本案已確定</span>
+</div>
+<div style="margin-top: 8px; color: #475569; font-size: 0.95rem;">
+<b>📌 案由摘要：</b> {cause} &nbsp;｜&nbsp; <b>📅 裁判日期：</b> {case_date} &nbsp;｜&nbsp; <b>🏛️ 審理法院：</b> {court}
+</div>
+</div>""", unsafe_allow_html=True)
 
     
 
@@ -5256,23 +5242,27 @@ def get_realtime_database_stats() -> dict:
 
 if app_mode == MODE_HOME:
 
-    st.markdown("""
-
-        <div style="padding: 18px 24px; border-radius: 12px; background: linear-gradient(135deg, #1d3557 0%, #2a4d69 100%); color: white; margin-bottom: 20px;">
-
-            <h1 style="color: white; margin-bottom: 8px; font-size: 2.0rem;">⚖️ 司律考試 AI 評分、命題、判解檢索與六法研析平台</h1>
-
-            <p style="color: #e0fbfc; font-size: 1.02rem; margin-bottom: 0;">
-
-                整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 AI 筆記煉金工坊之一站式法學實戰平台。
-
-            </p>
-
-        </div>
-
-    """, unsafe_allow_html=True)
-
-
+    hero_html = """<div style="padding: 26px 32px; border-radius: 16px; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%); color: white; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.25), 0 8px 10px -6px rgba(30, 58, 138, 0.2); border: 1px solid rgba(255, 255, 255, 0.12);">
+    <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); padding: 4px 14px; border-radius: 9999px; font-size: 0.84rem; font-weight: 600; color: #bfdbfe; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.18);">
+        <span>⚖️ 司律法學研析旗艦平台</span>
+        <span style="opacity: 0.4;">•</span>
+        <span style="color: #6ee7b7;">🟢 470 萬裁判實時母庫就緒</span>
+    </div>
+    <h1 style="color: #ffffff; margin: 0 0 10px 0; font-size: 2.15rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.25;">
+        司律考試 AI 評分、命題、判解檢索與六法研析平台
+    </h1>
+    <p style="color: #cbd5e1; font-size: 1.02rem; line-height: 1.65; margin: 0 0 16px 0; max-width: 980px;">
+        整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 AI 筆記煉金工坊之一站式法學實戰平台。
+    </p>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">🏛️ 4,697,051 筆裁判實體大庫</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📜 61 部考科六法 & 立院公報</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📝 二試手寫試卷雙模態 OCR 批閱</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">✍️ IRAC 高分示範擬答</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">🛡️ 案號防偽 0 幻覺穿透驗證</span>
+    </div>
+</div>"""
+    st.markdown(hero_html, unsafe_allow_html=True)
 
     # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
 
@@ -5281,8 +5271,6 @@ if app_mode == MODE_HOME:
     total_mcq_cnt = len(get_cached_stage1_mcqs())
 
     qpool_stats = get_cached_question_pool_stats()
-
-
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
@@ -5302,8 +5290,6 @@ if app_mode == MODE_HOME:
 
     m_c4.metric("🎯 題庫大系與社群共享", f"{qpool_stats.get('community_total', 0):,} 題", f"一試選擇 {total_mcq_cnt:,} ｜ 模擬命題 {qpool_stats.get('total', 0)}")
 
-
-
     if db_stats.get("is_cloud_fallback") or db_stats.get("is_fallback"):
 
         st.caption(f"☁️ 雲端基準統計：⚖️ 權威判例：**{db_stats['total_precedents']:,}** 筆 ｜ 🏛️ 憲判與釋字：**{db_stats['total_constitutional']:,}** 筆 ｜ 總權威裁判庫存：**{db_stats['total_authority']:,}** 筆 (雲端唯讀快取模式)")
@@ -5312,25 +5298,13 @@ if app_mode == MODE_HOME:
 
         st.caption(f"⚡ 即時資料庫連線統計：⚖️ 權威判例：**{db_stats['total_precedents']:,}** 筆 ｜ 🏛️ 憲判與釋字：**{db_stats['total_constitutional']:,}** 筆 ｜ 總權威裁判庫存：**{db_stats['total_authority']:,}** 筆 ｜ 社群共享題庫：**{qpool_stats.get('community_total', 0):,}** 題")
 
-
-
-    st.write("")
-
-
-
-    # ⚠️ 使用者權益與疑慮特別聲明（醒目警示框）
-
-    st.warning("""
-
-    ⚠️ **【使用者權益、題目共享與著作權疑慮特別提醒】**
-
-    1. **題目公開共享原則**：本平台致力於法學教育與國考資源均平，凡使用者輸入或上傳之考試題目，將自動去重後納入社群公開共享題庫，供廣大考生練習。
-
-    2. **個人作答絕對隔離**：考生的手寫答卷、批改分數與個人評語報告**嚴格隔離加密保護**（🔒 僅限開發者本人調閱），絕不對外公開。
-
-    3. **權利人優先下架保障**：若您上傳之試題內容涉及補習班獨家改編著作、期中考私人考卷，或有任何著作權、隱私疑慮，請隨時填寫下方回報表單，作者將於核實後即刻優先移除！
-
-    """)
+    # 🛡️ 使用者權益保障與題目共享說明 (優雅折疊提示，不干擾主畫面)
+    with st.expander("🛡️ 【使用者權益保障、個人作答絕對隔離與題目共享原則】點此查看詳情", expanded=False):
+        st.markdown("""
+1. **題目公開共享原則**：本平台致力於法學教育與國考資源均平，凡使用者輸入或上傳之客觀考試題目，將自動去識別化與去重後納入社群公開共享題庫，供廣大考生研習。
+2. **個人作答絕對隔離**：考生的手寫答卷筆跡、批改分數與個人評語報告**嚴格隔離加密保護**（🔒 僅限開發者本人調閱），絕不對外公開。
+3. **權利人優先下架保障**：若您上傳之試題內容涉及補習班獨家改編著作、期中考私人考卷，或有任何著作權、隱私疑慮，請隨時於下方【權益回報】標籤頁提出，作者將於核實後即刻優先移除！
+        """)
 
 
 
@@ -9551,13 +9525,11 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
                         m4_lcol, m4_rcol = st.columns([5, 7])
                         with m4_lcol:
                             st.markdown("#### 📋 試題題幹與背景事實")
-                            st.markdown(f'''
-<div style="background-color: rgba(69,123,157,0.06); border-left: 4px solid #457b9d; padding: 12px 16px; border-radius: 4px; margin-bottom: 12px;">
-    <strong>考科領域：</strong> <span style="background-color: #e2e8f0; padding: 2px 8px; border-radius: 10px; font-size: 0.85em;">{m4_subject}</span><br><br>
-    <strong>題目全文：</strong><br>
-    <div style="font-size: 0.95em; max-height: 480px; overflow-y: auto; margin-top: 6px; white-space: pre-wrap; line-height: 1.6;">{target_q}</div>
-</div>
-''', unsafe_allow_html=True)
+                            st.markdown(f'''<div style="background-color: rgba(69,123,157,0.06); border-left: 4px solid #457b9d; padding: 12px 16px; border-radius: 4px; margin-bottom: 12px;">
+<strong>考科領域：</strong> <span style="background-color: #e2e8f0; padding: 2px 8px; border-radius: 10px; font-size: 0.85em;">{m4_subject}</span><br><br>
+<strong>題目全文：</strong><br>
+<div style="font-size: 0.95em; max-height: 480px; overflow-y: auto; margin-top: 6px; white-space: pre-wrap; line-height: 1.6;">{target_q}</div>
+</div>''', unsafe_allow_html=True)
                         with m4_rcol:
                             st.markdown("#### 🏆 榜首級示範擬答全文")
                             st.markdown(ans)
@@ -11118,26 +11090,14 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
 
                     with st.container():
-
-                        st.markdown(f'''
-
-<div style="border-left: 6px solid {badge_border}; padding: 12px 18px; margin: 10px 0; background-color: {bg_col}; border-radius: 6px;">
-
-    <div style="font-size: 1.1em; font-weight: bold; color: {badge_border};">
-
-        審級 {node.get('order', r_idx+1)}：{n_stage} ｜ <code>{disp_cid}</code>
-
-    </div>
-
-    <div style="font-size: 0.9em; color: #64748b; margin-top: 4px;">
-
-        📅 判決日期：{n_date or '已宣判入庫'}
-
-    </div>
-
+                        st.markdown(f'''<div style="border-left: 6px solid {badge_border}; padding: 12px 18px; margin: 10px 0; background-color: {bg_col}; border-radius: 6px;">
+<div style="font-size: 1.1em; font-weight: bold; color: {badge_border};">
+審級 {node.get('order', r_idx+1)}：{n_stage} ｜ <code>{disp_cid}</code>
 </div>
-
-''', unsafe_allow_html=True)
+<div style="font-size: 0.9em; color: #64748b; margin-top: 4px;">
+📅 判決日期：{n_date or '已宣判入庫'}
+</div>
+</div>''', unsafe_allow_html=True)
 
                         if n_hold:
 
@@ -11214,32 +11174,17 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
 
                     with st.container():
-
-                        st.markdown(f"""
-
-<div style="border-left: 5px solid {'#e63946' if reversal else '#457b9d'}; padding: 12px 16px; margin: 8px 0; background-color: {'rgba(230,57,70,0.06)' if reversal else 'rgba(69,123,157,0.06)'}; border-radius: 4px;">
-
-    <div style="font-size: 1.05em; font-weight: bold; color: {'#d90429' if reversal else '#1d3557'};">
-
-        {inst} ｜ {court_name} <code>{c_no}</code>
-
-    </div>
-
-    <div style="margin: 6px 0; font-size: 0.95em;">
-
-        <strong>裁判結論：</strong> {res_txt} &nbsp;&nbsp; <span style="font-size: 0.85em; font-weight: bold; color: {'#d90429' if reversal else '#2a9d8f'};">{reversal_badge}</span>
-
-    </div>
-
-    <div style="font-size: 0.9em; color: #333;">
-
-        <strong>核心論理與見解：</strong> {holding_txt}
-
-    </div>
-
+                        st.markdown(f"""<div style="border-left: 5px solid {'#e63946' if reversal else '#457b9d'}; padding: 12px 16px; margin: 8px 0; background-color: {'rgba(230,57,70,0.06)' if reversal else 'rgba(69,123,157,0.06)'}; border-radius: 4px;">
+<div style="font-size: 1.05em; font-weight: bold; color: {'#d90429' if reversal else '#1d3557'};">
+{inst} ｜ {court_name} <code>{c_no}</code>
 </div>
-
-""", unsafe_allow_html=True)
+<div style="margin: 6px 0; font-size: 0.95em;">
+<strong>裁判結論：</strong> {res_txt} &nbsp;&nbsp; <span style="font-size: 0.85em; font-weight: bold; color: {'#d90429' if reversal else '#2a9d8f'};">{reversal_badge}</span>
+</div>
+<div style="font-size: 0.9em; color: #333;">
+<strong>核心論理與見解：</strong> {holding_txt}
+</div>
+</div>""", unsafe_allow_html=True)
 
                     if n_idx < len(stages) - 1:
 
@@ -12323,17 +12268,10 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
 elif app_mode == MODE_QA or any(k in app_mode for k in ["問答", "法律問題", "法律諮詢", "智慧問答", "生活法律", "一般法律", "全能法律", "專屬法學"]):
 
-    st.markdown("""
-
-        <div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
-
-            <h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
-
-            <p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">專為本專案特化之全能法學檢索系統：單一搜尋欄支援法條定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
-
-        </div>
-
-    """, unsafe_allow_html=True)
+    st.markdown("""<div style="text-align: center; margin-top: 5px; margin-bottom: 20px;">
+<h1 style="font-size: 2.2rem; margin-bottom: 6px;">🔍 司律與實務法學萬能檢索樞紐</h1>
+<p style="color: #555; font-size: 1.05rem; margin-bottom: 0;">專為本專案特化之全能法學檢索系統：單一搜尋欄支援法條定位（這情況適用哪一條？）、爭點論辯、例題金錢精算或生活法律爭議</p>
+</div>""", unsafe_allow_html=True)
 
 
 

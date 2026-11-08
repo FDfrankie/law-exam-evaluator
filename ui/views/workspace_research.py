@@ -512,19 +512,17 @@ def render_workspace():
                         reversal_badge = "🚨 【見解逆轉改判！】" if reversal else "✅ 【見解推進 / 定錨】"
 
                         with st.container():
-                            st.markdown(f"""
-        <div style="border-left: 5px solid {'#e63946' if reversal else '#457b9d'}; padding: 12px 16px; margin: 8px 0; background-color: {'rgba(230,57,70,0.06)' if reversal else 'rgba(69,123,157,0.06)'}; border-radius: 4px;">
-        <div style="font-size: 1.05em; font-weight: bold; color: {'#d90429' if reversal else '#1d3557'};">
-            {inst} ｜ {court_name} <code>{c_no}</code>
-        </div>
-        <div style="margin: 6px 0; font-size: 0.95em;">
-            <strong>裁判結論：</strong> {res_txt} &nbsp;&nbsp; <span style="font-size: 0.85em; font-weight: bold; color: {'#d90429' if reversal else '#2a9d8f'};">{reversal_badge}</span>
-        </div>
-        <div style="font-size: 0.9em; color: #333;">
-            <strong>核心論理與見解：</strong> {holding_txt}
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
+                            st.markdown(f"""<div style="border-left: 5px solid {'#e63946' if reversal else '#457b9d'}; padding: 12px 16px; margin: 8px 0; background-color: {'rgba(230,57,70,0.06)' if reversal else 'rgba(69,123,157,0.06)'}; border-radius: 4px;">
+<div style="font-size: 1.05em; font-weight: bold; color: {'#d90429' if reversal else '#1d3557'};">
+{inst} ｜ {court_name} <code>{c_no}</code>
+</div>
+<div style="margin: 6px 0; font-size: 0.95em;">
+<strong>裁判結論：</strong> {res_txt} &nbsp;&nbsp; <span style="font-size: 0.85em; font-weight: bold; color: {'#d90429' if reversal else '#2a9d8f'};">{reversal_badge}</span>
+</div>
+<div style="font-size: 0.9em; color: #333;">
+<strong>核心論理與見解：</strong> {holding_txt}
+</div>
+</div>""", unsafe_allow_html=True)
                         if n_idx < len(stages) - 1:
                             st.markdown("<div style='text-align: center; font-size: 1.3em; color: #888; margin: -2px 0;'>⬇️ <em>上訴審理 / 見解演進轉折</em></div>", unsafe_allow_html=True)
 
