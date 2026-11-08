@@ -4,7 +4,83 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> 專為台灣司法官、律師國家考試、法研所與司法特考考生量身打造的**一站式法學實戰與研析平台**。整合多模態視覺 OCR 批改、司律一二試命題、歷屆真題庫檢索、406 萬實務判解檢索、最高法院大法庭裁定/原判例/座談會/決議/憲判字研析、智慧六法與 AI 筆記煉金工坊。
+> 本平台是專為台灣司法官、律師國家考試、法研所與司法特考考生量身打造的**一站式法學實戰與研析系統**。全面整合：多模態手寫試卷批改、客製司律模擬命題、近 30 年歷屆真題庫檢索、406 萬實務判解檢索、最高法院大法庭裁定／原判例／座談會／民刑庭總會決議／憲判字研析、智慧六法與 AI 筆記煉金工坊。
+
+---
+
+## 📁 專案全域目錄與各資料夾職能深度解析 (Directory Architecture)
+
+本專案根目錄為 `g:\我的雲端硬碟\LawExamData`，旗下共有 12 個核心資料夾與模組。為確保後續協同開發的 AI 與人類工程師能快速理解專案全貌，各資料夾之功能、檔案性質與互動關係如下：
+
+```text
+LawExamData/
+├── 💻 code/                    # 核心程式碼庫、Streamlit 網頁應用與 Git 儲存庫 (主開發目錄)
+├── 📜 national_laws/            # 全國法規與行政命令資料庫 (ChLaw.json, ChOrder.json 10,452 部法規)
+├── 🏛️ constitutional_cases/     # 憲法裁判庫 (827 份憲判字與司法院大法官釋字全文 JSON)
+├── 📚 raw_exams/                # 歷屆國考與法研所真題庫 (近30年試卷、行政法300題、真題目錄)
+├── ⚖️ scoring_standards/        # 實務判決標準樣本庫 (1,636 份裁判書，供批改基準與實例校準)
+├── 📝 SamsungNotes/             # 考生真實手寫筆記與課輔講義庫 (130+ 份 PDF，名師體系與百題爭點)
+├── 📖 六法/                     # 實體法學八大門類分類檔案夾 (憲法、民法、刑法、訴訟法等)
+├── 🧠 training_data/            # 模型微調 (SFT) 訓練資料集 (14 份加權平衡之法學 Instruction JSON/JSONL)
+├── 📊 evaluation_reports/       # 手寫試卷評分診斷歷程報告 (Mode 1 產出之詳細診斷 JSON)
+├── 🗄️ data/                     # 大規模資料庫儲存庫 (406萬判解母庫、立法理由快取、Google Drive 索引清單)
+├── 🛠️ scratch/                  # 工程測試與自動化驗證腳本目錄 (編譯檢查、端到端回歸測試)
+└── ⚙️ .vscode/                  # 編輯器全域開發設定檔
+```
+
+### 1. `code/` —— 核心程式碼庫與發布目錄
+- **專案的核心心臟**，同時也是直連 GitHub (`https://github.com/FDfrankie/law-exam-evaluator.git`) 與 Streamlit Cloud 自動部署的 Git 儲存庫。
+- 包含主介面程式 [`app.py`](file:///g:/我的雲端硬碟/LawExamData/code/app.py)（九大模式調度中心）、各後端法學引擎（六法引擎、函釋引擎、判解關聯引擎、評分引擎等）以及相依環境清單 `requirements.txt`。
+
+### 2. `national_laws/` —— 全國法規與行政命令法典庫
+- **`ChLaw.json`**：收錄立法院三讀通過、總統公布之全國中央法律條文全文。
+- **`ChOrder.json`**：收錄全台行政院各部會之法規命令、施行細則、要點、規程、標準等，共計 **10,452 部法規全文**。六法穿透查詢法規命令（如訴願審議委員會審議規則）即源於此。
+- **`core_exam_laws_articles.json`**：收錄司律考科高頻 61 部核心主法、**64,162 條結構化法定條文**。
+- **`law_histories_catalog.json`** 與 **`law_amendments_history.json`**：整部法典之官方立法沿革時間軸、歷次修正公布令號與修法紀錄。
+
+### 3. `constitutional_cases/` —— 憲法法庭裁判與釋字專庫
+- 收錄 **827 則** 憲法法庭判決（111 年至最新憲判字）與司法院大法官解釋（釋字第 1 號至第 813 號）結構化 JSON 檔案。
+- 內含：案號、審級、公布日期、主文要旨、合憲/違憲宣告、涉入基本權、審查標準（嚴格/中度/合理）以及大法官協同與不同意見書。
+
+### 4. `raw_exams/` —— 歷屆國考與法研所真題庫
+- 收錄近 30 年考選部司律一二試、司法特考（法警、書記官、檢察事務官、司法事務官）試題。
+- 收錄台大、政大、北北桃頂大法研所各組試題。
+- 包含 `exams_catalog.json`（真題總目錄）、`admin_law_300_mcqs.json`（行政法 300 題爭點選擇題庫）、`precedents_catalog.json`（核心判例目錄）與試卷原始 PDF。
+
+### 5. `scoring_standards/` —— 實務判決真實樣本與評分基準庫
+- 存放 **1,636 份真實法院判決與裁定書 JSON**（`jud_臺灣*.json`）。
+- 用於 Mode 1（試卷評分）之事實比對、官方涵攝基準錨定，以及作為 AI 評分模型校準與判解分析的實體樣本。
+
+### 6. `SamsungNotes/` —— 名師講義、課輔與考生手寫體系筆記
+- 存放 **130+ 份高價值法學教材 PDF**。
+- 包含許恒達教授刑法總則、民法百題爭點演練、刑法百題、債總債各課輔講義、物權與身分法體系筆記。
+- 透過 `drive_notes_manifest.json` 與六法條文直接串接（例如點進民法第 184 條即可直接閱讀/下載對應章節的課輔講義 PDF）。
+
+### 7. `六法/` —— 實體法學八大門類分類夾
+- 依據 `憲法`、`民法`、`刑法`、`民事訴訟法`、`刑事訴訟法`、`商事法`、`智慧財產權法`、`行政法` 分門別類。
+- 供離線歸納、實體檔案同步與手動條目管理。
+
+### 8. `training_data/` —— 法學專用 LLM 微調 (SFT) 訓練資料集
+- 存放 **14 份專業法律指令微調資料集**（`law_exam_*_sft.json / jsonl`）。
+- 涵蓋：憲法訴訟題、百題爭點解析、上位卷標準答題範本、真實法院爭議案件蒸餾資料，供 Unsloth、Colab 或 Kaggle 進行模型二次預訓練與 SFT 微調。
+
+### 9. `evaluation_reports/` —— 試卷評分診斷成果庫
+- Mode 1 執行手寫試卷批改後自動存檔之詳細診斷報告（JSON 格式）。
+- 記錄考生的得分維度（爭點辨識度、三段論法嚴謹度、法條引註精確度）、扣分原因與專屬補強建議。
+
+### 10. `data/` —— 大規模資料庫與快取中心
+- **`judicial_authority.db`** 與 **`judicial_1m_db/`**：收錄高達 **406 萬筆司法院裁判書**之全文檢索索引庫與裁判案號樹。
+- **`statute_reasons_cache.json`**：全國法條官方三讀立法理由與修正對照快取，實現 0 秒載入、0 Token 消耗。
+- **`drive_notes_manifest.json`**：Google Drive 700+ 份學習檔案資產之結構化映射字典。
+
+### 11. `scratch/` —— 工程除錯與回歸測試工具箱
+- 存放全專案的自動化檢查腳本，包含：
+  - `verify_compile.py`：全模組語法編譯檢查工具。
+  - `test_six_codes_comprehensive.py`：8 大核心功能端到端回歸測試腳本。
+  - 專案案號檢索、條號對照排查工具。
+
+### 12. `.vscode/` —— 編輯器組態
+- Visual Studio Code 開發環境之全域設定 (`settings.json`)。
 
 ---
 
@@ -46,10 +122,10 @@
 
 ### 🚨 鐵律四：使用者核心資料庫與歷史資產「零破壞」原則 (Data Safety First)
 1. **嚴禁刪除或覆寫現有 SQLite 大庫**：
-   - `judicial_1m_index.db`、`judgements.db` 等含有數百萬筆真實判解索引。
-   - 任何資料遷移或新增欄位，必須採 `ALTER TABLE` 或增量寫入，嚴禁執行 `DROP TABLE`、清空或覆寫現有 db 檔案。
+   - `data/judicial_authority.db`、`data/judicial_1m_db/`、`data/judgements/` 等含有數百萬筆真實判解索引與裁判書全文。
+   - 任何資料遷移或新增欄位，必須採 `ALTER TABLE` 或增量寫入，**嚴禁執行 DROP TABLE、清空或覆寫現有 db 檔案**。
 2. **保護法定全量典藏庫**：
-   - `core_exam_laws_articles.json`、`national_laws/ChOrder.json`（收錄全國 10,452 部行政法規命令）為核心靜態資產，切勿覆蓋或刪除。
+   - `national_laws/ChOrder.json`（收錄全國 10,452 部行政命令）與 `core_exam_laws_articles.json` 為核心靜態資產，切勿覆蓋或刪除。
 
 ### 🚨 鐵律五：Streamlit Cloud 雙軌容錯規範 (Dual-Track Import & Fallback)
 1. 本專案在 **Streamlit Cloud** 上自動發布，遠端環境可能因為暫態網路波動、子模組相依性或快取問題而出現載入延遲。
@@ -101,37 +177,6 @@
 | **Mode 7** | **⚖️ 裁判橫向比對研析與爭點立場分析** | 多案事實、立論根據、法律見解分歧橫向對比；通說（甲說）、有力說（乙說）、折衷說分析。 |
 | **Mode 8** | **📖 智慧六法全書與條文爭點標註** | 收錄 64,162 條法定條文，條文下方無縫串接：項款目排版、立法理由與歷次修法沿革、最高法院大法庭裁定/憲判字/原判例、主管機關函釋（600+ 則）、授權法規命令細則（10,452 部）、個人筆記與講義、AI 深度釋析。 |
 | **Mode 9** | **📥 個人法學筆記與考點爭點提煉** | 雲端筆記、手寫心智圖、課輔教材提煉為二試爭點模版、Anki 閃卡與考前救命大抄。 |
-
----
-
-## 🏗️ 核心架構與重要代碼檔案索引
-
-```text
-code/
-├── app.py                             # Streamlit Web 圖形介面入口與九大模式調度中心
-├── config.py                          # 系統全域路徑、Gemini API 金鑰與模型設定
-│
-├── six_codes_engine.py                # 智慧六法全書核心引擎（條文查詢、立法理由、沿革、布林搜尋）
-├── six_codes_updater.py               # 六法即時聯網爬取與修法自動同步引擎
-├── admin_rulings_engine.py            # 主管機關行政函釋（金管會/經濟部/智財局/法務部）與法規命令全文引擎
-├── landmark_grand_chamber_engine.py   # 最高法院大法庭裁定、原判例與憲判字權威主文與理由資料庫
-├── legal_cross_reference_engine.py    # 406 萬實務判解跨庫關聯、OpenData 引用法條清洗為徽章
-├── legal_summarizer_engine.py         # AI 裁判要旨精鍊、爭點橫向對比、布林精確搜尋語法解析器 (BooleanQueryParser)
-├── legal_query_engine.py              # 統一法學檢索樞紐與案號歷程溯源引擎
-├── evaluator.py                       # 司律手寫試卷評分與 IRAC 診斷核心引擎
-├── exam_generator.py                  # 一試選擇題與二試實例題模擬出題引擎
-├── doc_parser.py                      # 多模態文件解析器 (PDF, DOCX, 影像 OCR)
-│
-├── scratch/
-│   ├── verify_compile.py              # 全專案 Python 代碼語法編譯檢查工具
-│   ├── test_six_codes_comprehensive.py # 六法與判解系統 8 大核心功能端到端回歸測試腳本
-│   └── verify_all.py                  # 整合驗證套件
-│
-└── data/
-    ├── drive_notes_manifest.json      # 雲端硬碟 700+ 份學習資產結構化清單
-    ├── national_laws/                 # 全國法規、六法條文與立法沿革庫 (含 ChOrder.json)
-    └── raw_exams/                     # 歷屆試題目錄、行政法300題庫與判解索引
-```
 
 ---
 
