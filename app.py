@@ -15265,37 +15265,24 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-                # ⚡ 條文專屬快捷工具列 (Quick Action Bar：複製條文、全國法規、立法院、司法院、憲法法庭)
-
-                tbar1, tbar2, tbar3, tbar4, tbar5 = st.columns([1.2, 1.2, 1.2, 1.2, 1.2])
-
+                # ⚡ 條文專屬快捷工具列 (Quick Action Bar：複製條文、全國法規、立法院、司法院、憲法法庭、法源法律網)
+                tbar1, tbar2, tbar3, tbar4, tbar5, tbar6 = st.columns([1.1, 1.1, 1.1, 1.1, 1.1, 1.1])
                 with tbar1:
-
                     clean_copy_text = f"《{lname}》第 {ano} 條：\n{content}"
-
-                    with st.popover("📋 複製條文全文", use_container_width=True):
-
+                    with st.popover("📋 複製條文", use_container_width=True):
                         st.caption("點選右上角圖示或框內反白即可一鍵複製標準法條引註格式：")
-
                         st.code(clean_copy_text, language="text")
-
                 with tbar2:
-
                     st.link_button("📜 全國法規", get_moj_article_url(lname, ano), use_container_width=True, help="直通法務部全國法規資料庫官方條文")
-
                 with tbar3:
-
                     st.link_button("🏛️ 立院公報", get_ly_article_url(lname, ano), use_container_width=True, help="直通立法院法律系統三讀審查與歷次公報")
-
                 with tbar4:
-
                     st.link_button("⚖️ 司法院判解", get_judicial_article_url(lname, ano), use_container_width=True, help="直通司法院法學檢索系統查詢本條文裁判")
-
                 with tbar5:
-
                     st.link_button("🏛️ 憲法法庭", get_constitutional_article_url(lname, ano), use_container_width=True, help="直通憲法法庭裁判及大法官解釋庫")
-
-
+                with tbar6:
+                    lawbank_query_url = f"https://www.lawbank.com.tw/treatise/plink.aspx?keyword={urllib.parse.quote(lname + '第' + str(ano) + '條')}"
+                    st.link_button("🌐 法源法律網", lawbank_query_url, use_container_width=True, help="外部直連法源法律網檢索本條文裁判與法學論文")
 
                 st.markdown("---")
 
@@ -15546,28 +15533,33 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                             p_holding = p.get("holding", "")
 
                             p_laws = p.get("laws_cited", "")
-
-                            if isinstance(p_laws, list):
-
-                                p_laws = "、".join([str(x) for x in p_laws[:8]])
-
-
+                            # 動態深度萃取裁判使用之所有關聯法條（徹底解決裁判未完整標註引用法條之問題）
+                            combined_laws = []
+                            if p_laws:
+                                if isinstance(p_laws, list):
+                                    combined_laws.extend([str(x).strip() for x in p_laws if str(x).strip()])
+                                else:
+                                    combined_laws.extend([x.strip() for x in str(p_laws).split("、") if x.strip()])
+                            if p_holding:
+                                try:
+                                    from legal_cross_reference_engine import extract_statute_citations_from_text
+                                    extracted = extract_statute_citations_from_text(p_holding)
+                                    for ex in extracted:
+                                        canon = ex.get("canonical", "")
+                                        if canon and canon not in combined_laws:
+                                            combined_laws.append(canon)
+                                except Exception:
+                                    pass
 
                             p_disp = p_cid if p_cid.startswith(p_court) else f"{p_court} {p_cid}"
-
                             card_title = f"📌 【{p_level}】`{p_disp}` ｜ 📅 {p_date}"
 
-
-
                             with st.expander(card_title, expanded=(p_idx == 0)):
-
                                 st.info(f"**核心裁判要旨 / 主文：**\n{p_holding}")
 
-
-
-                                if p_laws:
-
-                                    st.markdown(f'<div style="background: rgba(37,99,235,0.06); border-radius: 4px; padding: 4px 8px; margin: 6px 0; font-size: 0.85rem; color: #1e40af;"><b>📋 引用相關條文：</b> {p_laws}</div>', unsafe_allow_html=True)
+                                if combined_laws:
+                                    law_chips_html = "".join([f'<span style="background: rgba(37,99,235,0.08); color: #1d4ed8; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(37,99,235,0.2); font-size: 0.82rem; font-weight: 600; margin-right: 6px; display: inline-block; margin-bottom: 4px;">📖 {law_item}</span>' for law_item in combined_laws[:10]])
+                                    st.markdown(f'<div style="margin: 8px 0;"><b>📋 本裁判引用法條依據（共 {len(combined_laws)} 條）：</b><br>{law_chips_html}</div>', unsafe_allow_html=True)
 
 
 
@@ -15956,80 +15948,47 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
                 with tab_intent:
-
                     st.markdown("#### 📜 條文立法意旨與理由")
-
                     st.caption("立法院官方三讀理由、立法目的、規範架構與司律國考適用要點：")
 
-
-
                     moj_art_url = get_moj_article_url(lname, ano)
-
                     ly_art_url = get_ly_article_url(lname, ano)
 
-
-
-                    if art.get("is_latest_amendment") and (art.get("amendment_reason") or art.get("exam_points")):
-
-                        with st.container():
-
-                            st.markdown(f"##### 🆕 【最新公布施行】立法院官方修正理由（{art.get('modified_date', '最新公布')}）")
-
-                            if art.get("amendment_reason"):
-
-                                st.info(f"🏛️ **官方立法理由全文：**\n{art['amendment_reason']}")
-
-                            if art.get("exam_points"):
-
-                                st.success(f"✍️ **司律國考與實務適用要點：**\n{art['exam_points']}")
-
-                            st.markdown("---")
-
                     intent = legis_data.get("legislative_intent", "")
-
                     summary_reasons = legis_data.get("summary_reasons", "")
-
-                    if intent:
-
-                        st.success(f"""**🎯 原始立法意旨與核心保護法益：**\n\n{intent}""")
-
-                    if summary_reasons:
-
-                        st.info(f"""**💡 規範演革重心與立法院三讀說明：**\n\n{summary_reasons}""")
-
                     enact_card = legis_data.get("enactment_card") or {}
 
-                    if is_initial_enactment or total_amends_display == 0 or not curated_amends:
+                    # 1. 簡潔有力：上方僅呈現核心立法意旨導讀（1-2句），絕不佔滿螢幕
+                    if intent:
+                        st.markdown(f'<div style="background: rgba(16,185,129,0.07); border-left: 4px solid #10b981; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 0.95rem; color: #065f46;"><b>🎯 立法核心意旨與保護法益：</b> {intent}</div>', unsafe_allow_html=True)
+                    elif summary_reasons:
+                        st.markdown(f'<div style="background: rgba(59,130,246,0.07); border-left: 4px solid #3b82f6; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 0.95rem; color: #1e40af;"><b>💡 規範重心導讀：</b> {summary_reasons}</div>', unsafe_allow_html=True)
 
-                        enact_date = enact_card.get("date", "初次制定公布")
+                    # 2. 官方詳細立法理由與歷次三讀審查說明（收合於專屬摺疊框，保持介面簡潔有力）
+                    with st.expander("🏛️ 【點此展開立法院官方三讀立法理由全文與修法說明】", expanded=False):
+                        if art.get("is_latest_amendment") and (art.get("amendment_reason") or art.get("exam_points")):
+                            st.markdown(f"##### 🆕 【最新公布施行】立法院官方修正理由（{art.get('modified_date', '最新公布')}）")
+                            if art.get("amendment_reason"):
+                                st.info(f"🏛️ **官方立法理由全文：**\n{art['amendment_reason']}")
+                            if art.get("exam_points"):
+                                st.success(f"✍️ **司律國考與實務適用要點：**\n{art['exam_points']}")
+                            st.markdown("---")
 
-                        st.markdown("##### 🕰️ 條文制定意旨（制定公布迄今未曾修改）")
+                        if summary_reasons and summary_reasons != intent:
+                            st.markdown(f"**🏛️ 立法院三讀審查報告與修法重點：**\n{summary_reasons}")
 
-                        st.info(f"💡 **本條於{enact_date}後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
-
-                        if enact_card:
-
-                            with st.expander(f"📜 查看制定全文與原始立法理由（發布字號：{enact_card.get('gazette', '官方公布令')}）", expanded=False):
-
-                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', enact_date)}")
-
-                                st.markdown(f"""**🏛️ 原始官方制定理由**：\n\n{enact_card.get('reason', '')}""")
-
+                        if is_initial_enactment or total_amends_display == 0 or not curated_amends:
+                            enact_date = enact_card.get("date", "初次制定公布")
+                            st.info(f"💡 **本條於{enact_date}後，文字從未修改。** 歷久彌新，直接適用現行有效條文，無新舊法過渡適用問題。")
+                            if enact_card:
+                                st.markdown(f"**📅 制定公布日期**：{enact_card.get('date', enact_date)} ｜ 發布字號：`{enact_card.get('gazette', '官方公布令')}`")
+                                st.markdown(f"**🏛️ 原始官方制定理由**：\n{enact_card.get('reason', '')}")
                                 if enact_card.get("exam_impact"):
-
-                                    st.success(f"""✍️ **司律國考適用要點**：\n\n{enact_card.get('exam_impact')}""")
-
-                    else:
-
-                        if enact_card:
-
-                            with st.expander("📜 原始制定公布理由", expanded=False):
-
-                                st.markdown(f"**🏛️ 制定理由**：\n{enact_card.get('reason', '')}")
-
-                                if enact_card.get("exam_impact"):
-
-                                    st.caption(f"✍️ 國考適用要點：{enact_card.get('exam_impact')}")
+                                    st.success(f"✍️ **司律國考適用要點**：\n{enact_card.get('exam_impact')}")
+                        elif enact_card:
+                            st.markdown(f"**📜 原始制定公布理由**：\n{enact_card.get('reason', '')}")
+                            if enact_card.get("exam_impact"):
+                                st.caption(f"✍️ 國考適用要點：{enact_card.get('exam_impact')}")
 
                     st.markdown("---")
 
