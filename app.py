@@ -490,6 +490,10 @@ try:
     format_legal_article_text = getattr(_sce, "format_legal_article_text", lambda t: str(t or ""))
     render_formatted_article_quote = getattr(_sce, "render_formatted_article_quote", lambda c, title="📜 條文全文": str(c))
     render_formatted_article_html = _sce.render_formatted_article_html
+    normalize_article_no = getattr(_sce, "normalize_article_no", lambda s: re.sub(r'[第條\s]', '', str(s or '')).replace('之', '-'))
+    sanitize_article_title = getattr(_sce, "sanitize_article_title", lambda t: re.sub(r'\s+', ' ', re.sub(r'條\s*條\s*', '條', re.sub(r'第\s*第\s*', '第 ', str(t or '')))).strip())
+    get_law_articles = getattr(_sce, "get_law_articles", lambda *args, **kwargs: [])
+    parse_article_query = getattr(_sce, "parse_article_query", lambda *args, **kwargs: ("", None, False, "", False))
 
 except Exception as _err:
 
@@ -582,6 +586,25 @@ except Exception as _err:
     def render_formatted_article_html(content, title=""):
 
         return render_formatted_article_quote(content, title)
+
+    def normalize_article_no(ano_str):
+        if not ano_str:
+            return ""
+        clean = re.sub(r'[第條\s]', '', str(ano_str))
+        clean = clean.replace('之', '-')
+        return clean
+
+    def sanitize_article_title(title):
+        if not title:
+            return ""
+        t = str(title).strip()
+        t = re.sub(r'第\s*第\s*', '第 ', t)
+        t = re.sub(r'條\s*條\s*', '條', t)
+        t = re.sub(r'\s+', ' ', t).strip()
+        return t
+
+    def get_law_articles(*args, **kwargs): return []
+    def parse_article_query(*args, **kwargs): return ("", None, False, "", False)
 
 
 
@@ -15344,7 +15367,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                                 "holding": p.get("holding") or p.get("title") or p.get("issue") or "",
 
-                                "laws_cited": p.get("laws_cited", f"{lname}第{ano}條"),
+                                "laws_cited": p.get("laws_cited", f"{lname} {ano_disp}"),
 
                                 "scholarly_views": p.get("scholarly_views", ""),
 
@@ -15388,7 +15411,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                                         "holding": sj.get("holding", ""),
 
-                                        "laws_cited": sj.get("laws_cited", f"{lname}第{ano}條"),
+                                        "laws_cited": sj.get("laws_cited", f"{lname} {ano_disp}"),
 
                                         "scholarly_views": sj.get("scholarly_views", ""),
 
@@ -15620,7 +15643,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                                         st.session_state["lp_search_query"] = p_cid
 
-                                        st.session_state["lb_input_statute"] = f"{lname}第{ano}條"
+                                        st.session_state["lb_input_statute"] = f"{lname} {ano_disp}"
 
                                         st.session_state["m5_sub_mode_idx"] = 1
 
@@ -16143,7 +16166,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     else:
 
-                        st.info(f"💡 **《{lname}》第 {ano} 條自制定公布以來未曾單獨修正文字**，全文直接適用現行法規。")
+                        st.info(f"💡 **《{lname}》{ano_disp}自制定公布以來未曾單獨修正文字**，全文直接適用現行法規。")
 
                     if timeline_hits:
 
@@ -16287,7 +16310,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                         st.session_state["lp_search_query"] = f"{lname} {ano}"
 
-                        st.session_state["lb_input_statute"] = f"{lname}第{ano}條"
+                        st.session_state["lb_input_statute"] = f"{lname} {ano_disp}"
 
                         st.session_state["m5_sub_mode_idx"] = 1
 

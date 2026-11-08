@@ -52,7 +52,9 @@ __all__ = [
     "render_formatted_article_html",
     "get_law_articles",
     "normalize_article_no",
-    "parse_article_query"
+    "parse_article_query",
+    "sanitize_article_title",
+    "is_case_citation_query"
 ]
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
