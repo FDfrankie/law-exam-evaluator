@@ -54,8 +54,22 @@ __all__ = [
     "normalize_article_no",
     "parse_article_query",
     "sanitize_article_title",
-    "is_case_citation_query"
+    "is_case_citation_query",
+    "get_law_key_regulations",
+    "get_admin_rulings_for_article",
+    "get_all_administrative_rulings"
 ]
+
+try:
+    from admin_rulings_engine import (
+        get_law_key_regulations,
+        get_admin_rulings_for_article,
+        get_all_administrative_rulings
+    )
+except Exception:
+    def get_law_key_regulations(*args, **kwargs): return []
+    def get_admin_rulings_for_article(*args, **kwargs): return []
+    def get_all_administrative_rulings(*args, **kwargs): return []
 
 from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
 
@@ -510,6 +524,8 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
     except Exception:
         is_bool_query = False
 
+    prec_index = meta.get("precedents_article_index", {})
+
     if is_bool_query:
         scored_results = []
         for a in pool:
@@ -517,7 +533,11 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
             content = a.get("content", "")
             lname = a.get("law_name", "")
             chap = a.get("chapter", "")
-            full_text = f"{lname} 第{ano}條 {chap} {content}"
+            norm_ano = normalize_article_no(ano)
+            clean_no = norm_ano.replace("-", "之")
+            p_items = prec_index.get(f"{lname}_第{clean_no}條", []) or prec_index.get(f"{lname}_{clean_no}", [])
+            p_text = " ".join([f"{p.get('title', '')} {p.get('holding', '')} {p.get('scholarly_views', '')} {p.get('case_id', '')} {p.get('exam_application_hint', '')}" for p in p_items])
+            full_text = f"{lname} 第{norm_ano}條 {chap} {content} {p_text}"
             if evaluate_boolean_query(raw_kw, full_text):
                 score = 100
                 if selected_law and lname == selected_law:
@@ -526,7 +546,6 @@ def search_articles(keyword: str, selected_law: str = "", selected_branch: str =
         scored_results.sort(key=lambda x: -x[0])
         return [item[1] for item in scored_results]
 
-    prec_index = meta.get("precedents_article_index", {})
     scored_results = []
 
     # 針對司法裁判案號查詢的智慧關聯引導

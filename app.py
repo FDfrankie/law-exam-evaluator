@@ -14861,7 +14861,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
         st.session_state["six_codes_search_kw"] = search_kw
 
-        st.caption("💡 **專業布林精準搜尋**：支援 `＆`（且）、`＋`（或）、`－`（排除）、`( )`（優先組合）。例：`(侵權行為 ＋ 債務不履行) ＆ (純粹經濟 － 故意)`")
+        st.caption("💡 **專業布林精準搜尋**：支援 `＆`（且）、`＋`（或）、`－`（排除）、`( )`（優先組合）。例：`(侵權行為 ＋ 債務不履行) ＆ 純粹經濟` 或 `侵權行為 ＆ 損害賠償`")
 
 
 
@@ -15969,15 +15969,15 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
 
 
-                    crawl_btn_key = f"btn_crawl_rulings_{lname}_{ano}_{idx}"
+                    crawl_btn_key = f"btn_crawl_rulings_{lname}_{clean_ano_num}_{idx}"
 
-                    if st.button(f"🌐 連線主管機關資料庫即時爬取【{lname} {ano}】最新主管機關函釋", key=crawl_btn_key):
+                    if st.button(f"🌐 連線主管機關資料庫即時爬取【{lname} {ano_disp}】最新主管機關函釋", key=crawl_btn_key):
 
-                        with st.spinner(f"正在為【{lname} {ano}】檢索主管機關（法務部/金管會/經濟部）最新行政解釋令函..."):
+                        with st.spinner(f"正在為【{lname} {ano_disp}】檢索主管機關（法務部/金管會/經濟部）最新行政解釋令函..."):
 
-                            newly_crawled = crawl_and_synthesize_admin_rulings(lname, ano, content)
+                            newly_crawled = crawl_and_synthesize_admin_rulings(lname, clean_ano_num, content)
 
-                            st.session_state[f"crawled_rulings_{lname}_{ano}"] = newly_crawled
+                            st.session_state[f"crawled_rulings_{lname}_{clean_ano_num}"] = newly_crawled
 
                             st.success(f"🎉 成功完成檢索與結構化萃取！共取得 {len(newly_crawled)} 則主管機關權威函釋。")
 
@@ -15989,8 +15989,8 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
                     st.markdown("#### 📜 條文立法意旨與理由")
                     st.caption("立法院官方三讀理由、立法目的、規範架構與司律國考適用要點：")
 
-                    moj_art_url = get_moj_article_url(lname, ano)
-                    ly_art_url = get_ly_article_url(lname, ano)
+                    moj_art_url = get_moj_article_url(lname, clean_ano_num)
+                    ly_art_url = get_ly_article_url(lname, clean_ano_num)
 
                     intent = legis_data.get("legislative_intent", "")
                     summary_reasons = legis_data.get("summary_reasons", "")
@@ -16034,9 +16034,9 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     leg_col1, leg_col2 = st.columns([3, 2])
 
-                    leg_btn_key = f"btn_fetch_legis_{lname}_{ano}_{idx}"
+                    leg_btn_key = f"btn_fetch_legis_{lname}_{clean_ano_num}_{idx}"
 
-                    force_chk_key = f"chk_force_legis_{lname}_{ano}_{idx}"
+                    force_chk_key = f"chk_force_legis_{lname}_{clean_ano_num}_{idx}"
 
                     with leg_col1:
 
@@ -16048,17 +16048,17 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                         force_leg_refresh = st.checkbox("強制重新擷取並覆寫現有快取（內容有誤時打勾）", value=False, key=force_chk_key)
 
-                    fetch_msg_key = f"legis_fetch_result_{lname}_{ano}"
+                    fetch_msg_key = f"legis_fetch_result_{lname}_{clean_ano_num}"
 
                     if btn_leg_clicked:
 
-                        with st.spinner(f"正在為【{lname} {ano}】連線檢索立法院公報與法規資料庫，擷取官方三讀理由、修正對照與立法意旨..."):
+                        with st.spinner(f"正在為【{lname} {ano_disp}】連線檢索立法院公報與法規資料庫，擷取官方三讀理由、修正對照與立法意旨..."):
 
                             is_force = force_leg_refresh or (not curated_amends and not intent)
 
                             succ, result_payload, target_moj_url = fetch_and_cache_article_legislative_details(
 
-                                law_name=lname, article_no=ano, content=content, force_refresh=is_force
+                                law_name=lname, article_no=clean_ano_num, content=content, force_refresh=is_force
 
                             )
 
@@ -16068,7 +16068,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                                     "success": True,
 
-                                    "msg": f"🎉 成功擷取【{lname} {ano}】之立法院官方立法理由！已同步固化寫入資料庫，下次調閱將直接秒速載入。"
+                                    "msg": f"🎉 成功擷取【{lname} {ano_disp}】之立法院官方立法理由！已同步固化寫入資料庫，下次調閱將直接秒速載入。"
 
                                 }
 
@@ -16098,7 +16098,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                             st.error(f_res["msg"])
 
-                            st.link_button(f"🌐 前往全國法規資料庫查看《{lname} {ano}》官方條文", f_res.get("url", moj_art_url), use_container_width=True)
+                            st.link_button(f"🌐 前往全國法規資料庫查看《{lname} {ano_disp}》官方條文", f_res.get("url", moj_art_url), use_container_width=True)
 
                     st.markdown("---")
 
@@ -16108,11 +16108,11 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     with col_ext_1:
 
-                        st.link_button(f"🏛️ 立法院法律系統《{lname} {ano}》審查與修正理由", ly_art_url, use_container_width=True)
+                        st.link_button(f"🏛️ 立法院法律系統《{lname} {ano_disp}》審查與修正理由", ly_art_url, use_container_width=True)
 
                     with col_ext_2:
 
-                        st.link_button(f"📜 法務部全國法規資料庫《{lname} {ano}》官方條文", moj_art_url, use_container_width=True)
+                        st.link_button(f"📜 法務部全國法規資料庫《{lname} {ano_disp}》官方條文", moj_art_url, use_container_width=True)
 
                 with tab_history:
 
@@ -16258,21 +16258,21 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     if not combined_materials:
 
-                        st.info(f"💡 目前您的資料庫中暫無直接對應【{lname} {ano}】之專屬課輔講義或個人讀書筆記。您可前往【模式 9：法學筆記】上傳並自動歸納您的專屬讀書筆記！")
+                        st.info(f"💡 目前您的資料庫中暫無直接對應【{lname} {ano_disp}】之專屬課輔講義或個人讀書筆記。您可前往【模式 9：法學筆記】上傳並自動歸納您的專屬讀書筆記！")
 
                 with tab_ai:
 
-                    ai_cache_key = f"ai_anno_{lname}_{ano}"
+                    ai_cache_key = f"ai_anno_{lname}_{clean_ano_num}"
 
                     if st.button(f"✨ 啟動 AI 深度釋析（立法理由、主管機關函釋、通說有力說）", key=f"btn_run_anno_{idx}"):
 
-                        with st.spinner(f"正在由 Gemini Flash 為【{lname} {ano}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
+                        with st.spinner(f"正在由 Gemini Flash 為【{lname} {ano_disp}】生成立法沿革、法務部/金管會函釋與二試作答模版..."):
 
                             try:
 
                                 annotator = SixCodesDeepAnnotator()
 
-                                report = annotator.annotate_article(law_name=lname, article_no=ano, content=content)
+                                report = annotator.annotate_article(law_name=lname, article_no=clean_ano_num, content=content)
 
                                 st.session_state[ai_cache_key] = report
 
@@ -16292,11 +16292,11 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     if st.button(f"📝 帶入試卷評分標準", key=f"btn_pass_eval_{idx}", use_container_width=True):
 
-                        st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano}\n\n【條文內容】：\n{format_legal_article_text(content)}"
+                        st.session_state["question_text_content"] = f"【依據法規審理】：{lname} {ano_disp}\n\n【條文內容】：\n{format_legal_article_text(content)}"
 
-                        st.session_state["rubric_text_content"] = f"【評分指標與法規依據】：\n1. 正確引述 {lname} {ano} 之構成要件與法律效果。\n2. 參酌相關實務見解與立法理由進行涵攝。"
+                        st.session_state["rubric_text_content"] = f"【評分指標與法規依據】：\n1. 正確引述 {lname} {ano_disp} 之構成要件與法律效果。\n2. 參酌相關實務見解與立法理由進行涵攝。"
 
-                        st.session_state["imported_from_bank_label"] = f"六法條文【{lname} {ano}】"
+                        st.session_state["imported_from_bank_label"] = f"六法條文【{lname} {ano_disp}】"
 
                         st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
 
@@ -16306,9 +16306,9 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     if st.button(f"🔍 帶入法學檢索樞紐", key=f"btn_pass_query_{idx}", use_container_width=True):
 
-                        st.session_state["ai_query_input_text"] = f"{lname} {ano} 相關核心爭點與實務裁判"
+                        st.session_state["ai_query_input_text"] = f"{lname} {ano_disp} 相關核心爭點與實務裁判"
 
-                        st.session_state["lp_search_query"] = f"{lname} {ano}"
+                        st.session_state["lp_search_query"] = f"{lname} {ano_disp}"
 
                         st.session_state["lb_input_statute"] = f"{lname} {ano_disp}"
 
@@ -16322,7 +16322,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                     if st.button(f"📖 針對此法條出題/擬答", key=f"btn_pass_ans_{idx}", use_container_width=True):
 
-                        st.session_state["m4_target_question"] = f"請針對【{lname} {ano}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：\n{format_legal_article_text(content)}"
+                        st.session_state["m4_target_question"] = f"請針對【{lname} {ano_disp}】之構成要件與實務重大爭議，設計一則二試案例題並給予上位卷擬答。\n條文：\n{format_legal_article_text(content)}"
 
                         st.session_state["app_mode"] = MODE_ANS; st.session_state["nav_sidebar_radio_mode"] = MODE_ANS
 
