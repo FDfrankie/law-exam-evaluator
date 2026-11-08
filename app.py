@@ -382,45 +382,55 @@ _six_codes_load_error = None
 
 try:
 
-    from six_codes_engine import (
+    import six_codes_engine as _sce
 
-        SIX_CODES_TAXONOMY,
+    # 確保所有 URL 與法學結構化 HTML 渲染函式在各環境中均具備無損相容性
+    if not hasattr(_sce, "get_moj_article_url"):
+        def _compat_moj(law_name, article_no):
+            return f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={urllib.parse.quote(str(law_name or ''))}"
+        _sce.get_moj_article_url = _compat_moj
 
-        get_laws_in_branch,
+    if not hasattr(_sce, "get_ly_article_url"):
+        def _compat_ly(law_name, article_no):
+            clean_no = re.sub(r"[^\d\-]", "", str(article_no or ""))
+            return f"https://lis.ly.gov.tw/lglawc/lawsingle?00^{urllib.parse.quote(str(law_name or ''))}^{clean_no}"
+        _sce.get_ly_article_url = _compat_ly
 
-        search_articles,
+    if not hasattr(_sce, "get_judicial_article_url"):
+        def _compat_judicial(law_name="", article_no=""):
+            return "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+        _sce.get_judicial_article_url = _compat_judicial
 
-        get_article_annotations,
+    if not hasattr(_sce, "get_constitutional_article_url"):
+        def _compat_const(law_name="", article_no=""):
+            return "https://cons.judicial.gov.tw/judgments.aspx"
+        _sce.get_constitutional_article_url = _compat_const
 
-        SixCodesDeepAnnotator,
+    if not hasattr(_sce, "render_formatted_article_html"):
+        def _compat_render_html(content, title=""):
+            if hasattr(_sce, "render_formatted_article_quote"):
+                return _sce.render_formatted_article_quote(content, title)
+            return str(content or "")
+        _sce.render_formatted_article_html = _compat_render_html
 
-        get_law_legislative_history,
-
-        get_article_legislative_details,
-
-        synthesize_article_legislative_details,
-
-        fetch_and_cache_article_legislative_details,
-
-        get_moj_article_url,
-
-        get_ly_article_url,
-
-        get_judicial_article_url,
-
-        get_constitutional_article_url,
-
-        clear_six_codes_cache,
-
-        load_six_codes_data,
-
-        format_legal_article_text,
-
-        render_formatted_article_quote,
-
-        render_formatted_article_html
-
-    )
+    SIX_CODES_TAXONOMY = getattr(_sce, "SIX_CODES_TAXONOMY", {})
+    get_laws_in_branch = getattr(_sce, "get_laws_in_branch", lambda b: list(SIX_CODES_TAXONOMY.get(b, [])))
+    search_articles = getattr(_sce, "search_articles", lambda *args, **kwargs: [])
+    get_article_annotations = getattr(_sce, "get_article_annotations", lambda *args, **kwargs: {})
+    SixCodesDeepAnnotator = getattr(_sce, "SixCodesDeepAnnotator", object)
+    get_law_legislative_history = getattr(_sce, "get_law_legislative_history", lambda *args, **kwargs: {})
+    get_article_legislative_details = getattr(_sce, "get_article_legislative_details", lambda *args, **kwargs: {})
+    synthesize_article_legislative_details = getattr(_sce, "synthesize_article_legislative_details", lambda *args, **kwargs: {})
+    fetch_and_cache_article_legislative_details = getattr(_sce, "fetch_and_cache_article_legislative_details", lambda *args, **kwargs: (False, "", ""))
+    get_moj_article_url = _sce.get_moj_article_url
+    get_ly_article_url = _sce.get_ly_article_url
+    get_judicial_article_url = _sce.get_judicial_article_url
+    get_constitutional_article_url = _sce.get_constitutional_article_url
+    clear_six_codes_cache = getattr(_sce, "clear_six_codes_cache", lambda *args, **kwargs: None)
+    load_six_codes_data = getattr(_sce, "load_six_codes_data", lambda *args, **kwargs: ([], {}, {}))
+    format_legal_article_text = getattr(_sce, "format_legal_article_text", lambda t: str(t or ""))
+    render_formatted_article_quote = getattr(_sce, "render_formatted_article_quote", lambda c, title="📜 條文全文": str(c))
+    render_formatted_article_html = _sce.render_formatted_article_html
 
 except Exception as _err:
 
@@ -474,6 +484,20 @@ except Exception as _err:
 
         return f"https://law.moj.gov.tw/Law/LawSearchLaw.aspx?keyword={urllib.parse.quote(str(law_name))}"
 
+    def get_ly_article_url(law_name, article_no):
+
+        clean_no = re.sub(r"[^\d\-]", "", str(article_no or ""))
+
+        return f"https://lis.ly.gov.tw/lglawc/lawsingle?00^{urllib.parse.quote(str(law_name or ''))}^{clean_no}"
+
+    def get_judicial_article_url(law_name="", article_no=""):
+
+        return "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+
+    def get_constitutional_article_url(law_name="", article_no=""):
+
+        return "https://cons.judicial.gov.tw/judgments.aspx"
+
     def clear_six_codes_cache(*args, **kwargs): pass
 
     def load_six_codes_data(*args, **kwargs): return [], {}, {}
@@ -495,6 +519,10 @@ except Exception as _err:
         lines = [f"> {l}  " for l in fmt.split('\n')]
 
         return f"> **{title}**：  \n" + '\n'.join(lines)
+
+    def render_formatted_article_html(content, title=""):
+
+        return render_formatted_article_quote(content, title)
 
 
 
