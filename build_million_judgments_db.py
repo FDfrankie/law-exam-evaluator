@@ -1,11 +1,13 @@
 """
-百萬級裁判書 SQLite FTS5 全文檢索與年月分片壓縮資料庫引擎 (Million Judgments DB Engine)
+百萬級裁判書 SQLite FTS5 全文檢索資料庫引擎 (Million Judgments DB Engine)
 支援：
-1. 第一層：高速檢索索引庫 (judicial_1m_index.db) - WAL 模式 + FTS5 全文檢索 (unicode61) + 複合索引
-2. 第二層：依年月分片之 zlib 壓縮全文庫 (shards/judgments_{shard_key}.db)
-3. 管線 A：--ingest-inbox 掃描 opendata_inbox 資料夾批次解壓入庫 (每 5,000 筆串流寫入)
-4. 管線 B：--download-opendata 串接司法院資料開放平臺 24 小時 REST API 自動下載各月裁判包
-5. 管線 C：--migrate-local 一鍵遷移本機既有真實判決、大法庭、憲判字、原判例、決議與座談會
+1. 主索引層 (judicial_1m_index.db) / 考試核心子庫 (judicial_exam_core.db) / 遠端本地橋接 (LOCAL_DB_API_URL)
+   - 全表 RO URI 唯讀查詢 + B-Tree 複合索引 (idx_meta_ywn, idx_meta_court_type) + FTS5 全文檢索
+   - 預設 Index-Only 入庫架構（不再強制寫入 25GB+ shards 全文分片；若有歷史分片則相容讀取）
+2. 管線 A：--ingest-inbox 掃描 opendata_inbox 資料夾批次解壓入庫
+3. 管線 B：--download-opendata 串接司法院資料開放平臺 API 自動下載各月裁判包
+4. 管線 C：--migrate-local 一鍵遷移本機既有真實判決、大法庭、憲判字、原判例、決議與座談會
+5. 管線 D：--prune [--commit] 非訟程序與純事實案件清理（具實體法學爭點白名單保護）
 """
 import os
 import sys
@@ -19,6 +21,7 @@ if hasattr(sys.stderr, 'reconfigure'):
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
     except Exception:
         pass
+import gzip
 import json
 import re
 import glob
@@ -30,6 +33,8 @@ import subprocess
 import shutil
 import argparse
 import time
+import urllib.request
+import urllib.parse
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 
@@ -57,9 +62,8 @@ except ImportError:
 
 class ClosingConnection(sqlite3.Connection):
     """
-    自定義 SQLite 連線物件，在 with 區塊離開時除了進行 commit/rollback 外，
-    強制呼叫 close() 以立即釋放 Windows / Google Drive 虛擬檔案系統底層的 OS 檔案鎖 (File Handles)。
-    避免多個連線堆疊造成 ERROR_LOCK_VIOLATION 或 disk I/O error。
+    自定義 SQLite 連線物件，在 with 區塊離開時強制呼叫 close()，
+    立即釋放 Windows / Google Drive 虛擬檔案系統底層的 OS 檔案鎖。
     """
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
@@ -70,50 +74,61 @@ class ClosingConnection(sqlite3.Connection):
 
 class MillionJudgmentsSQLiteEngine:
     """
-    專為 100 萬則（1,000,000+）真實裁判書設計之雙層式雲端儲存與毫秒級檢索引擎：
-    1. 索引層 (judicial_1m_index.db)：
-       採用 SQLite WAL + B-Tree 複合索引 + FTS5 全文檢索虛擬表 (unicode61 tokenizer)，
-       僅儲存中繼資料與 500 字要旨預覽，100 萬筆僅占約 1.2 GB，記憶體消耗 < 50 MB。
-    2. 全文分片層 (shards/judgments_{shard_key}.db)：
-       依年月分片並以 zlib level 6 壓縮儲存完整裁判書全文 (JFULL)，
-       適配 Google Drive 雲端硬碟同步（避免單一 25 GB 大檔重複同步卡死），點閱全文毫秒級解壓。
+    797 萬+ 筆真實裁判書雙軌高效檢索引擎：
+    1. 本機全量母庫 (judicial_1m_index.db) 或 雲端核心精華子庫 (judicial_exam_core.db)
+    2. 選用遠端橋接 API (LOCAL_DB_API_URL) 供雲端即時穿透查詢本機全量母庫
     """
+
+    @staticmethod
+    def _unpack_gz_if_needed(db_path: Path) -> Optional[Path]:
+        """若存在壓縮版 .db.gz 且尚未解壓，自動快速解壓至目標路徑或 /tmp。"""
+        if db_path.exists():
+            return db_path
+        gz_path = Path(str(db_path) + ".gz")
+        if not gz_path.exists():
+            return None
+        targets = [db_path, Path(tempfile.gettempdir()) / db_path.name]
+        for tgt in targets:
+            try:
+                if tgt.exists() and tgt.stat().st_size > 10000:
+                    return tgt
+                tgt.parent.mkdir(parents=True, exist_ok=True)
+                with gzip.open(gz_path, "rb") as f_in, open(tgt, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out, length=1024 * 1024)
+                return tgt
+            except Exception:
+                continue
+        return None
 
     @staticmethod
     def is_valid_db(db_path: Path) -> bool:
         """
-        驗證 SQLite 資料庫檔案是否真實存在且具備有效之 SQLite 3 Header。
-        能精準過濾 Google Drive 虛擬檔案系統 (WinFsp/CBFS) 產生之未水合幽靈檔 (Unhydrated Ghost Files)
-        （即 st_size 回報非 0 但 read(16) 回傳 b'' 導致 'file is not a database' 的假檔案）。
+        以唯讀 URI 驗證 SQLite 資料庫檔案是否真實存在、具備有效 SQLite 3 Header 且非未水合幽靈檔。
         """
         if not db_path:
             return False
         try:
             p = Path(db_path)
-            if not p.exists():
-                return False
-            sz = p.stat().st_size
-            if sz == 0:
+            if not p.exists() or p.stat().st_size == 0:
                 return False
             with open(p, "rb") as f:
-                head = f.read(16)
-            if head != b"SQLite format 3\x00":
-                return False
-            with sqlite3.connect(str(p), timeout=5) as test_conn:
+                if f.read(16) != b"SQLite format 3\x00":
+                    return False
+            uri = f"file:///{p.resolve().as_posix()}?mode=ro"
+            with sqlite3.connect(uri, uri=True, timeout=5, factory=ClosingConnection) as test_conn:
                 test_conn.execute("PRAGMA schema_version;").fetchone()
             return True
         except Exception:
             return False
 
-    def __init__(self, base_dir: Path = None, inbox_dir: Path = None):
-        # 1. 優先辨識自訂或候選目錄
+    def __init__(self, base_dir: Path = None, inbox_dir: Path = None, remote_api_url: str = ""):
         if base_dir:
             self.base_dir = Path(base_dir)
         else:
             candidates = [
                 Path(JUDICIAL_1M_DIR),
-                Path(DATA_DIR) / "data" / "judicial_1m_db",
                 Path(DATA_DIR) / "judicial_1m_db",
+                Path(DATA_DIR) / "data" / "judicial_1m_db",
                 Path(__file__).resolve().parent / "data" / "judicial_1m_db",
                 Path(__file__).resolve().parent.parent / "data" / "judicial_1m_db"
             ]
@@ -121,21 +136,31 @@ class MillionJudgmentsSQLiteEngine:
             self.base_dir = matched if matched else Path(JUDICIAL_1M_DIR)
 
         self.shards_dir = self.base_dir / "shards"
+        self.remote_api_url = (remote_api_url or os.environ.get("LOCAL_DB_API_URL", "")).strip().rstrip("/")
+        self._meta_table = "judgments_meta"
+        self._fts_table = "judgments_fts"
+        self._has_redirects_table = True
+        self._has_manifest_table = False
+        self._table_cols: set = set()
 
-        # 2. 智慧母子庫雙軌自動探測 (Master 1.6M+ DB vs Core 60MB Exam DB)
         master_candidates = [
             self.base_dir / "judicial_1m_index.db",
             Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db",
-            Path(DATA_DIR) / "data" / "judicial_1m_db" / "judicial_1m_index.db",
+            Path("D:/LawExamData/judicial_1m_db/judicial_1m_index.db"),
+            Path("C:/LawExamData/judicial_1m_db/judicial_1m_index.db"),
+            Path("G:/我的雲端硬碟/LawExamData/data/judicial_1m_db/judicial_1m_index.db"),
             Path(__file__).resolve().parent / "data" / "judicial_1m_db" / "judicial_1m_index.db"
         ]
         core_candidates = [
             Path(DATA_DIR) / "judicial_exam_core.db",
-            Path(DATA_DIR) / "data" / "judicial_exam_core.db",
             Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
             Path(__file__).resolve().parent / "judicial_exam_core.db",
-            self.base_dir / "judicial_exam_core.db"
+            self.base_dir / "judicial_exam_core.db",
+            Path(tempfile.gettempdir()) / "judicial_exam_core.db",
+            Path("G:/我的雲端硬碟/LawExamData/data/judicial_exam_core.db"),
         ]
+        for cc in list(core_candidates):
+            self._unpack_gz_if_needed(cc)
 
         found_master = next((p for p in master_candidates if p.exists() and self.is_valid_db(p)), None)
         found_core = next((p for p in core_candidates if p.exists() and self.is_valid_db(p)), None)
@@ -143,11 +168,15 @@ class MillionJudgmentsSQLiteEngine:
         if found_master:
             self.index_db_path = found_master
             self.db_mode = "master"
-            self.db_title = "🏛️ 百萬裁判全量母庫 (1,618,693+ 筆)"
+            self.db_title = "🏛️ 百萬裁判全量母庫 (7,975,000+ 筆索引)"
         elif found_core:
             self.index_db_path = found_core
             self.db_mode = "core"
-            self.db_title = "⚖️ 司律核心精華子庫 (60MB 國考精選版)"
+            self.db_title = "⚖️ 司律核心精華子庫 (國考精選版)"
+        elif self.remote_api_url:
+            self.index_db_path = self.base_dir / "judicial_1m_index.db"
+            self.db_mode = "remote"
+            self.db_title = "🌐 本機百萬裁判遠端即時橋接"
         else:
             self.index_db_path = self.base_dir / "judicial_1m_index.db"
             self.db_mode = "empty"
@@ -165,39 +194,93 @@ class MillionJudgmentsSQLiteEngine:
             matched_inbox = next((p for p in inbox_cands if p.exists() or p.parent.exists()), None)
             self.inbox_dir = matched_inbox if matched_inbox else Path(OPENDATA_INBOX_DIR)
 
+        if self.db_mode in ("master", "core"):
+            self._detect_schema_tables()
+            self._index_db_initialized = True
+        elif self.db_mode == "empty":
+            try:
+                self.base_dir.mkdir(parents=True, exist_ok=True)
+                self.inbox_dir.mkdir(parents=True, exist_ok=True)
+                self._init_index_db()
+            except Exception as e:
+                print(f"[MillionJudgmentsDB Init Warning] {e}")
+
+    def is_available(self) -> bool:
+        return bool(self.remote_api_url or (self.index_db_path and self.index_db_path.exists() and self.db_mode in ("master", "core")))
+
+    def _get_ro_conn(self, db_path: Path) -> sqlite3.Connection:
+        """零鎖定唯讀連線，絕對不觸發檔案刪除、更名或 WAL/TRUNCATE 寫鎖。"""
+        uri = f"file:///{Path(db_path).resolve().as_posix()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=60, factory=ClosingConnection)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=60000;")
+        conn.execute("PRAGMA temp_store=MEMORY;")
+        conn.execute("PRAGMA cache_size=-65536;")
+        return conn
+
+    def _detect_schema_tables(self):
+        """自動辨識 master (judgments_meta) 與 core (judgments_meta / exam_judgments_meta) 資料表名稱。"""
+        if not self.index_db_path or not self.index_db_path.exists():
+            return
         try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-            self.shards_dir.mkdir(parents=True, exist_ok=True)
-            self.inbox_dir.mkdir(parents=True, exist_ok=True)
-            self._init_index_db()
-        except Exception as e:
-            print(f"[MillionJudgmentsDB Init Warning] {e}")
+            with self._get_ro_conn(self.index_db_path) as conn:
+                objs = {
+                    r[0] for r in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+                    ).fetchall()
+                }
+                self._meta_table = "judgments_meta" if "judgments_meta" in objs else (
+                    "exam_judgments_meta" if "exam_judgments_meta" in objs else "judgments_meta"
+                )
+                self._fts_table = "judgments_fts" if "judgments_fts" in objs else (
+                    "exam_judgments_fts" if "exam_judgments_fts" in objs else "judgments_fts"
+                )
+                self._has_redirects_table = "judgment_redirects" in objs
+                self._has_manifest_table = "core_manifest" in objs
+                cols = conn.execute(f"PRAGMA table_info({self._meta_table})").fetchall()
+                self._table_cols = {c[1] for c in cols}
+        except Exception:
+            pass
+
+    def _remote_get_json(self, endpoint: str, params: Optional[Dict[str, Any]] = None, timeout: float = 4.0) -> Optional[Any]:
+        if not self.remote_api_url:
+            return None
+        try:
+            qs = f"?{urllib.parse.urlencode(params)}" if params else ""
+            req = urllib.request.Request(
+                f"{self.remote_api_url}{endpoint}{qs}",
+                headers={"Accept": "application/json", "User-Agent": "LawExamEvaluator/1.0"}
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode("utf-8", errors="ignore"))
+        except Exception:
+            return None
+        return None
 
     def _get_conn(self, db_path: Path) -> sqlite3.Connection:
         max_connect_retries = 5
         conn = None
         for c_attempt in range(max_connect_retries):
             try:
-                # 針對 Google Drive 雲端同步虛擬磁碟：自動清理 0 位元鎖定檔或未水合損壞檔
                 if db_path.exists():
-                    try:
-                        if db_path.stat().st_size == 0 or not self.is_valid_db(db_path):
-                            corrupted_bak = db_path.with_name(f"{db_path.name}.corrupted_{int(time.time())}.bak")
-                            print(f"[!] 偵測到無效或損壞之資料庫: {db_path}，自動隔離至 {corrupted_bak.name} 並重新初始化...")
+                    sz = db_path.stat().st_size
+                    # 嚴格安全防護：絕不因瞬態異常自動更名或刪除超過 50MB 之既有大庫
+                    if sz < 50_000_000 and (sz == 0 or not self.is_valid_db(db_path)):
+                        corrupted_bak = db_path.with_name(f"{db_path.name}.corrupted_{int(time.time())}.bak")
+                        print(f"[!] 偵測到無效或損壞之資料庫: {db_path}，自動隔離至 {corrupted_bak.name} 並重新初始化...")
+                        try:
+                            db_path.rename(corrupted_bak)
+                        except Exception:
                             try:
-                                db_path.rename(corrupted_bak)
+                                db_path.unlink()
                             except Exception:
-                                try:
-                                    db_path.unlink()
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
+                                pass
                 conn = sqlite3.connect(str(db_path), timeout=120, factory=ClosingConnection)
                 break
             except (sqlite3.OperationalError, sqlite3.DatabaseError) as oe:
                 err_msg = str(oe).lower()
-                if "file is not a database" in err_msg or "malformed" in err_msg:
+                if ("file is not a database" in err_msg or "malformed" in err_msg) and (not db_path.exists() or db_path.stat().st_size < 50_000_000):
                     corrupted_bak = db_path.with_name(f"{db_path.name}.corrupted_{int(time.time())}.bak")
                     print(f"[!] SQLite 資料庫損壞 ({oe}): {db_path}，自動隔離至 {corrupted_bak.name} 並重新建立...")
                     try:
@@ -324,6 +407,7 @@ class MillionJudgmentsSQLiteEngine:
             self._index_db_initialized = True
 
     def _init_shard_db(self, shard_key: str) -> Path:
+        self.shards_dir.mkdir(parents=True, exist_ok=True)
         clean_key = re.sub(r"[^0-9a-zA-Z_]", "_", shard_key) or "general"
         shard_path = self.shards_dir / f"judgments_{clean_key}.db"
         if not hasattr(self, "_initialized_shards"):
@@ -405,9 +489,11 @@ class MillionJudgmentsSQLiteEngine:
         cnt = self.get_total_count()
         mode = getattr(self, "db_mode", "master")
         if mode == "master" and cnt > 0:
-            title = f"🏛️ 百萬裁判全量母庫 (已收錄 {cnt:,} 筆裁判)"
+            title = f"🏛️ 百萬裁判全量母庫 (已收錄 {cnt:,} 筆索引)"
         elif mode == "core" and cnt > 0:
             title = f"⚖️ 司律核心精華子庫 (已收錄 {cnt:,} 筆國考精華)"
+        elif mode == "remote" and cnt > 0:
+            title = f"🌐 本機百萬裁判遠端橋接 ({cnt:,} 筆實時連動)"
         elif cnt > 0:
             title = f"📚 裁判資料庫 (已收錄 {cnt:,} 筆裁判)"
         else:
@@ -416,22 +502,51 @@ class MillionJudgmentsSQLiteEngine:
             "mode": mode,
             "title": title,
             "count": cnt,
-            "path": str(self.index_db_path),
-            "has_shards": bool(self.shards_dir.exists())
+            "path": self.remote_api_url if mode == "remote" else str(self.index_db_path),
+            "has_shards": bool(self.shards_dir.exists() and any(self.shards_dir.glob("*.db"))),
+            "meta_table": self._meta_table,
+            "fts_table": self._fts_table,
+            "remote_api_url": self.remote_api_url,
         }
 
-    def get_total_count(self) -> int:
-        if not self.index_db_path.exists():
-            return 0
+    def get_total_count(self, exact: bool = False) -> int:
         now = time.time()
         cached = getattr(self, "_cached_count", None)
         last_t = getattr(self, "_last_count_time", 0)
-        if cached is not None and (now - last_t < 600):
+        if not exact and cached is not None and (now - last_t < 600):
             return cached
+
+        if getattr(self, "db_mode", "") == "remote" and self.remote_api_url:
+            stats = self._remote_get_json("/stats")
+            if isinstance(stats, dict) and stats.get("count") is not None:
+                cnt = int(stats["count"])
+                self._cached_count = cnt
+                self._last_count_time = now
+                return cnt
+            return 0
+
+        if not self.index_db_path or not self.index_db_path.exists():
+            return 0
         try:
-            with self._get_conn(self.index_db_path) as conn:
-                row = conn.execute("SELECT COUNT(*) AS cnt FROM judgments_meta").fetchone()
-                cnt = int(row["cnt"]) if row else 0
+            sz = self.index_db_path.stat().st_size
+            with self._get_ro_conn(self.index_db_path) as conn:
+                if self._has_manifest_table and not exact:
+                    try:
+                        mrow = conn.execute("SELECT value FROM core_manifest WHERE key = 'judgments_count' LIMIT 1").fetchone()
+                        if mrow and str(mrow[0]).isdigit():
+                            cnt = int(mrow[0])
+                            self._cached_count = cnt
+                            self._last_count_time = now
+                            return cnt
+                    except Exception:
+                        pass
+
+                # 對 500MB 以上大庫（如 16.35GB G:\ 母庫），以 O(log N) MAX(rowid) 避免 COUNT(*) 全表掃描逾時
+                if not exact and sz > 500 * 1024 * 1024:
+                    row = conn.execute(f"SELECT MAX(rowid) AS cnt FROM {self._meta_table}").fetchone()
+                else:
+                    row = conn.execute(f"SELECT COUNT(*) AS cnt FROM {self._meta_table}").fetchone()
+                cnt = int(row["cnt"] or 0) if row else 0
                 self._cached_count = cnt
                 self._last_count_time = now
                 return cnt
@@ -439,12 +554,15 @@ class MillionJudgmentsSQLiteEngine:
             return 0
 
     def get_full_text(self, case_id: str, shard_key: str = "") -> str:
-        if not case_id or not self.index_db_path.exists():
+        if not case_id or not self.shards_dir.exists() or not self.index_db_path.exists():
             return ""
         try:
             if not shard_key:
-                with self._get_conn(self.index_db_path) as conn:
-                    r = conn.execute("SELECT shard_key, holding_preview FROM judgments_meta WHERE case_id = ?", (case_id,)).fetchone()
+                with self._get_ro_conn(self.index_db_path) as conn:
+                    r = conn.execute(
+                        f"SELECT shard_key, holding_preview FROM {self._meta_table} WHERE case_id = ?",
+                        (case_id,)
+                    ).fetchone()
                     if not r:
                         return ""
                     shard_key = r["shard_key"] or "general"
@@ -452,7 +570,7 @@ class MillionJudgmentsSQLiteEngine:
             clean_key = re.sub(r"[^0-9a-zA-Z_]", "_", shard_key) or "general"
             shard_path = self.shards_dir / f"judgments_{clean_key}.db"
             if shard_path.exists():
-                with self._get_conn(shard_path) as sconn:
+                with self._get_ro_conn(shard_path) as sconn:
                     brow = sconn.execute("SELECT full_text_zlib FROM judgments_blob WHERE case_id = ?", (case_id,)).fetchone()
                     if brow and brow["full_text_zlib"]:
                         return zlib.decompress(brow["full_text_zlib"]).decode("utf-8", errors="ignore")
@@ -460,7 +578,7 @@ class MillionJudgmentsSQLiteEngine:
             pass
         return ""
 
-    def batch_upsert_records(self, records: List[Dict[str, Any]], batch_size: int = 5000) -> int:
+    def batch_upsert_records(self, records: List[Dict[str, Any]], batch_size: int = 5000, write_shards: bool = False) -> int:
         if not records:
             return 0
         self._init_index_db()
@@ -534,7 +652,7 @@ class MillionJudgmentsSQLiteEngine:
 
                 meta_rows.append((cid, jid, court, level, c_type, subject, y, w, n, date_s, title, laws_str, issue, holding_prev, s_key, has_issue_val, hist_json_str, sub_prior_val, hist_cases_str))
                 fts_rows.append((cid, title, holding_prev, issue, laws_str))
-                if full_text:
+                if write_shards and full_text:
                     compressed_blob = zlib.compress(full_text.encode("utf-8", errors="ignore"), level=6)
                     shard_buckets.setdefault(s_key, []).append((cid, compressed_blob))
 
@@ -617,8 +735,94 @@ class MillionJudgmentsSQLiteEngine:
 
         return total_inserted
 
+    @staticmethod
+    def _expand_court_system_filter(court_system: str) -> List[str]:
+        if not court_system or "全部法院" in court_system or "全部" == court_system.strip():
+            return []
+        mapping = {
+            "憲法": ["憲法法庭", "司法院大法官", "憲法法庭 / 司法院大法官"],
+            "大法官": ["憲法法庭", "司法院大法官", "憲法法庭 / 司法院大法官"],
+            "原判例": ["最高法院", "最高行政法院"],
+            "決議": ["最高法院", "最高法院民事庭會議", "最高法院刑事庭會議", "最高行政法院", "最高行政法院庭長法官聯席會議"],
+            "座談會": ["臺灣高等法院暨所屬法院法律座談會", "臺灣高等法院"],
+            "最高法院": ["最高法院", "最高法院民事大法庭", "最高法院刑事大法庭", "最高法院民事庭會議", "最高法院刑事庭會議"],
+            "最高行政法院": ["最高行政法院", "最高行政法院庭長法官聯席會議"],
+            "高等行政法院": ["臺北高等行政法院", "臺中高等行政法院", "高雄高等行政法院", "臺灣高等行政法院"],
+            "高等法院": [
+                "臺灣高等法院", "臺灣高等法院臺中分院", "臺灣高等法院臺南分院",
+                "臺灣高等法院高雄分院", "臺灣高等法院花蓮分院", "福建高等法院",
+                "臺灣高等法院暨所屬法院法律座談會",
+            ],
+            "智慧財產": ["智慧財產及商業法院", "智慧財產法院"],
+            "懲戒": ["懲戒法院", "公務員懲戒委員會"],
+        }
+        matched = []
+        for k, courts in mapping.items():
+            if k in court_system:
+                for c in courts:
+                    if c not in matched:
+                        matched.append(c)
+        return matched
+
+    @staticmethod
+    def _build_fts_expr(text: str, col_prefix: str = "") -> str:
+        clean_fts = re.sub(r"""["';:\*\(\)]""", " ", text or "")
+        tokens = [t.strip() for t in re.split(r'[\s,，、＆＋\+\-&]+', clean_fts) if t.strip()]
+        if not tokens:
+            return ""
+        parts = []
+        for tok in tokens[:5]:
+            pref = f"{col_prefix} : " if col_prefix else ""
+            parts.append(f'{pref}"{tok}"*')
+        return " AND ".join(parts)
+
+    def _row_to_search_dict(self, r: sqlite3.Row) -> Dict[str, Any]:
+        r_keys = set(r.keys())
+        raw_hist = r["history_instances"] if "history_instances" in r_keys else ""
+        hist_list = []
+        if raw_hist:
+            try:
+                hist_list = json.loads(raw_hist)
+            except Exception:
+                hist_list = []
+        sub_prior = (r["substantive_prior"] if "substantive_prior" in r_keys else "") or ""
+        hist_cases_raw = (r["history_cases"] if "history_cases" in r_keys else "") or ""
+        laws_raw = (r["laws_cited"] if "laws_cited" in r_keys else "") or ""
+        laws_arr = [x.strip() for x in laws_raw.split("、") if x.strip()]
+        has_issue = bool(r["has_legal_issue"]) if "has_legal_issue" in r_keys and r["has_legal_issue"] is not None else True
+        cid = r["case_id"]
+        jid = (r["jid"] if "jid" in r_keys else "") or ""
+        return {
+            "case_id": cid,
+            "jid": jid,
+            "court": (r["court"] if "court" in r_keys else "") or "",
+            "level": (r["level"] if "level" in r_keys else "") or "",
+            "case_type": (r["case_type"] if "case_type" in r_keys else "") or "",
+            "subject": (r["subject"] if "subject" in r_keys else "") or "",
+            "jud_year": (r["jud_year"] if "jud_year" in r_keys else "") or "",
+            "jud_word": (r["jud_word"] if "jud_word" in r_keys else "") or "",
+            "jud_no": (r["jud_no"] if "jud_no" in r_keys else "") or "",
+            "date": (r["date"] if "date" in r_keys else "") or "",
+            "title": (r["title"] if "title" in r_keys else "") or cid,
+            "laws_cited": laws_arr,
+            "issue": (r["issue"] if "issue" in r_keys else "") or "",
+            "holding": (r["holding_preview"] if "holding_preview" in r_keys else "") or "",
+            "shard_key": (r["shard_key"] if "shard_key" in r_keys else "") or "",
+            "has_legal_issue": has_issue,
+            "history_instances": hist_list,
+            "extracted_history_instances": hist_list,
+            "substantive_prior": sub_prior,
+            "substantive_prior_instance": sub_prior,
+            "history_cases": [x.strip() for x in hist_cases_raw.split("、") if x.strip()],
+            "official_url": self.get_official_url(cid, jid),
+        }
+
     def search_fts_and_meta(self, **kwargs) -> List[Dict[str, Any]]:
-        if not self.index_db_path.exists():
+        if getattr(self, "db_mode", "") == "remote" and self.remote_api_url:
+            res = self._remote_get_json("/search", {k: v for k, v in kwargs.items() if v is not None})
+            return res if isinstance(res, list) else []
+
+        if not self.index_db_path or not self.index_db_path.exists():
             return []
 
         query = str(kwargs.get("query", "")).strip()
@@ -634,156 +838,246 @@ class MillionJudgmentsSQLiteEngine:
         filter_no_legal_issue = bool(kwargs.get("filter_no_legal_issue", True))
         top_k = int(kwargs.get("top_k", 50))
 
-        where_clauses = ["1=1"]
-        params = []
-        fts_query = query
-        use_fts_join = False
+        meta_tbl = self._meta_table
+        fts_tbl = self._fts_table
 
-        if filter_no_legal_issue:
+        where_clauses = ["1=1"]
+        params: List[Any] = []
+        fts_parts = []
+
+        if filter_no_legal_issue and "has_legal_issue" in self._table_cols:
             where_clauses.append("(m.has_legal_issue IS NULL OR m.has_legal_issue = 1)")
 
-        if not fts_query and (main_holding or argument_issue):
-            fts_query = f"{main_holding} {argument_issue}".strip()
+        base_fts_text = query or f"{main_holding} {argument_issue}".strip()
+        if base_fts_text:
+            expr = self._build_fts_expr(base_fts_text)
+            if expr:
+                fts_parts.append(expr)
 
-        if fts_query:
-            clean_fts = re.sub(r"""["';]""", "", fts_query)
-            tokens = [t.strip() for t in re.split(r'[\s,，、＆＋\+\-&\(\)]+', clean_fts) if t.strip()]
-            if tokens:
-                fts_match = " AND ".join(f'"{tok}"*' for tok in tokens[:4])
-                use_fts_join = True
-                where_clauses.append("judgments_fts MATCH ?")
-                params.append(fts_match)
+        if cited_laws:
+            norm_law = re.sub(r"\s+", "", cited_laws)
+            law_expr = self._build_fts_expr(norm_law, col_prefix="laws_cited")
+            if law_expr:
+                fts_parts.append(law_expr)
 
+        if case_cause and not base_fts_text:
+            cause_expr = self._build_fts_expr(case_cause, col_prefix="title")
+            if cause_expr:
+                fts_parts.append(cause_expr)
+
+        use_fts_join = bool(fts_parts)
+        if use_fts_join:
+            where_clauses.append(f"{fts_tbl} MATCH ?")
+            params.append(" AND ".join(fts_parts))
+
+        has_narrow_index = False
         if jud_year:
             where_clauses.append("m.jud_year = ?")
             params.append(jud_year)
+            has_narrow_index = True
         if jud_word:
-            where_clauses.append("(m.jud_word LIKE ? OR m.case_id LIKE ?)")
-            params.extend([f"%{jud_word}%", f"%{jud_word}%"])
+            w_clean = re.sub(r"字$", "", jud_word).strip()
+            w_cands = list(dict.fromkeys([x for x in [jud_word, w_clean] if x]))
+            if w_clean == "台上":
+                w_cands.extend(["台上大", "台抗"])
+            ph = ",".join("?" for _ in w_cands)
+            where_clauses.append(f"m.jud_word IN ({ph})")
+            params.extend(w_cands)
         if jud_no:
-            where_clauses.append("(m.jud_no = ? OR m.case_id LIKE ?)")
-            params.extend([jud_no, f"%第 {jud_no} 號%"])
+            where_clauses.append("m.jud_no = ?")
+            params.append(jud_no)
+            has_narrow_index = True
         if case_type and case_type != "全部":
             where_clauses.append("m.case_type = ?")
             params.append(case_type)
 
-        if court_system and "全部法院" not in court_system:
+        expanded_courts = self._expand_court_system_filter(court_system)
+        if expanded_courts:
+            ph = ",".join("?" for _ in expanded_courts)
+            where_clauses.append(f"m.court IN ({ph})")
+            params.extend(expanded_courts)
+        elif court_system and "全部法院" not in court_system and court_system != "全部":
             where_clauses.append("(m.court LIKE ? OR m.level LIKE ?)")
             params.extend([f"%{court_system}%", f"%{court_system}%"])
 
-        for kw_field, col_expr in [
-            (case_cause, "m.title"),
-            (main_holding, "m.holding_preview"),
-            (argument_issue, "(m.issue || ' ' || m.holding_preview)"),
-            (cited_laws, "m.laws_cited")
-        ]:
-            if kw_field and not fts_query:
-                tokens = [t for t in re.split(r"[\s,，、＆＋\+\-&\(\)]+", kw_field) if t]
-                for tok in tokens[:3]:
-                    where_clauses.append(f"{col_expr} LIKE ?")
-                    params.append(f"%{tok}%")
-
-        table_source = "judgments_fts f JOIN judgments_meta m ON f.case_id = m.case_id" if use_fts_join else "judgments_meta m"
+        # 若無精確年份/案號且啟用 FTS（含單獨指定法院），禁止 SQL 層跨頁排序數十萬列；
+        # 僅抽樣有限候選後於 Python 依審級權威度與年度排序，杜絕 G:\ 隨機磁碟讀取阻塞！
+        sql_limit = min(max(top_k * 8, 120), 400) if (use_fts_join and not has_narrow_index) else top_k
+        use_sql_order = (has_narrow_index or (not use_fts_join and not expanded_courts))
+        order_clause = "ORDER BY CAST(m.jud_year AS INTEGER) DESC" if use_sql_order else ""
+        table_source = f"{fts_tbl} f JOIN {meta_tbl} m ON f.case_id = m.case_id" if use_fts_join else f"{meta_tbl} m"
         sql = f"""
             SELECT m.*
             FROM {table_source}
             WHERE {' AND '.join(where_clauses)}
-            ORDER BY m.jud_year DESC
+            {order_clause}
             LIMIT ?
         """
-        params.append(top_k)
+        params.append(sql_limit)
+
+        def _court_rank(c_name: str, lvl: str) -> int:
+            s = f"{c_name} {lvl}"
+            if any(k in s for k in ("憲法", "大法官", "釋字")):
+                return 4
+            if any(k in s for k in ("大法庭", "最高法院", "最高行政")):
+                return 3
+            if any(k in s for k in ("高等", "智慧財產", "懲戒")):
+                return 2
+            return 1
 
         results = []
         try:
-            with self._get_conn(self.index_db_path) as conn:
+            with self._get_ro_conn(self.index_db_path) as conn:
                 rows = conn.execute(sql, params).fetchall()
+                # 若 FTS 長詞精準前綴 0 命中（如無空白斷詞「借名登記」），改以雙字前綴重試
+                if not rows and use_fts_join and base_fts_text and len(base_fts_text) >= 4:
+                    cjk_chunks = re.findall(r"[\u4e00-\u9fff]{4,}", base_fts_text)
+                    if cjk_chunks:
+                        alt_fts = " AND ".join(f'"{ch[:2]}"*' for ch in cjk_chunks[:2])
+                        if cited_laws:
+                            law_expr = self._build_fts_expr(re.sub(r"\s+", "", cited_laws), col_prefix="laws_cited")
+                            if law_expr:
+                                alt_fts = f"{alt_fts} AND {law_expr}"
+                        alt_params = [alt_fts] + list(params[1:])
+                        try:
+                            rows = conn.execute(sql, alt_params).fetchall()
+                        except Exception:
+                            pass
+
                 for r in rows:
-                    laws_arr = [x.strip() for x in (r["laws_cited"] or "").split("、") if x.strip()]
-                    results.append({
-                        "case_id": r["case_id"],
-                        "jid": r["jid"],
-                        "court": r["court"],
-                        "level": r["level"],
-                        "case_type": r["case_type"],
-                        "subject": r["subject"],
-                        "jud_year": r["jud_year"],
-                        "jud_word": r["jud_word"],
-                        "jud_no": r["jud_no"],
-                        "date": r["date"],
-                        "title": r["title"],
-                        "laws_cited": laws_arr,
-                        "issue": r["issue"],
-                        "holding": r["holding_preview"],
-                        "shard_key": r["shard_key"],
-                        "has_legal_issue": bool(r["has_legal_issue"]),
-                        "history_instances": json.loads(r["history_instances"]) if r["history_instances"] else [],
-                        "extracted_history_instances": json.loads(r["history_instances"]) if r["history_instances"] else [],
-                        "substantive_prior": r["substantive_prior"] or "",
-                        "substantive_prior_instance": r["substantive_prior"] or "",
-                        "history_cases": [x.strip() for x in (r["history_cases"] or "").split("、") if x.strip()],
-                        "official_url": self.get_official_url(r["case_id"], r["jid"])
-                    })
+                    d = self._row_to_search_dict(r)
+                    if case_cause and base_fts_text and case_cause not in d["title"] and case_cause not in d["holding"]:
+                        continue
+                    results.append(d)
+
+                if not use_sql_order:
+                    results.sort(
+                        key=lambda x: (
+                            _court_rank(x.get("court", ""), x.get("level", "")),
+                            int(re.sub(r"\D", "", str(x.get("jud_year", "0"))) or 0),
+                            str(x.get("date", ""))
+                        ),
+                        reverse=True
+                    )
         except Exception as e:
             print(f"[Search FTS Error] {e}")
 
-        return results
+        if not results and self.remote_api_url and getattr(self, "db_mode", "") != "remote":
+            remote_res = self._remote_get_json("/search", {k: v for k, v in kwargs.items() if v is not None})
+            if isinstance(remote_res, list):
+                return remote_res[:top_k]
+
+        return results[:top_k]
 
     def find_by_citation(self, citation: str) -> Optional[Dict[str, Any]]:
-        if not citation or not self.index_db_path.exists():
+        if not citation:
+            return None
+        if getattr(self, "db_mode", "") == "remote" and self.remote_api_url:
+            res = self._remote_get_json("/lookup", {"citation": citation})
+            return res if isinstance(res, dict) and res.get("found") else None
+
+        if not self.index_db_path or not self.index_db_path.exists():
             return None
         q_clean = re.sub(r"\s+", "", citation.strip())
+        meta_tbl = self._meta_table
         try:
-            with self._get_conn(self.index_db_path) as conn:
-                m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s]{1,6}?)(?:字)?(?:第)?(\d+)", q_clean)
+            with self._get_ro_conn(self.index_db_path) as conn:
+                m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s號第]{1,8}?)(?:字)?(?:第)?(\d+)", q_clean)
                 row = None
                 if m:
                     y, w, n = m.group(1), m.group(2), m.group(3)
-                    # 優先使用 idx_meta_ywn 複合索引 (0.001s 毫秒級定位)
-                    row = conn.execute(
-                        "SELECT * FROM judgments_meta WHERE jud_year = ? AND jud_no = ? AND (jud_word LIKE ? OR case_id LIKE ?) LIMIT 1",
-                        (y, n, f"%{w}%", f"%{w}%")
-                    ).fetchone()
-                    if not row:
+                    w_base = re.sub(r"(?:民事|刑事|行政)?(?:字)?$", "", w).strip() or w
+                    word_candidates = list(dict.fromkeys([
+                        x for x in [w, w_base] + (
+                            ["台上大", "台上", "台上大四", "台抗", "台非"] if "台上" in w_base else []
+                        ) if x
+                    ]))
+                    # 1. 優先走三欄等值複合索引 idx_meta_ywn (0.01~0.04s 毫秒級精準定位，避免 LIKE 全掃)
+                    for wc in word_candidates:
                         row = conn.execute(
-                            "SELECT * FROM judgments_meta WHERE jud_year = ? AND jud_no = ? LIMIT 1",
-                            (y, n)
+                            f"SELECT * FROM {meta_tbl} WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
+                            (y, wc, n)
                         ).fetchone()
+                        if row:
+                            break
+                    # 2. 次優先走 (jud_year, jud_no) 前導索引並於 Python 過濾字別 (0.04s)
+                    if not row:
+                        cand_rows = conn.execute(
+                            f"SELECT * FROM {meta_tbl} WHERE jud_year = ? AND jud_no = ? LIMIT 25",
+                            (y, n)
+                        ).fetchall()
+                        for cr in cand_rows:
+                            cw = (cr["jud_word"] or "")
+                            ccid = (cr["case_id"] or "")
+                            if w_base in cw or w_base in ccid:
+                                row = cr
+                                break
+                        if not row and cand_rows:
+                            row = cand_rows[0]
                 else:
-                    # 主鍵與案號索引查詢 (避免未命中觸發 17 萬列全表掃描)
                     row = conn.execute(
-                        "SELECT * FROM judgments_meta WHERE case_id = ? OR jid = ? LIMIT 1",
+                        f"SELECT * FROM {meta_tbl} WHERE case_id = ? OR jid = ? LIMIT 1",
                         (citation.strip(), q_clean)
                     ).fetchone()
                     if not row:
-                        m_const = re.search(r"(?:釋字第|憲判字第)\s*(\d+)\s*號", q_clean)
+                        m_const = re.search(r"(?:(\d{2,3})年)?\s*(?:釋字|憲判字?|憲裁字?)\s*第?\s*(\d+)\s*號", q_clean)
                         if m_const:
-                            c_no = m_const.group(1)
-                            row = conn.execute(
-                                "SELECT * FROM judgments_meta WHERE jud_no = ? AND (jud_word LIKE ? OR case_id LIKE ?) LIMIT 1",
-                                (c_no, "%憲判%", f"%{c_no}%")
-                            ).fetchone()
+                            c_y, c_no = m_const.group(1), m_const.group(2)
+                            w_list = ("憲判", "憲裁") if "憲" in q_clean else ("釋字",)
+                            ph = ",".join("?" for _ in w_list)
+                            if c_y:
+                                row = conn.execute(
+                                    f"SELECT * FROM {meta_tbl} WHERE jud_year = ? AND jud_word IN ({ph}) AND jud_no = ? LIMIT 1",
+                                    (c_y, *w_list, c_no)
+                                ).fetchone()
+                            if not row:
+                                cand_rows = conn.execute(
+                                    f"SELECT * FROM {meta_tbl} WHERE jud_word IN ({ph}) LIMIT 50",
+                                    w_list
+                                ).fetchall()
+                                for cr in cand_rows:
+                                    if (cr["jud_no"] or "") == c_no or f"第{c_no}號" in re.sub(r"\s+", "", cr["case_id"] or ""):
+                                        row = cr
+                                        break
                 if row:
-                    full_txt = self.get_full_text(row["case_id"], row["shard_key"]) or row["holding_preview"]
-                    laws_arr = [x.strip() for x in (row["laws_cited"] or "").split("、") if x.strip()]
-                    sub_prior = row["substantive_prior"] if "substantive_prior" in row.keys() else ""
-                    hist_cases = row["history_cases"] if "history_cases" in row.keys() else ""
+                    r_keys = set(row.keys())
+                    s_key = (row["shard_key"] if "shard_key" in r_keys else "") or ""
+                    hold_prev = (row["holding_preview"] if "holding_preview" in r_keys else "") or ""
+                    full_txt = self.get_full_text(row["case_id"], s_key) or hold_prev
+                    laws_str = (row["laws_cited"] if "laws_cited" in r_keys else "") or ""
+                    laws_arr = [x.strip() for x in laws_str.split("、") if x.strip()]
+                    sub_prior = (row["substantive_prior"] if "substantive_prior" in r_keys else "") or ""
+                    hist_cases = (row["history_cases"] if "history_cases" in r_keys else "") or ""
+                    jid_val = (row["jid"] if "jid" in r_keys else "") or ""
                     return {
                         "found": True,
                         "matched": True,
                         "case_id": row["case_id"],
+                        "jid": jid_val,
                         "title": row["case_id"],
                         "standard_title": row["case_id"],
                         "court_or_agency": row["court"],
-                        "doc_type": row["level"] or row["case_type"],
+                        "court": row["court"],
+                        "jud_year": row["jud_year"] if "jud_year" in r_keys else "",
+                        "jud_word": row["jud_word"] if "jud_word" in r_keys else "",
+                        "jud_no": row["jud_no"] if "jud_no" in r_keys else "",
+                        "date": (row["date"] if "date" in r_keys else "") or "",
+                        "doc_type": (row["level"] if "level" in r_keys else "") or (row["case_type"] if "case_type" in r_keys else ""),
                         "laws_cited": laws_arr,
-                        "holding_snippet": row["holding_preview"],
+                        "holding_snippet": hold_prev,
                         "text": full_txt,
-                        "shard_key": row["shard_key"],
+                        "shard_key": s_key,
                         "substantive_prior": sub_prior,
-                        "history_cases": hist_cases
+                        "history_cases": hist_cases,
+                        "official_url": self.get_official_url(row["case_id"], jid_val),
                     }
         except Exception:
             pass
+
+        if self.remote_api_url and getattr(self, "db_mode", "") != "remote":
+            res = self._remote_get_json("/lookup", {"citation": citation})
+            if isinstance(res, dict) and res.get("found"):
+                return res
         return None
 
     def record_redirect(self, dismissed_case_id: str, substantive_prior_id: str, discard_reason: str = "", court: str = "") -> bool:
@@ -826,27 +1120,29 @@ class MillionJudgmentsSQLiteEngine:
         """
         依程序駁回案號查詢實體原審轉址目標，支援案號模糊與標準化匹配
         """
-        if not case_id or not self.index_db_path.exists():
+        if not case_id:
             return None
-        self._init_index_db()
+        if getattr(self, "db_mode", "") == "remote" and self.remote_api_url:
+            res = self._remote_get_json("/redirect", {"case_id": case_id})
+            return res if isinstance(res, dict) and res.get("is_redirect") else None
+
+        if not self.index_db_path or not self.index_db_path.exists() or not self._has_redirects_table:
+            return None
         q_raw = case_id.strip()
         q_clean = re.sub(r"\s+", "", q_raw)
         try:
-            with self._get_conn(self.index_db_path) as conn:
-                # 1. 精準比對
+            with self._get_ro_conn(self.index_db_path) as conn:
                 row = conn.execute(
                     "SELECT * FROM judgment_redirects WHERE dismissed_case_id = ? LIMIT 1",
                     (q_raw,)
                 ).fetchone()
 
-                # 2. 去空白比對
                 if not row:
                     row = conn.execute(
-                        "SELECT * FROM judgment_redirects WHERE REPLACE(dismissed_case_id, ' ', '') = ? LIMIT 1",
-                        (q_clean,)
+                        "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? LIMIT 1",
+                        (f"%{q_raw}%",)
                     ).fetchone()
 
-                # 3. 年度、字別、字號正則比對
                 if not row:
                     m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s]{1,6}?)(?:字)?(?:第)?(\d+)", q_clean)
                     if m:
@@ -855,13 +1151,6 @@ class MillionJudgmentsSQLiteEngine:
                             "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? LIMIT 1",
                             (f"%{y}%", f"%{w}%", f"%{n}%")
                         ).fetchone()
-
-                # 4. 包含比對
-                if not row:
-                    row = conn.execute(
-                        "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? OR ? LIKE ('%' || dismissed_case_id || '%') LIMIT 1",
-                        (f"%{q_clean}%", q_clean)
-                    ).fetchone()
 
                 if row:
                     return {
@@ -875,6 +1164,53 @@ class MillionJudgmentsSQLiteEngine:
         except Exception as e:
             print(f"[get_redirect_target error] {e}")
         return None
+
+    def prune_non_substantive_records(self, commit: bool = False, batch_size: int = 5000) -> Dict[str, Any]:
+        """整合清理非訟與純事實低價值裁判（具實體法律爭點白名單保護）。"""
+        if not self.index_db_path or not self.index_db_path.exists():
+            return {"success": False, "error": "資料庫尚未建立", "pruned": 0}
+        if self.db_mode != "master":
+            return {"success": False, "error": "僅限全量母庫執行精純化清理", "pruned": 0}
+
+        non_sub_re = re.compile(
+            r"年度\s*(?:[^\s0-9]*?(?:票|促|調|拍|補|移|定刑|執聲)[^\s0-9]*?)\s*字|公示催告|公示送達"
+        )
+        protect_re = re.compile(
+            r"大法庭|憲判字|釋字|判例|決議|座談會|肯定說|否定說|折衷說|學說|通說|實務見解|"
+            r"爭點|競合|界限|排他|構成要件|阻卻違法|期待可能性|正當防衛|緊急避難|合憲|違憲|目的性限縮|類推適用|爭點效|既判力"
+        )
+        junk_rowids = []
+        protected = 0
+        with self._get_ro_conn(self.index_db_path) as conn:
+            cur = conn.execute(f"SELECT rowid, court, case_id, title, holding_preview FROM {self._meta_table}")
+            while True:
+                batch = cur.fetchmany(batch_size)
+                if not batch:
+                    break
+                for rowid, court, cid, title, hold in batch:
+                    cid_s = cid or ""
+                    if non_sub_re.search(cid_s):
+                        if protect_re.search(title or "") or protect_re.search(hold or ""):
+                            protected += 1
+                            continue
+                        junk_rowids.append(rowid)
+
+        if commit and junk_rowids:
+            with self._get_conn(self.index_db_path) as wconn:
+                for i in range(0, len(junk_rowids), batch_size):
+                    sub = junk_rowids[i:i + batch_size]
+                    ph = ",".join("?" for _ in sub)
+                    wconn.execute(f"DELETE FROM {self._meta_table} WHERE rowid IN ({ph})", sub)
+                wconn.commit()
+            self._cached_count = None
+
+        return {
+            "success": True,
+            "candidates": len(junk_rowids),
+            "protected": protected,
+            "pruned": len(junk_rowids) if commit else 0,
+            "committed": commit,
+        }
 
     # 
     def ingest_inbox_folder(self, folder_path: Path = None, batch_size: int = 5000,
@@ -1252,17 +1588,19 @@ def get_million_db_engine() -> MillionJudgmentsSQLiteEngine:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="百萬級裁判書 SQLite FTS5 全文檢索與分片壓縮資料庫管理工具")
+    parser = argparse.ArgumentParser(description="百萬級裁判書 SQLite FTS5 全文檢索資料庫管理工具")
     parser.add_argument("--migrate-local", action="store_true", help="管線 C：一鍵遷移本機既有裁判、大法庭、憲判字、原判例與決議至 SQLite FTS5")
     parser.add_argument("--ingest-inbox", action="store_true", help="管線 A：掃描 opendata_inbox 資料夾批次解壓入庫")
     parser.add_argument("--inbox-dir", type=str, default="", help="指定 opendata_inbox 資料夾路徑")
-    parser.add_argument("--download-opendata", action="store_true", help="管線 B：串接司法院資料開放平臺 24 小時 API 自動下載月度壓縮包")
+    parser.add_argument("--download-opendata", action="store_true", help="管線 B：串接司法院資料開放平臺 API 自動下載月度壓縮包")
     parser.add_argument("--user", type=str, default="", help="司法院資料開放平臺會員帳號")
     parser.add_argument("--pwd", type=str, default="", help="司法院資料開放平臺會員密碼")
     parser.add_argument("--target-count", type=int, default=1000000, help="下載與入庫之目標總筆數 (預設 1,000,000)")
     parser.add_argument("--search", type=str, default="", help="執行 FTS5 關鍵字檢索測試")
-    parser.add_argument("--lookup", type=str, default="", help="精準調閱指定裁判案號與全文")
-    parser.add_argument("--stats", action="store_true", help="顯示目前 SQLite 大庫統計與分片數量")
+    parser.add_argument("--lookup", type=str, default="", help="精準調閱指定裁判案號")
+    parser.add_argument("--prune", action="store_true", help="管線 D：掃描非訟與純事實低價值裁判（預設乾跑預覽）")
+    parser.add_argument("--commit", action="store_true", help="配合 --prune 正式刪除低價值紀錄")
+    parser.add_argument("--stats", action="store_true", help="顯示目前 SQLite 大庫統計")
 
     args = parser.parse_args()
     engine = get_million_db_engine()
@@ -1277,6 +1615,9 @@ def main():
     elif args.download_opendata:
         res = engine.download_and_ingest_opendata(member_account=args.user, pwd=args.pwd, target_count=args.target_count)
         print(f'\n[下載入庫結果] 完成！大庫總筆數: {res.get("total_in_db", 0):,} 筆')
+    elif args.prune:
+        res = engine.prune_non_substantive_records(commit=args.commit)
+        print(f"\n[精純化清理] 掃描候選: {res.get('candidates', 0):,} 筆 ｜ 白名單保護: {res.get('protected', 0):,} 筆 ｜ 實際清理: {res.get('pruned', 0):,} 筆 (commit={res.get('committed')})")
     elif args.search:
         results = engine.search_fts_and_meta(query=args.search, top_k=10)
         print(f"\n🔍 檢索關鍵字 '{args.search}' 命中 {len(results)} 筆：")
@@ -1289,16 +1630,17 @@ def main():
             print(f'\n✅ 成功找到: {res.get("title")} ({res.get("doc_type")})')
             print(f'要旨: {res.get("holding_snippet")}\n')
             full = res.get("text", "")
-            print(f'全文長度: {len(full)} 字元 ｜ 預覽: {full[:300]}...')
+            print(f'長度: {len(full)} 字元 ｜ 預覽: {full[:300]}...')
         else:
             print(f'❌ 查無此案號: {args.lookup}')
     else:
-        cnt = engine.get_total_count()
-        shards = list(engine.shards_dir.glob("*.db"))
+        info = engine.get_db_info()
+        shards = list(engine.shards_dir.glob("*.db")) if engine.shards_dir.exists() else []
         print(f'\n📊 百萬級裁判大庫現況：')
-        print(f'  - 索引庫路徑: {engine.index_db_path}')
-        print(f'  - 目前總筆數: {cnt:,} 筆')
-        print(f'  - 分片全文庫: {len(shards)} 個分片檔案 ({engine.shards_dir})')
+        print(f'  - 運作模式: {info.get("mode")} ({info.get("title")})')
+        print(f'  - 索引庫路徑: {info.get("path")}')
+        print(f'  - 目前索引數: {info.get("count", 0):,} 筆')
+        print(f'  - 分片狀態: {len(shards)} 個分片檔案 (預設 Index-Only 模式，無需 shards)')
         print(f'  - 待處理收件匣: {engine.inbox_dir}')
         print(f'\n使用範例：')
         print(f'  python build_million_judgments_db.py --migrate-local')
@@ -1306,6 +1648,7 @@ def main():
         print(f'  python build_million_judgments_db.py --download-opendata --target-count 1000000')
         print(f'  python build_million_judgments_db.py --search "借名登記"')
         print(f'  python build_million_judgments_db.py --lookup "108台上大1719"')
+        print(f'  python build_million_judgments_db.py --prune')
 
 
 if __name__ == "__main__":

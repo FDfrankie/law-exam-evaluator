@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import sqlite3
+import tempfile
 import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -25,13 +26,25 @@ except ImportError:
 DB_PATHS = [
     Path(DATA_DIR) / "judicial_authority.db",
     Path(__file__).resolve().parent.parent / "data" / "judicial_authority.db",
-    Path(__file__).resolve().parent / "data" / "judicial_authority.db" 
+    Path(__file__).resolve().parent / "data" / "judicial_authority.db",
+    Path(DATA_DIR) / "judicial_exam_core.db",
+    Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+    Path(tempfile.gettempdir()) / "judicial_exam_core.db",
 ]
 
 def get_authority_db_path() -> Path:
     for p in DB_PATHS:
-        if p.exists():
+        if p.exists() and p.stat().st_size > 1000:
             return p
+    # 嘗試從壓縮 core 庫自動解壓救援
+    try:
+        from build_million_judgments_db import MillionJudgmentsSQLiteEngine
+        for cand_core in DB_PATHS[-3:]:
+            unpacked = MillionJudgmentsSQLiteEngine._unpack_gz_if_needed(cand_core)
+            if unpacked and unpacked.exists():
+                return unpacked
+    except Exception:
+        pass
     # 預設落點優先在 data/judicial_authority.db
     target = DB_PATHS[0]
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -53,11 +66,16 @@ class JudicialAuthorityEngine:
             self._init_db()
 
     def _get_conn(self, read_only: bool = False) -> sqlite3.Connection:
-        conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
+        if read_only and self.db_path.exists():
+            uri = f"file:///{self.db_path.resolve().as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True, timeout=60.0, factory=ClosingConnection)
+        else:
+            conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
         conn.row_factory = sqlite3.Row
         try:
             conn.execute("PRAGMA busy_timeout = 60000;")
-            conn.execute("PRAGMA synchronous = NORMAL;")
+            if not read_only:
+                conn.execute("PRAGMA synchronous = NORMAL;")
             conn.execute("PRAGMA temp_store = MEMORY;")
         except Exception:
             pass

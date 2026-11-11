@@ -24,6 +24,8 @@ import urllib.request
 
 import sys
 
+import tempfile
+
 from pathlib import Path
 
 
@@ -1266,11 +1268,28 @@ except Exception:
 
     class MillionJudgmentsSQLiteEngine:
 
+        @staticmethod
+        def _unpack_gz_if_needed(db_path: Path):
+            return db_path if db_path and Path(db_path).exists() else None
+
+        @staticmethod
+        def is_valid_db(db_path: Path) -> bool:
+            return bool(db_path and Path(db_path).exists() and Path(db_path).stat().st_size > 4096)
+
         def __init__(self, *args, **kwargs):
 
-            pass
+            self.db_mode = "empty"
+            self.db_title = "📂 裁判資料庫 (安全降級模式)"
 
-        def get_total_count(self) -> int:
+        def is_available(self) -> bool:
+
+            return False
+
+        def get_db_info(self) -> dict:
+
+            return {"mode": "empty", "title": self.db_title, "count": 0, "path": "", "has_shards": False, "remote_api": False}
+
+        def get_total_count(self, *args, **kwargs) -> int:
 
             return 0
 
@@ -1283,6 +1302,10 @@ except Exception:
             return []
 
         def find_by_citation(self, citation):
+
+            return None
+
+        def get_redirect_target(self, case_id: str):
 
             return None
 
@@ -4846,23 +4869,23 @@ def render_judgements_ingest_view():
 
         st.markdown("""
 
-#### ⚡ 方式四：【母子庫架構】一鍵自百萬母庫萃取 60MB 司律精華子庫 (Core Extraction)
+#### ⚡ 方式四：【母子庫架構】一鍵自百萬母庫萃取司律精華子庫 (Core Extraction)
 
 本功能專為法學國考與 Streamlit 雲端極速部署設計。
 
-直接自本機已結構化之龐大百萬裁判母庫 (`judicial_1m_index.db`)，在 **30 秒** 內一鍵提煉出專供國考複習、AI 閱卷出題之輕量化子庫 (`judicial_exam_core.db`，約 50MB ~ 80MB)！
+直接自本機已結構化之百萬裁判母庫 (`judicial_1m_index.db`) 與權威判例庫 (`judicial_authority.db`)，一鍵提煉出專供國考複習、雲端部署與 AI 閱卷的輕量化子庫 (`judicial_exam_core.db` 與高壓縮 `.db.gz`)！
 
 
 
 > **🌟 母子庫架構核心優勢**：
 
-> 1. **全量國考法源 100% 完整收錄**：全量 813 則釋字、全量 59 則憲判字、全量 18,196 則經典判例要旨、大法庭裁定。
+> 1. **全量國考法源 100% 完整收錄**：全量司法院大法官釋字、憲法法庭憲判字、最高法院經典判例要旨、大法庭裁定與庭會議決議。
 
-> 2. **實質爭點純化去事實化**：自動過濾無爭點程序裁定與純事實爭執，剔除車禍鑑定長文與金流明細，體積驟降 95%！
+> 2. **實質爭點純化去事實化**：按憲法法庭 ➔ 最高法院 ➔ 高等法院分層索引萃取，剔除程序瑣碎雜訊，GZIP 壓縮後體積可降至 25MB 內。
 
-> 3. **唯讀防鎖作業 (Safe Read-Only)**：強制以唯讀模式連線母庫，絕不影響背景母庫持續入庫。
+> 3. **唯讀防鎖作業 (Safe Read-Only)**：強制以唯讀 URI 模式連線母庫，絕不影響母庫安全與背景寫入。
 
-> 4. **雲端 App 零延遲秒級載入**：萃取後之子庫可直接發布至 GitHub Release 或隨 App 部署，記憶體完全安全。
+> 4. **雲端 App 零延遲秒級載入**：可直接隨 Git 儲存庫或 GitHub Release 部署，開機自動解壓掛載。
 
 """)
 
@@ -4898,7 +4921,7 @@ def render_judgements_ingest_view():
 
             else:
 
-                st.warning("- **子庫檔案**：尚未萃取\n- **預期容量**：約 50 ~ 80 MB\n- **狀態**：⏳ 點選下方按鈕即可一鍵淬鍊提煉")
+                st.warning("- **子庫檔案**：尚未萃取\n- **預期容量**：約 20 ~ 60 MB (.db.gz < 25 MB)\n- **狀態**：⏳ 點選下方按鈕即可一鍵淬鍊提煉")
 
 
 
@@ -4914,11 +4937,16 @@ def render_judgements_ingest_view():
 
         with col_opt2:
 
-            opt_max_jud = st.selectbox("萃取標竿裁判數量限制：", options=[0, 10000, 30000, 50000, 100000], format_func=lambda x: "全數萃取 (推薦)" if x == 0 else f"前 {x:,} 筆", key="sel_core_max_jud")
+            opt_max_jud = st.selectbox(
+                "萃取標竿裁判數量限制：",
+                options=[35000, 50000, 100000, 10000, 0],
+                format_func=lambda x: "旗艦預設上限 (100,000 筆)" if x == 0 else (f"前 {x:,} 筆 (雲端推薦)" if x == 35000 else f"前 {x:,} 筆"),
+                key="sel_core_max_jud"
+            )
 
 
 
-        if st.button("🚀 立即啟動一鍵萃取：提煉 60MB 司律精華子庫 (export_exam_core_db)", type="primary", use_container_width=True, key="btn_run_core_export"):
+        if st.button("🚀 立即啟動一鍵萃取：提煉司律精華子庫 + GZIP (export_exam_core_db)", type="primary", use_container_width=True, key="btn_run_core_export"):
 
             with st.spinner("正在以唯讀模式連線母庫並萃取國考精華子庫..."):
 
@@ -4934,7 +4962,9 @@ def render_judgements_ingest_view():
 
                         dry_run=False,
 
-                        verbose=False
+                        verbose=False,
+
+                        gzip_output=True
 
                     )
 
@@ -4942,7 +4972,11 @@ def render_judgements_ingest_view():
 
                     new_sz = out_p.stat().st_size / (1024 * 1024)
 
-                    st.success(f"🎉 **司律核心精華子庫提煉成功！**\n\n- 📁 子庫路徑：`{out_p}`\n- 📦 子庫容量：`{new_sz:.1f} MB`（去事實化精萃，已壓縮 95% 以上！）\n- ⚡ 涵蓋全量釋字、憲判字、判例與實務標竿裁判，隨時可上傳 GitHub Release 供雲端 App 秒級載入！")
+                    gz_p = Path(str(out_p) + ".gz")
+
+                    gz_sz_txt = f"\n- 🗜️ 壓縮包容量：`{gz_p.stat().st_size / (1024 * 1024):.1f} MB`" if gz_p.exists() else ""
+
+                    st.success(f"🎉 **司律核心精華子庫提煉成功！**\n\n- 📁 子庫路徑：`{out_p}`\n- 📦 子庫容量：`{new_sz:.1f} MB`{gz_sz_txt}\n- ⚡ 涵蓋全量釋字、憲判字、經典判例與分層實務標竿裁判！")
 
                     time.sleep(2)
 
@@ -4974,9 +5008,9 @@ def ensure_database_assets() -> bool:
 
     """
 
-    檢查實體 SQLite 資料庫是否存在；若在雲端環境（無實體庫），
+    檢查實體 SQLite 資料庫是否存在；支援優先自動解壓隨附的 `judicial_exam_core.db.gz`
 
-    自動從 GitHub Release 下載至 PROJECT_ROOT/data/ 目錄。
+    或於雲端環境無實體權威庫時，從 GitHub Release 拉取至 PROJECT_ROOT/data/ 目錄。
 
     使用記憶體標記防止重複執行，杜絕 @st.cache_resource 引發之 CacheReplayClosureError。
 
@@ -5003,6 +5037,24 @@ def ensure_database_assets() -> bool:
         pass
 
     db_target = data_dir / "judicial_authority.db"
+
+    # 先嘗試自動解壓隨附之司律精華子庫 (judicial_exam_core.db.gz -> judicial_exam_core.db)
+    core_ready = False
+    try:
+        from config import DATA_DIR as _CFG_DATA_DIR
+        core_cands = [
+            Path(_CFG_DATA_DIR) / "judicial_exam_core.db",
+            base_dir / "data" / "judicial_exam_core.db",
+            base_dir.parent / "data" / "judicial_exam_core.db",
+            Path(tempfile.gettempdir()) / "judicial_exam_core.db",
+        ]
+        for cc in core_cands:
+            unpacked = MillionJudgmentsSQLiteEngine._unpack_gz_if_needed(cc)
+            if unpacked and MillionJudgmentsSQLiteEngine.is_valid_db(unpacked):
+                core_ready = True
+                break
+    except Exception:
+        pass
 
 
 
@@ -5062,6 +5114,11 @@ def ensure_database_assets() -> bool:
 
         pass
 
+    # 若雲端已備妥解壓後之司律精華子庫 (含全量釋字/憲判/判例與精萃裁判)，可立即運作免卡下載
+    if core_ready:
+        _DB_ASSETS_INITIALIZED = True
+        return True
+
 
 
     # 開始自 Release 串流下載
@@ -5106,7 +5163,7 @@ def ensure_database_assets() -> bool:
 
                 try:
 
-                    st.toast("✅ 權威裁判大庫（813 釋字 + 憲判 + 萬則判例）下載並載入完成！", icon="🎉")
+                    st.toast("✅ 權威裁判大庫（釋字 + 憲判 + 經典判例）下載並載入完成！", icon="🎉")
 
                 except Exception:
 
@@ -5124,7 +5181,7 @@ def ensure_database_assets() -> bool:
 
     _DB_ASSETS_INITIALIZED = True
 
-    return False
+    return core_ready
 
 
 
@@ -5132,7 +5189,7 @@ def ensure_database_assets() -> bool:
 
 def get_db_path() -> str:
 
-    """獲取權威見解與判例資料庫之最優先實體路徑"""
+    """獲取權威見解與判例資料庫之最優先實體路徑（優先 authority，若無則降級至 exam_core）"""
 
     base_dir = Path(__file__).resolve().parent
 
@@ -5146,7 +5203,15 @@ def get_db_path() -> str:
 
         Path("G:/我的雲端硬碟/LawExamData/data/judicial_authority.db"),
 
-        Path("data/judicial_authority.db")
+        Path("data/judicial_authority.db"),
+
+        Path(DATA_DIR) / "judicial_exam_core.db",
+
+        base_dir / "data" / "judicial_exam_core.db",
+
+        base_dir.parent / "data" / "judicial_exam_core.db",
+
+        Path(tempfile.gettempdir()) / "judicial_exam_core.db",
 
     ]
 
@@ -5168,9 +5233,9 @@ def get_realtime_database_stats() -> dict:
 
     """
 
-    動態穿透快取，即時查詢 SQLite 資料庫內的真實判例、憲判裁定與裁判總數。
+    動態穿透快取，即時查詢 SQLite 資料庫內的真實判例、憲判裁定與百萬裁判母庫總數。
 
-    包含 precedents 與 authority_records 全量加總，支援雙表計數與雲端基準回退。
+    全程強制唯讀 URI 連線 (?mode=ro)，零鎖定風險。
 
     """
 
@@ -5184,11 +5249,17 @@ def get_realtime_database_stats() -> dict:
 
     stats = {
 
-        "total_precedents": 18196,
+        "total_precedents": 10444,
 
-        "total_constitutional": 869,
+        "total_constitutional": 1181,
 
-        "total_authority": 19065,
+        "total_authority": 11625,
+
+        "total_judgments": 0,
+
+        "db_mode": "core",
+
+        "db_title": "📂 裁判資料庫",
 
         "is_fallback": True,
 
@@ -5198,19 +5269,33 @@ def get_realtime_database_stats() -> dict:
 
     try:
 
+        mdb_inf = get_million_db_engine().get_db_info()
+
+        stats["total_judgments"] = int(mdb_inf.get("count", 0) or 0)
+
+        stats["db_mode"] = mdb_inf.get("mode", "empty")
+
+        stats["db_title"] = mdb_inf.get("title", "📂 裁判資料庫")
+
+    except Exception:
+
+        pass
+
+    try:
+
         db_path = get_db_path()
 
         if os.path.exists(db_path) and os.path.getsize(db_path) > 4096:
 
-            conn = sqlite3.connect(db_path, timeout=3.0)
+            uri = f"file:///{Path(db_path).resolve().as_posix()}?mode=ro"
+
+            conn = sqlite3.connect(uri, uri=True, timeout=5.0)
 
             cur = conn.cursor()
 
-            # 1. 查詢判例真實筆數（雙表計數：支援 precedents 與 precedent_crawl_queue）
+            # 1. 查詢判例真實筆數
 
             p_cnt = 0
-
-            q_cnt = 0
 
             try:
 
@@ -5222,17 +5307,9 @@ def get_realtime_database_stats() -> dict:
 
                 pass
 
-            try:
+            if p_cnt > 0:
 
-                cur.execute("SELECT COUNT(*) FROM precedent_crawl_queue")
-
-                q_cnt = cur.fetchone()[0] or 0
-
-            except Exception:
-
-                pass
-
-            stats["total_precedents"] = max(p_cnt, q_cnt, 18196)
+                stats["total_precedents"] = p_cnt
 
 
 
@@ -5262,7 +5339,9 @@ def get_realtime_database_stats() -> dict:
 
                     pass
 
-            stats["total_constitutional"] = auth_cnt if auth_cnt > 0 else 869
+            if auth_cnt > 0:
+
+                stats["total_constitutional"] = auth_cnt
 
             stats["is_fallback"] = False
 
@@ -5298,11 +5377,28 @@ def get_realtime_database_stats() -> dict:
 
 if app_mode == MODE_HOME:
 
-    hero_html = """<div style="padding: 26px 32px; border-radius: 16px; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%); color: white; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.25), 0 8px 10px -6px rgba(30, 58, 138, 0.2); border: 1px solid rgba(255, 255, 255, 0.12);">
+    # 先取得動態即時資料庫統計，供 Hero Banner 與儀表板同步呈現真實筆數
+    db_stats = get_realtime_database_stats()
+    _jud_cnt = int(db_stats.get("total_judgments", 0) or 0)
+    _db_mode = db_stats.get("db_mode", "core")
+    if _db_mode == "master" and _jud_cnt >= 1_000_000:
+        _hero_status_badge = f"🟢 {_jud_cnt // 10000:,} 萬+ 裁判實時母庫就緒"
+        _hero_db_chip = f"🏛️ {_jud_cnt:,} 筆實時實體裁判母庫"
+    elif _db_mode == "remote":
+        _hero_status_badge = "🌐 本機全量百萬裁判遠端橋接就緒"
+        _hero_db_chip = "🏛️ 本機 797 萬+ 裁判母庫即時穿透"
+    elif _jud_cnt > 0:
+        _hero_status_badge = f"⚖️ {_jud_cnt:,} 筆司律精萃裁判子庫就緒"
+        _hero_db_chip = f"🏛️ {_jud_cnt:,} 筆實務精萃裁判 + 全量釋字判例"
+    else:
+        _hero_status_badge = "⚖️ 權威判例與憲判大庫就緒"
+        _hero_db_chip = f"🏛️ {db_stats.get('total_authority', 11625):,} 筆釋字憲判與判例要旨"
+
+    hero_html = f"""<div style="padding: 26px 32px; border-radius: 16px; background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%); color: white; margin-bottom: 24px; box-shadow: 0 10px 25px -5px rgba(30, 58, 138, 0.25), 0 8px 10px -6px rgba(30, 58, 138, 0.2); border: 1px solid rgba(255, 255, 255, 0.12);">
     <div style="display: inline-flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, 0.14); backdrop-filter: blur(8px); padding: 4px 14px; border-radius: 9999px; font-size: 0.84rem; font-weight: 600; color: #bfdbfe; margin-bottom: 12px; border: 1px solid rgba(255, 255, 255, 0.18);">
         <span>⚖️ 司律法學研析旗艦平台</span>
         <span style="opacity: 0.4;">•</span>
-        <span style="color: #6ee7b7;">🟢 470 萬裁判實時母庫就緒</span>
+        <span style="color: #6ee7b7;">{_hero_status_badge}</span>
     </div>
     <h1 style="color: #ffffff; margin: 0 0 10px 0; font-size: 2.15rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.25;">
         司律考試 AI 評分、命題、判解檢索與六法研析平台
@@ -5311,8 +5407,8 @@ if app_mode == MODE_HOME:
         整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 AI 筆記煉金工坊之一站式法學實戰平台。
     </p>
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">🏛️ 4,697,051 筆裁判實體大庫</span>
-        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📜 61 部考科六法 & 立院公報</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">{_hero_db_chip}</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📜 61 部考科六法 & 10,452 部行政命令</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📝 二試手寫試卷雙模態 OCR 批閱</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">✍️ IRAC 高分示範擬答</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">🛡️ 案號防偽 0 幻覺穿透驗證</span>
@@ -5322,23 +5418,21 @@ if app_mode == MODE_HOME:
 
     # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
 
-    db_stats = get_realtime_database_stats()
-
     total_mcq_cnt = len(get_cached_stage1_mcqs())
 
     qpool_stats = get_cached_question_pool_stats()
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
 
-    m_c1.metric("📜 全國法規與命令條文", "2,053 部 / 62,342 條", "支援最新修法自動同步")
+    m_c1.metric("📜 全國法規與命令條文", "2,141 部 / 64,162 條", "另含 10,452 部中央行政命令")
 
     m_c2.metric(
 
-        "🏛️ 裁判大庫與權威見解",
+        "🏛️ 實務裁判與權威見解",
 
-        f"{db_stats['total_authority']:,} 筆",
+        f"{_jud_cnt:,} 筆" if _jud_cnt > 0 else f"{db_stats['total_authority']:,} 筆",
 
-        f"判例 {db_stats['total_precedents']:,} ｜ 憲判與釋字 {db_stats['total_constitutional']:,}"
+        f"判例 {db_stats['total_precedents']:,} ｜ 憲判釋字大庭 {db_stats['total_constitutional']:,}"
 
     )
 
@@ -5526,7 +5620,7 @@ if app_mode == MODE_HOME:
 
 #### 三、裁判引用真實性保證與正本核驗機制聲明
 
-1. **堅決杜絕 AI 幻覺虛構案號**：本系統已全面啟用實時防偽校驗引擎，所有 AI 評閱、擬答、問答與教科書生成內容中所引述之法院裁判字號、大法官解釋與憲法法庭判決，均逐一穿透比對司法院 400 萬筆實體裁判大庫與權威判例庫。
+1. **堅決杜絕 AI 幻覺虛構案號**：本系統已全面啟用實時防偽校驗引擎，所有 AI 評閱、擬答、問答與教科書生成內容中所引述之法院裁判字號、大法官解釋與憲法法庭判決，均逐一穿透比對司法院實體裁判大庫與權威判例庫。
 
 2. **官方正本雙軌直連**：經比對無誤之實體裁判均自動附加司法院裁判書官方檢索連結；若查無實體裁判文書，系統將主動以醒目警示標註，防範考生或實務工作者誤信不實字號。
 
@@ -6192,7 +6286,7 @@ elif app_mode == MODE_EVAL or any(k in app_mode for k in ["試卷", "評分", "�
 
                     if student_ver and student_ver.get("hallucination_count", 0) > 0:
 
-                        st.warning(f"⚠️ **【考生作答防偽警示】**：考生原卷引述之字號中，經比對全國 400 萬筆裁判大庫偵測到 **{student_ver['hallucination_count']} 筆** 查無實體文書之案號！國家考試正式作答切勿憑空捏造字號。")
+                        st.warning(f"⚠️ **【考生作答防偽警示】**：考生原卷引述之字號中，經比對司法院實體裁判與判例大庫偵測到 **{student_ver['hallucination_count']} 筆** 查無實體文書之案號！國家考試正式作答切勿憑空捏造字號。")
 
 
 
@@ -9727,7 +9821,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
     M5_SUB_ADVANCED_SEARCH = "⚖️ 裁判書多維專業檢索 (支援布林語法)"
 
-    M5_SUB_UNIFIED_CORPUS = "🌐 全方位法學大典藏跨庫檢索 (409萬裁判/判例/釋字/命令/法律)"
+    M5_SUB_UNIFIED_CORPUS = "🌐 全方位法學大典藏跨庫檢索 (裁判/判例/釋字/命令/法律)"
 
     M5_SUB_HOT_SEARCH = "⚡ 權威實務裁判與先例即時檢索"
 
@@ -9821,7 +9915,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
             db_inf = get_million_db_engine().get_db_info()
 
-            st.info(f"**裁判庫連線狀態**：`{db_inf['title']}` ｜ ⚡ 已連接全國 400 萬筆實體裁判大庫與審級脈絡，支援司法院官方正本即時校驗")
+            st.info(f"**裁判庫連線狀態**：`{db_inf['title']}` ｜ ⚡ 實時索引總數：`{db_inf.get('count', 0):,}` 筆，支援審級脈絡與司法院官方正本即時校驗")
 
         except Exception:
 
@@ -10315,23 +10409,44 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
         st.subheader("🌐 全方位法學大典藏跨庫統一檢索")
 
-        st.caption("完整比照「法源法律網」與「七法 Laws.club」旗艦檢索架構！一站式貫穿本機 **4,069,011 筆實體裁判**、**11,625 筆最高法院判例與決議**、**840+ 筆憲法法庭判決與大法官解釋**、**10,452 部行政命令要點**與 **1,351 部全國法律**。")
+        try:
+            _c_stats = get_unified_corpus_engine().get_corpus_statistics()
+        except Exception:
+            _c_stats = {
+                "judgments": 0, "precedents": 10444, "constitution": 1181,
+                "orders": 10452, "statutes": 1351, "academic": 115, "total_assets": 23543
+            }
+
+        _j_cnt = int(_c_stats.get("master_judgments") or _c_stats.get("judgments") or 0)
+        if _j_cnt <= 0:
+            try:
+                _j_cnt = int(get_million_db_engine().get_total_count() or 0)
+            except Exception:
+                pass
+        _p_cnt = int(_c_stats.get("precedents_and_resolutions") or _c_stats.get("precedents") or 10444)
+        _con_cnt = int(_c_stats.get("constitutional_and_interpretations") or _c_stats.get("constitution") or 1181)
+        _ord_cnt = int(_c_stats.get("administrative_orders") or _c_stats.get("orders") or 10452)
+        _stat_cnt = int(_c_stats.get("national_laws") or _c_stats.get("statutes") or 1351)
+        _acad_cnt = int(_c_stats.get("academic_coursework") or _c_stats.get("academic") or 115)
+        _tot_cnt = int(_c_stats.get("total_items") or _c_stats.get("total_assets") or (_j_cnt + _p_cnt + _con_cnt + _ord_cnt + _stat_cnt + _acad_cnt))
+
+        st.caption(f"完整比照「法源法律網」與「七法 Laws.club」旗艦檢索架構！一站式貫穿 **{_j_cnt:,} 筆實體裁判**、**{_p_cnt:,} 則最高法院判例與決議**、**{_con_cnt:,} 筆憲法判決與大法官釋字**、**{_ord_cnt:,} 部行政命令**與 **{_stat_cnt:,} 部全國法律**。")
 
 
 
         col_st1, col_st2, col_st3, col_st4, col_st5, col_st6 = st.columns(6)
 
-        col_st1.metric("🏛️ 實體裁判大庫", "4,069,011 筆", "覆蓋各級法院")
+        col_st1.metric("🏛️ 實體裁判大庫", f"{_j_cnt:,} 筆", "覆蓋各級法院")
 
-        col_st2.metric("⚖️ 最高院原判例", "11,625 則", "百年司法傳承")
+        col_st2.metric("⚖️ 最高院原判例", f"{_p_cnt:,} 則", "百年司法傳承")
 
-        col_st3.metric("📜 憲判與釋字", "840+ 則", "憲政基本權")
+        col_st3.metric("📜 憲判與釋字", f"{_con_cnt:,} 則", "憲政基本權")
 
-        col_st4.metric("📋 行政命令要點", "10,452 部", "部會函令指引")
+        col_st4.metric("📋 行政命令要點", f"{_ord_cnt:,} 部", "部會函令指引")
 
-        col_st5.metric("📘 全國現行法律", "1,351 部", "法規母法全集")
+        col_st5.metric("📘 全國現行法律", f"{_stat_cnt:,} 部", "法規母法全集")
 
-        col_st6.metric("🎓 學者名師講義", "115 份", "爭點解題架構")
+        col_st6.metric("🎓 學者名師講義", f"{_acad_cnt:,} 份", "爭點解題架構")
 
 
 
@@ -10339,19 +10454,19 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
 
         corpus_categories = {
 
-            "ALL": "🌐 全庫綜合整合檢索 (409萬法學大典)",
+            "ALL": f"🌐 全庫綜合整合檢索 ({_tot_cnt:,} 筆)",
 
-            "ACADEMIC": "🎓 學者評釋與名師講義 (115 份講義)",
+            "ACADEMIC": f"🎓 學者評釋與名師講義 ({_acad_cnt:,} 份)",
 
-            "PRECEDENTS": "⚖️ 最高法院判例與決議 (11,625 則)",
+            "PRECEDENTS": f"⚖️ 最高法院判例與決議 ({_p_cnt:,} 則)",
 
-            "CONSTITUTION": "📜 憲法判決與司法院釋字 (840+ 則)",
+            "CONSTITUTION": f"📜 憲法判決與司法院釋字 ({_con_cnt:,} 則)",
 
-            "ORDERS": "📋 全國行政法規命令與作業要點 (10,452 部)",
+            "ORDERS": f"📋 全國行政法規命令與作業要點 ({_ord_cnt:,} 部)",
 
-            "STATUTES": "📘 全國現行法律條文 (1,351 部)",
+            "STATUTES": f"📘 全國現行法律條文 ({_stat_cnt:,} 部)",
 
-            "JUDGMENTS": "🏛️ 各級法院實體裁判 (406 萬筆)"
+            "JUDGMENTS": f"🏛️ 各級法院實體裁判 ({_j_cnt:,} 筆)"
 
         }
 
@@ -14811,7 +14926,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
     st.header("⚖️ 智慧六法與條文爭點標註系統")
 
-    st.write("全面收錄全台 **2,053 部國家法律、法規命令與施行細則，共 62,342 條法定條文，及 600+ 則中央部會權威行政函釋**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則全文點閱**、**主管機關權威函釋**及**考生個人手寫讀書筆記**！")
+    st.write("全面收錄全台 **2,141 部國家法律與法規命令（核心高頻條文庫共 64,162 條，另貫穿 10,452 部中央行政命令與施行細則）及 600+ 則中央部會權威行政函釋**，直接在條文下方完整串接**條文結構**、**立法理由與沿革**、**憲判字/最高法院大法庭權威裁判**、**學說肯否二說**、**法規命令施行細則全文點閱**、**主管機關權威函釋**及**考生個人手寫讀書筆記**！")
 
 
 
@@ -15335,7 +15450,7 @@ elif app_mode == MODE_SIX_CODES or any(k in app_mode for k in ["六法", "法條
 
                 with tab_prec:
 
-                    # 1. 動態合併跨庫 406 萬實務判解與標註判解庫
+                    # 1. 動態合併跨庫實務裁判與權威判解庫
 
                     all_prec_pool = []
 

@@ -2,6 +2,7 @@ import os
 import re
 import json
 import sqlite3
+import tempfile
 import urllib.parse
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
@@ -80,13 +81,29 @@ class CaseCitationVerifier:
         self._const_file_map = None
 
     def _init_paths(self):
-        self.index_db_path = Path(JUDICIAL_1M_DIR) / "judicial_1m_index.db"
-        if not self.index_db_path.exists():
-            cand = Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db"
-            if cand.exists():
-                self.index_db_path = cand
+        try:
+            from build_million_judgments_db import get_million_db_engine
+            self.index_db_path = get_million_db_engine().index_db_path
+        except Exception:
+            self.index_db_path = Path(JUDICIAL_1M_DIR) / "judicial_1m_index.db"
+            if not self.index_db_path.exists():
+                for cand in [
+                    Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db",
+                    Path(DATA_DIR) / "judicial_exam_core.db",
+                    Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+                ]:
+                    if cand.exists():
+                        self.index_db_path = cand
+                        break
 
-        self.authority_db_path = Path(DATA_DIR) / "judicial_authority.db"
+        auth_cands = [
+            Path(DATA_DIR) / "judicial_authority.db",
+            Path(__file__).resolve().parent / "data" / "judicial_authority.db",
+            Path(DATA_DIR) / "judicial_exam_core.db",
+            Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+            Path(tempfile.gettempdir()) / "judicial_exam_core.db",
+        ]
+        self.authority_db_path = next((p for p in auth_cands if p.exists() and p.stat().st_size > 1000), auth_cands[0])
         self.precedents_json_path = Path(RAW_DATA_DIR) / "precedents_catalog.json"
         for cand_prec in [
             Path(DATA_DIR) / "precedents_catalog.json",
@@ -434,46 +451,28 @@ class CaseCitationVerifier:
                     pass
 
         # ---------------------------------------------------------------------
-        # 檢驗情境 C: 百萬裁判資料庫毫秒級比對 (idx_meta_ywn)
+        # 檢驗情境 C: 百萬裁判資料庫 / 國考精華子庫毫秒級比對 (idx_meta_ywn + 唯讀 URI)
         # ---------------------------------------------------------------------
-        if y and n and self.index_db_path.exists():
+        if (y and n) or cat in ("CONSTITUTIONAL", "INTERPRETATION"):
             try:
-                with sqlite3.connect(str(self.index_db_path), timeout=30.0) as m_conn:
-                    m_conn.row_factory = sqlite3.Row
-                    try:
-                        m_conn.execute("PRAGMA busy_timeout = 30000;")
-                    except Exception:
-                        pass
-
-                    word_candidates = [w]
-                    if w == "台上":
-                        word_candidates.extend(["台上大", "台上大四", "台抗", "台非"])
-                    elif w == "上":
-                        word_candidates.extend(["上易", "上訴", "重上", "重上更"])
-                    elif "台上" in w:
-                        word_candidates.append("台上")
-
-                    matched_row = None
-                    for wc in word_candidates:
-                        r = m_conn.execute(
-                            "SELECT case_id, court, date, holding_preview, laws_cited, title, jid "
-                            "FROM judgments_meta WHERE jud_year = ? AND jud_word = ? AND jud_no = ? LIMIT 1",
-                            (y, wc, n)
-                        ).fetchone()
-                        if r:
-                            matched_row = r
-                            break
-
-                    if matched_row:
+                from build_million_judgments_db import get_million_db_engine
+                db_eng = get_million_db_engine()
+                if db_eng.is_available():
+                    lookup_q = f"{cit.get('court', '')} {y} 年度{w}字第 {n} 號".strip() if (y and w and n) else cit.get("raw", "")
+                    m_res = db_eng.find_by_citation(lookup_q)
+                    if not m_res and cit.get("raw") and cit.get("raw") != lookup_q:
+                        m_res = db_eng.find_by_citation(cit["raw"])
+                    if m_res and m_res.get("found"):
                         result["is_verified"] = True
-                        result["match_source"] = "MILLION_JUDGMENTS_MASTER_DB"
-                        result["case_id"] = matched_row["case_id"]
-                        result["court"] = matched_row["court"] or result["court"]
-                        result["date"] = matched_row["date"] or ""
-                        result["title"] = matched_row["title"] or ""
-                        result["holding"] = matched_row["holding_preview"] or ""
-                        result["laws_cited"] = matched_row["laws_cited"] or ""
-                        result["official_url"] = self.build_official_judicial_url(result["case_id"], matched_row["jid"] or "")
+                        result["match_source"] = "MILLION_JUDGMENTS_MASTER_DB" if db_eng.db_mode in ("master", "remote") else "JUDICIAL_EXAM_CORE_DB"
+                        result["case_id"] = m_res.get("case_id") or result["case_id"]
+                        result["court"] = m_res.get("court") or m_res.get("court_or_agency") or result["court"]
+                        result["date"] = m_res.get("date") or ""
+                        result["title"] = m_res.get("title") or result["case_id"]
+                        result["holding"] = m_res.get("holding_snippet") or m_res.get("text", "")[:500]
+                        lc_m = m_res.get("laws_cited", "")
+                        result["laws_cited"] = "、".join(lc_m) if isinstance(lc_m, list) else str(lc_m or "")
+                        result["official_url"] = m_res.get("official_url") or self.build_official_judicial_url(result["case_id"], m_res.get("jid", ""))
                         return result
             except Exception:
                 pass
@@ -567,10 +566,18 @@ class CaseCitationVerifier:
             except Exception:
                 pass
 
+        db_label = "百萬裁判索引"
+        try:
+            from build_million_judgments_db import get_million_db_engine
+            cnt = get_million_db_engine().get_total_count()
+            if cnt > 0:
+                db_label = f"{cnt:,} 筆"
+        except Exception:
+            pass
         result["is_verified"] = False
         result["match_source"] = "UNVERIFIED_HALLUCINATION"
         result["warning"] = (
-            f"⚠️【查無實體判決警示】經比對全國 400 萬筆裁判庫與權威判例資料庫，"
+            f"⚠️【查無實體判決警示】經比對全國實體裁判庫（{db_label}）與權威判例資料庫，"
             f"查無「{cit.get('raw')}」之實體裁判文書。為防範 AI 幻覺生成不存在之假案號，"
             f"請勿直接援引於國考答卷，建請以系統下方推薦之實體權威裁判見解為準。"
         )
@@ -651,10 +658,19 @@ class CaseCitationVerifier:
         if not records:
             return ""
 
+        db_scale_str = "百萬裁判索引"
+        try:
+            from build_million_judgments_db import get_million_db_engine
+            cnt = get_million_db_engine().get_total_count()
+            if cnt > 0:
+                db_scale_str = f"{cnt:,} 筆"
+        except Exception:
+            pass
+
         md_lines = [
             "\n\n---\n",
             "### 🏛️ 裁判引用真實性查核清單 (Ground Truth Case Audit)",
-            "> 🛡️ **本平台已啟動案號防偽核驗機制**：所有回答所引述之法院裁判、判例或憲法法庭判決均經過 400 萬筆實體資料庫實質檢驗，堅決杜絕 AI 幻覺虛構案號。\n"
+            f"> 🛡️ **本平台已啟動案號防偽核驗機制**：所有回答所引述之法院裁判、判例或憲法法庭判決均經過 **{db_scale_str}** 實體資料庫實質檢驗，堅決杜絕 AI 幻覺虛構案號。\n"
         ]
 
         table_rows = []

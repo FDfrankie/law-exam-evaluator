@@ -241,7 +241,6 @@ def _log_ingest_metrics(target_name: str, added_count: int, total_db_count: int)
     }
     log_targets = [
         Path(__file__).resolve().parent / "data" / "ingest_log.jsonl",
-        DATA_DIR / "data" / "ingest_log.jsonl",
         DATA_DIR / "ingest_log.jsonl"
     ]
     for lp in log_targets:

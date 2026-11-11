@@ -608,20 +608,26 @@ def get_all_administrative_rulings() -> List[Dict[str, Any]]:
 
     unified = []
     seen = set()
-    
+
+    def _clean_doc_text(s: Any) -> str:
+        txt = str(s or "").strip()
+        txt = re.sub(r"字第\s*第+", "字第", txt)
+        txt = re.sub(r"第\s*第+\s*", "第", txt)
+        return re.sub(r"\s*條\s*條+", "條", txt)
+
     # 1. 優先納入標竿函釋
     for r in LANDMARK_ADMIN_RULINGS:
-        doc_no = r.get("doc_number", "")
+        doc_no = _clean_doc_text(r.get("doc_number", ""))
         if doc_no and doc_no not in seen:
             seen.add(doc_no)
             unified.append(r)
             
     # 2. 納入 interpretations_catalog.json (涵蓋經濟部商工行政爬取之全量函釋與部會令釋)
     for c in catalog:
-        doc_no = c.get("interpret_id") or c.get("doc_number", "")
+        doc_no = _clean_doc_text(c.get("interpret_id") or c.get("doc_number", ""))
         if doc_no and doc_no not in seen:
             seen.add(doc_no)
-            raw_target = str(c.get("article_no", ""))
+            raw_target = _clean_doc_text(c.get("article_no", ""))
             art_no_clean = re.sub(r'[第條\s]', '', raw_target).replace('之', '-')
             entry = {
                 "id": doc_no,
@@ -632,7 +638,7 @@ def get_all_administrative_rulings() -> List[Dict[str, Any]]:
                 "agency": c.get("authority") or c.get("agency", "經濟部商業發展署"),
                 "doc_number": doc_no,
                 "date": c.get("date", ""),
-                "title": c.get("title", ""),
+                "title": _clean_doc_text(c.get("title", "")),
                 "holding": c.get("holding", ""),
                 "content_analysis": c.get("full_text") or c.get("content_analysis") or c.get("holding", ""),
                 "exam_point_hint": c.get("exam_hint") or c.get("exam_point_hint", ""),
@@ -642,9 +648,13 @@ def get_all_administrative_rulings() -> List[Dict[str, Any]]:
 
     # 3. 納入動態爬取之快取
     for cr in load_crawled_admin_rulings():
-        doc_no = cr.get("doc_number") or cr.get("id", "")
+        doc_no = _clean_doc_text(cr.get("doc_number") or cr.get("id", ""))
         if doc_no and doc_no not in seen:
             seen.add(doc_no)
+            cr = dict(cr)
+            cr["doc_number"] = doc_no
+            if cr.get("title"):
+                cr["title"] = _clean_doc_text(cr["title"])
             unified.append(cr)
 
     _CACHED_MASTER_INTERPRETATIONS = unified

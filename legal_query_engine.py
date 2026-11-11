@@ -722,6 +722,90 @@ def generate_judicial_search_urls(query: str, subject: str = "") -> Dict[str, st
         "🏢 智慧財產及商業法院裁判檢索": "https://ipc.judicial.gov.tw/tw/lp-66-071.html"
     }
 
+def _merge_million_db_results(
+    final_results: List[Dict[str, Any]],
+    query_text: str = "",
+    case_year: str = "",
+    case_word: str = "",
+    case_num: str = "",
+    case_cause: str = "",
+    main_holding: str = "",
+    argument_issue: str = "",
+    cited_laws: str = "",
+    case_type: str = "全部",
+    court_system: str = "全部法院 (全體司法體系)",
+    filter_no_legal_issue: bool = True,
+    top_k: int = 10,
+    prefer_sqlite: bool = False
+) -> List[Dict[str, Any]]:
+    """統一將 797 萬母庫 / 國考精華子庫 / 遠端橋接檢索結果融合入查詢回傳結構。"""
+    try:
+        from build_million_judgments_db import get_million_db_engine
+        db_engine = get_million_db_engine()
+        if not db_engine.is_available():
+            return final_results[:top_k]
+
+        db_hits = db_engine.search_fts_and_meta(
+            query=query_text.strip(),
+            jud_year=case_year.strip(),
+            jud_word=case_word.strip(),
+            jud_no=case_num.strip(),
+            case_cause=case_cause.strip(),
+            main_holding=main_holding.strip(),
+            argument_issue=argument_issue.strip(),
+            cited_laws=cited_laws.strip(),
+            case_type=case_type,
+            court_system=court_system,
+            filter_no_legal_issue=filter_no_legal_issue,
+            top_k=top_k
+        )
+        seen_ids = {x.get("case_id") for x in final_results if x.get("case_id")}
+        sqlite_items = []
+        for dh in db_hits:
+            cid = dh.get("case_id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                raw_laws = dh.get("laws_cited")
+                if isinstance(raw_laws, list):
+                    laws_list = raw_laws
+                elif isinstance(raw_laws, str):
+                    laws_list = [x.strip() for x in raw_laws.split("、") if x.strip()]
+                else:
+                    laws_list = []
+
+                sqlite_items.append({
+                    "case_id": cid,
+                    "jid": dh.get("jid", ""),
+                    "court": dh.get("court", ""),
+                    "level": dh.get("level", "司法裁判"),
+                    "subject": dh.get("subject", "法學專業實務"),
+                    "sub_category": dh.get("title", cid),
+                    "title": dh.get("title", cid),
+                    "laws_cited": laws_list,
+                    "issue": dh.get("issue", ""),
+                    "holding": dh.get("holding") or dh.get("holding_preview") or "",
+                    "scholarly_views": dh.get("scholarly_views", ""),
+                    "exam_application_hint": dh.get("exam_application_hint", ""),
+                    "has_legal_issue": bool(dh.get("has_legal_issue", 1)),
+                    "extracted_history_instances": dh.get("extracted_history_instances") or dh.get("history_instances") or [],
+                    "substantive_prior": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
+                    "substantive_prior_instance": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
+                    "history_cases": dh.get("history_cases") or [],
+                    "shard_key": dh.get("shard_key", ""),
+                    "official_url": dh.get("official_url") or db_engine.get_official_url(cid, dh.get("jid", "")),
+                    "source": "million_judgments_db"
+                })
+
+        if prefer_sqlite or case_year or case_num or case_cause or main_holding or argument_issue:
+            merged = sqlite_items + final_results
+        else:
+            merged = final_results + sqlite_items
+        return merged[:top_k]
+    except Exception as e_sql:
+        print(f"[SQLite Merge Warning] {e_sql}")
+        return final_results[:top_k]
+
+
 def search_precedents_advanced(
     court_system: str = "全部法院 (全體司法體系)",
     jud_year: str = "",
@@ -978,74 +1062,22 @@ def search_precedents_advanced(
         if len(final_results) >= top_k:
             break
 
-    # 整合 SQLite 百萬裁判大庫 / 司律精華子庫 (雙軌智慧穿透與審級脈絡)
-    try:
-        from build_million_judgments_db import get_million_db_engine
-        db_engine = get_million_db_engine()
-        if db_engine.index_db_path.exists():
-            db_hits = db_engine.search_fts_and_meta(
-                query=f"{clean_cause} {clean_holding} {clean_issue}".strip(),
-                jud_year=clean_year,
-                jud_word=clean_word,
-                jud_no=clean_no,
-                case_cause=clean_cause,
-                main_holding=clean_holding,
-                argument_issue=clean_issue,
-                cited_laws=clean_laws,
-                case_type=case_type,
-                court_system=court_system,
-                filter_no_legal_issue=filter_no_legal_issue,
-                top_k=top_k
-            )
-            seen_ids = {x.get("case_id") for x in final_results}
-            # 將 SQLite 大庫命中之標的置於前端 (若為精準案號或高權重爭點)
-            sqlite_items = []
-            for dh in db_hits:
-                cid = dh.get("case_id")
-                if cid and cid not in seen_ids:
-                    seen_ids.add(cid)
-                    raw_laws = dh.get("laws_cited")
-                    if isinstance(raw_laws, list):
-                        laws_list = raw_laws
-                    elif isinstance(raw_laws, str):
-                        laws_list = [x.strip() for x in raw_laws.split("、") if x.strip()]
-                    else:
-                        laws_list = []
-
-                    dh_item = {
-                        "case_id": cid,
-                        "jid": dh.get("jid", ""),
-                        "court": dh.get("court", ""),
-                        "level": dh.get("level", "司法裁判"),
-                        "subject": dh.get("subject", "法學專業實務"),
-                        "sub_category": dh.get("title", cid),
-                        "title": dh.get("title", cid),
-                        "laws_cited": laws_list,
-                        "issue": dh.get("issue", ""),
-                        "holding": dh.get("holding") or dh.get("holding_preview") or "",
-                        "scholarly_views": dh.get("scholarly_views", ""),
-                        "exam_application_hint": dh.get("exam_application_hint", ""),
-                        "has_legal_issue": bool(dh.get("has_legal_issue", 1)),
-                        "extracted_history_instances": dh.get("extracted_history_instances") or dh.get("history_instances") or [],
-                        "substantive_prior": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
-                        "substantive_prior_instance": dh.get("substantive_prior") or dh.get("substantive_prior_instance") or "",
-                        "history_cases": dh.get("history_cases") or [],
-                        "shard_key": dh.get("shard_key", ""),
-                        "official_url": dh.get("official_url") or db_engine.get_official_url(cid, dh.get("jid", "")),
-                        "source": "million_judgments_db"
-                    }
-                    sqlite_items.append(dh_item)
-
-            # 若有指定案號或關鍵字，優先呈現 SQLite 命中
-            if clean_year or clean_no or clean_cause or clean_holding or clean_issue:
-                final_results = sqlite_items + final_results
-            else:
-                final_results = final_results + sqlite_items
-            final_results = final_results[:top_k]
-    except Exception as e_sql:
-        print(f"[SQLite Merge Warning] {e_sql}")
-
-    return final_results
+    # 整合 SQLite 百萬裁判大庫 / 司律精華子庫 / 遠端橋接 (統一共用輔助函式)
+    return _merge_million_db_results(
+        final_results=final_results,
+        query_text=f"{clean_cause} {clean_holding} {clean_issue}".strip(),
+        case_year=clean_year,
+        case_word=clean_word,
+        case_num=clean_no,
+        case_cause=clean_cause,
+        main_holding=clean_holding,
+        argument_issue=clean_issue,
+        cited_laws=clean_laws,
+        case_type=case_type,
+        court_system=court_system,
+        filter_no_legal_issue=filter_no_legal_issue,
+        top_k=top_k,
+    )
 
 
 
@@ -1298,6 +1330,25 @@ def search_local_precedents(
         if len(final_precedents) >= top_k:
             break
 
+    # 融合 797 萬母庫 / 國考精華子庫 / 遠端橋接檢索結果（若指定案號或精選結果未滿 top_k）
+    if len(final_precedents) < top_k or case_year or case_num or statute_target:
+        court_sys_str = " ".join(court_categories) if court_categories else "全部法院 (全體司法體系)"
+        final_precedents = _merge_million_db_results(
+            final_results=final_precedents,
+            query_text=full_query if not (case_year and case_num) else "",
+            case_year=case_year,
+            case_word=case_word,
+            case_num=case_num,
+            case_cause=cause_of_action,
+            main_holding=opinion,
+            argument_issue=argument,
+            cited_laws=statute_target,
+            court_system=court_sys_str,
+            filter_no_legal_issue=filter_no_legal_issue,
+            top_k=top_k,
+            prefer_sqlite=bool(case_year and case_num),
+        )
+
     return final_precedents
 
 def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
@@ -1360,6 +1411,35 @@ def get_precedent_by_id(case_id: str) -> Optional[Dict[str, Any]]:
             cid = re.sub(r'[\s\-_]+', '', r.get("case_id", "")).lower()
             if all(n in cid for n in nums) and any(c in cid for c in chars if len(c) >= 2):
                 return r
+
+    # 4. 穿透查詢 797 萬母庫 / 國考精華子庫 (MillionJudgmentsSQLiteEngine)
+    try:
+        from build_million_judgments_db import get_million_db_engine
+        db_engine = get_million_db_engine()
+        if db_engine.is_available():
+            hit = db_engine.find_by_citation(case_id)
+            if hit and hit.get("found"):
+                raw_laws = hit.get("laws_cited", [])
+                laws_list = raw_laws if isinstance(raw_laws, list) else [x.strip() for x in str(raw_laws).split("、") if x.strip()]
+                return {
+                    "case_id": hit.get("case_id") or case_id,
+                    "jid": hit.get("jid", ""),
+                    "court": hit.get("court") or hit.get("court_or_agency") or "",
+                    "level": hit.get("doc_type") or "司法裁判",
+                    "subject": "實體與程序法",
+                    "date": hit.get("date", ""),
+                    "title": hit.get("title") or hit.get("case_id") or case_id,
+                    "holding": hit.get("holding_snippet") or hit.get("text", ""),
+                    "laws_cited": laws_list,
+                    "issue": "實體法學爭點與審級論證",
+                    "scholarly_views": "",
+                    "exam_application_hint": "",
+                    "substantive_prior": hit.get("substantive_prior", ""),
+                    "official_url": hit.get("official_url") or db_engine.get_official_url(hit.get("case_id", case_id), hit.get("jid", "")),
+                    "source": "million_judgments_db"
+                }
+    except Exception:
+        pass
     return None
 
 _CACHED_PRECEDENT_OPTIONS = None

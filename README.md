@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> 本平台是專為台灣司法官、律師國家考試、法研所與司法特考考生量身打造的**一站式法學實戰與研析系統**。全面整合：多模態手寫試卷批改、客製司律模擬命題、近 30 年歷屆真題庫檢索、406 萬實務判解檢索、最高法院大法庭裁定／原判例／座談會／民刑庭總會決議／憲判字研析、智慧六法與 AI 筆記煉金工坊。
+> 本平台是專為台灣司法官、律師國家考試、法研所與司法特考考生量身打造的**一站式法學實戰與研析系統**。全面整合：多模態手寫試卷批改、客製司律模擬命題、近 30 年歷屆真題庫檢索、**797 萬+ 筆司法院實體裁判全量檢索**、最高法院大法庭裁定／原判例／座談會／民刑庭總會決議／憲判字研析、智慧六法與 AI 筆記煉金工坊。
 
 ---
 
@@ -30,12 +30,12 @@ LawExamData/
 
 ### 1. `code/` —— 核心程式碼庫與發布目錄
 - **專案的核心心臟**，同時也是直連 GitHub (`https://github.com/FDfrankie/law-exam-evaluator.git`) 與 Streamlit Cloud 自動部署的 Git 儲存庫。
-- 包含主介面程式 [`app.py`](file:///g:/我的雲端硬碟/LawExamData/code/app.py)（九大模式調度中心）、各後端法學引擎（六法引擎、函釋引擎、判解關聯引擎、評分引擎等）以及相依環境清單 `requirements.txt`。
+- 包含主介面程式 [`app.py`](file:///g:/我的雲端硬碟/LawExamData/code/app.py)（系統核心模組調度中心）、各後端法學引擎（六法引擎、函釋引擎、判解關聯引擎、百萬裁判檢索引擎 `build_million_judgments_db.py`、核心子庫提煉工具 `export_exam_core_db.py`、本機遠端橋接 API `db_bridge_server.py`、評分引擎等）與 `data/judicial_exam_core.db.gz` 隨附精華子庫。
 
 ### 2. `national_laws/` —— 全國法規與行政命令法典庫
 - **`ChLaw.json`**：收錄立法院三讀通過、總統公布之全國中央法律條文全文。
 - **`ChOrder.json`**：收錄全台行政院各部會之法規命令、施行細則、要點、規程、標準等，共計 **10,452 部法規全文**。六法穿透查詢法規命令（如訴願審議委員會審議規則）即源於此。
-- **`core_exam_laws_articles.json`**：收錄司律考科高頻 61 部核心主法、**64,162 條結構化法定條文**。
+- **`core_exam_laws_articles.json`**：收錄司律與六法介面整合之 **2,141 部法規、64,162 條結構化法定條文**。
 - **`law_histories_catalog.json`** 與 **`law_amendments_history.json`**：整部法典之官方立法沿革時間軸、歷次修正公布令號與修法紀錄。
 
 ### 3. `constitutional_cases/` —— 憲法法庭裁判與釋字專庫
@@ -69,15 +69,17 @@ LawExamData/
 - 記錄考生的得分維度（爭點辨識度、三段論法嚴謹度、法條引註精確度）、扣分原因與專屬補強建議。
 
 ### 10. `data/` —— 大規模資料庫與快取中心
-- **`judicial_authority.db`** 與 **`judicial_1m_db/`**：收錄高達 **406 萬筆司法院裁判書**之全文檢索索引庫與裁判案號樹。
+- **`judicial_authority.db`**：權威見解資料庫，收錄 **1,181 則憲判字／大法官解釋／大法庭裁定** 與 **10,444 則最高法院經典判例**。
+- **`judicial_1m_db/judicial_1m_index.db`**：本機全量司法院實體裁判索引母庫，收錄 **7,975,042+ 筆實體裁判**與 **446,896 筆程序駁回轉導對照**（採 **Index-Only 唯讀高速架構**，已全面淘汰冗餘 25GB+ `shards/` 全文分片；原文直接透過司法院官方連結穿透查閱）。
+- **`judicial_exam_core.db` / `.db.gz`**：由 `export_exam_core_db.py` 依三階審級精萃產出之雲端核心精華子庫（未壓縮 181 MB、GZIP 僅 **45.03 MB**，內含全量 11,625 則權威/判例 + 34,998 筆高院以上精萃裁判 + FTS5 索引），於無本機母庫時（如 Streamlit Cloud）自動解壓掛載。
 - **`statute_reasons_cache.json`**：全國法條官方三讀立法理由與修正對照快取，實現 0 秒載入、0 Token 消耗。
-- **`drive_notes_manifest.json`**：Google Drive 700+ 份學習檔案資產之結構化映射字典。
+- **`drive_notes_manifest.json`**：Google Drive 學習檔案資產之結構化映射字典。
 
 ### 11. `scratch/` —— 工程除錯與回歸測試工具箱
 - 存放全專案的自動化檢查腳本，包含：
-  - `verify_compile.py`：全模組語法編譯檢查工具。
+  - `verify_compile.py`：動態掃描 `code/*.py` 全模組之語法編譯檢查工具。
   - `test_six_codes_comprehensive.py`：8 大核心功能端到端回歸測試腳本。
-  - 專案案號檢索、條號對照排查工具。
+  - `test_fixes.py` 與 `verify_all.py`：案號判別與條文渲染自動化驗證工具。
 
 ### 12. `.vscode/` —— 編輯器組態
 - Visual Studio Code 開發環境之全域設定 (`settings.json`)。
@@ -120,11 +122,15 @@ LawExamData/
    - 切割款次時，**嚴禁**使用 `(?=[一二三四五六七八九十百]+[、\s])` 盲目分割，否則遇到「十一、」時會被拆成「十」與「一、」，導致「十」被誤認成新段落並渲染出荒謬的「第 12 項」。
    - 請一律調用 [`six_codes_engine.py`](file:///g:/我的雲端硬碟/LawExamData/code/six_codes_engine.py) 中的 `render_formatted_article_html(content, title)` 進行安全渲染。
 
-### 🚨 鐵律四：使用者核心資料庫與歷史資產「零破壞」原則 (Data Safety First)
+### 🚨 鐵律四：使用者核心資料庫與歷史資產「零破壞」與唯讀效能原則 (Data Safety & Read-Only Performance)
 1. **嚴禁刪除或覆寫現有 SQLite 大庫**：
-   - `data/judicial_authority.db`、`data/judicial_1m_db/`、`data/judgements/` 等含有數百萬筆真實判解索引與裁判書全文。
-   - 任何資料遷移或新增欄位，必須採 `ALTER TABLE` 或增量寫入，**嚴禁執行 DROP TABLE、清空或覆寫現有 db 檔案**。
-2. **保護法定全量典藏庫**：
+   - `data/judicial_authority.db`、`data/judicial_1m_db/judicial_1m_index.db` 等含有數百萬筆真實判解索引與權威見解。
+   - 任何資料遷移、非訟案號精純化（`build_million_judgments_db.py --prune [--commit]`）或新增欄位，必須先乾跑測試、採增量作業，**嚴禁執行 DROP TABLE、清空或無故更名/覆寫 ≥50MB 的有效 `.db` 檔案**。
+2. **強制唯讀 `?mode=ro` 與禁止全表掃描**：
+   - 所有查詢函式開啟本機或 Google Drive FUSE 上之 SQLite 母庫時，**必須使用 `uri="file:///...?mode=ro"` 唯讀連線**，絕不觸發寫鎖或 `.wal`/`.shm` 衝突。
+   - **嚴禁**對 797 萬筆 `judgments_meta` 執行無索引全表 `COUNT(*)`、`GROUP BY`、大範圍 `LIKE '%...%'` 或未設限之跨千萬列 `ORDER BY CAST(...)`；總數請用 `MAX(rowid)` (`get_total_count()`)，案號精查一律走 `idx_meta_ywn` (`jud_year, jud_word, jud_no`)，法院篩選走 `idx_meta_court_type`，關鍵字檢索走 `judgments_fts`。
+   - 新資料入庫統一採 **Index-Only 架構**（`write_shards=False`），不再寫入或重建冗餘 `shards/*.db` 分片。
+3. **保護法定全量典藏庫**：
    - `national_laws/ChOrder.json`（收錄全國 10,452 部行政命令）與 `core_exam_laws_articles.json` 為核心靜態資產，切勿覆蓋或刪除。
 
 ### 🚨 鐵律五：Streamlit Cloud 雙軌容錯規範 (Dual-Track Import & Fallback)
@@ -238,6 +244,24 @@ from six_codes_engine import (
 )
 url_moj = get_moj_article_url("民法", "184")
 url_ly = get_ly_article_url("民法", "184")
+```
+
+### 6. 百萬裁判索引大庫、精華子庫與遠端橋接 API
+```python
+from build_million_judgments_db import get_million_db_engine
+
+eng = get_million_db_engine()
+# 自動偵測 Master DB (797萬+) / Core Sub-DB (自動解壓 judicial_exam_core.db.gz) / Remote Bridge (LOCAL_DB_API_URL)
+info = eng.get_db_info()                 # 毫秒級取得模式、標題與筆數 (MAX(rowid))
+rec = eng.find_by_citation("108台上大1719") # 精準走 idx_meta_ywn B-Tree 索引定位
+hits = eng.search_fts_and_meta(query="借名登記", cited_laws="民法第184條", top_k=20)
+```
+```bash
+# 重新提煉雲端核心子庫並產生 <50MB 壓縮檔（支援唯讀連線，不鎖定本機母庫）
+python code/export_exam_core_db.py --max-judgments 35000 --gzip
+
+# 啟動本機 FastAPI 遠端橋接伺服器 (供 Streamlit Cloud 透過 LOCAL_DB_API_URL 穿透查詢本機全量母庫)
+python code/db_bridge_server.py
 ```
 
 ---

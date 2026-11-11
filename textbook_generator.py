@@ -57,7 +57,7 @@ except Exception:
     def search_articles(*args, **kwargs): return []
     def get_article_legislative_details(*args, **kwargs): return {}
     def format_legal_article_text(t): return t or ""
-    def parse_article_query(kw, known_laws=None): return ("", None, False, kw)
+    def parse_article_query(kw, known_laws=None): return ("", None, False, kw, False)
 
 
 # ==============================================================================
@@ -370,7 +370,9 @@ def fetch_topic_context(topic: dict, max_articles: int = 6, max_precedents: int 
     for art_str in raw_articles[:max_articles]:
         clean_art = art_str.strip()
         # 拆解法名與條號，如 "民法第184條" -> law="民法", no="184"
-        detected_law, target_no, _, _ = parse_article_query(clean_art)
+        parsed_art = parse_article_query(clean_art)
+        detected_law = parsed_art[0] if len(parsed_art) >= 1 else ""
+        target_no = parsed_art[1] if len(parsed_art) >= 2 else None
         if not detected_law:
             if "民法" in clean_art: detected_law = "民法"
             elif "刑法" in clean_art: detected_law = "刑法"
@@ -646,7 +648,7 @@ class TextbookGenerator:
 
         # 實體裁判案號防偽核驗與官方判旨超連結注入 (CaseCitationVerifier)
         if progress_callback:
-            progress_callback("正在比對 400 萬筆實體裁判庫與判例先例，核驗教材引用字號...")
+            progress_callback("正在比對司法院實體裁判庫與權威判例先例，核驗教材引用字號...")
 
         try:
             from case_citation_verifier import get_case_verifier

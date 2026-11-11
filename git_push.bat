@@ -6,8 +6,12 @@ echo        Git 自動提交與 GitHub 遠端同步
 echo ========================================================
 
 cd /d "%~dp0"
+set "COMMIT_MSG=%~1"
+if "%COMMIT_MSG%"=="" set "COMMIT_MSG=chore: sync verified codebase and core DB assets"
+
 git add -A
-git commit -m "fix: auto sync and optimize codebase"
+git status --short
+git commit -m "%COMMIT_MSG%"
 git push origin main
 
 echo.

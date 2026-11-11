@@ -213,11 +213,20 @@ class LegalCrossReferenceEngine:
         ]
         self.chlaw_path = next((p for p in cand_chlaw if p.exists()), cand_chlaw[0])
 
-        self.index_db_path = Path(JUDICIAL_1M_DIR) / "judicial_1m_index.db"
-        if not self.index_db_path.exists():
-            cand = Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db"
-            if cand.exists():
-                self.index_db_path = cand
+        try:
+            from build_million_judgments_db import get_million_db_engine
+            _mdb = get_million_db_engine()
+            self.index_db_path = _mdb.index_db_path
+        except Exception:
+            self.index_db_path = Path(JUDICIAL_1M_DIR) / "judicial_1m_index.db"
+            for cand in [
+                Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db",
+                Path(DATA_DIR) / "judicial_exam_core.db",
+                Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+            ]:
+                if cand.exists():
+                    self.index_db_path = cand
+                    break
 
         self._orders_cache: Optional[Dict[str, Dict[str, Any]]] = None
         self._orders_name_index: Optional[List[str]] = None
@@ -582,59 +591,55 @@ class LegalCrossReferenceEngine:
             except Exception:
                 pass
 
-        # 3. 實體裁判大庫檢索
-        if len(results) < limit * 2 and self.index_db_path.exists():
-            target_pattern = f"%{clean_law}%{clean_art}%"
+        # 3. 實體裁判大庫檢索（統一透過 MillionJudgmentsSQLiteEngine FTS5 + 索引，支援 797 萬母庫與精華子庫）
+        if len(results) < limit * 2:
             try:
-                with sqlite3.connect(str(self.index_db_path), timeout=1.0) as conn:
-                    conn.row_factory = sqlite3.Row
-                    if court_filter and court_filter != "全部法院":
-                        query_sql = (
-                            "SELECT case_id, court, jud_year, jud_word, jud_no, date, title, "
-                            "       holding_preview, laws_cited, substantive_prior "
-                            "FROM judgments_meta "
-                            "WHERE court LIKE ? AND has_legal_issue = 1 AND laws_cited LIKE ? "
-                            "LIMIT ?"
+                from build_million_judgments_db import get_million_db_engine
+                db_engine = get_million_db_engine()
+                if db_engine.is_available():
+                    cited_target = f"{clean_law}第{clean_art}條"
+                    needed = (limit * 2) - len(results)
+                    hits = db_engine.search_fts_and_meta(
+                        query=search_clean,
+                        cited_laws=cited_target,
+                        court_system=court_filter or "全部法院 (全體司法體系)",
+                        filter_no_legal_issue=True,
+                        top_k=needed
+                    )
+                    if not hits and not search_clean:
+                        hits = db_engine.search_fts_and_meta(
+                            query=f"{clean_law} {clean_art}",
+                            court_system=court_filter or "全部法院 (全體司法體系)",
+                            filter_no_legal_issue=True,
+                            top_k=needed
                         )
-                        rows = conn.execute(query_sql, (f"%{court_filter}%", target_pattern, (limit * 2) - len(results))).fetchall()
-                    else:
-                        query_sql = (
-                            "SELECT case_id, court, jud_year, jud_word, jud_no, date, title, "
-                            "       holding_preview, laws_cited, substantive_prior "
-                            "FROM judgments_meta "
-                            "WHERE has_legal_issue = 1 AND laws_cited LIKE ? "
-                            "LIMIT ?"
-                        )
-                        rows = conn.execute(query_sql, (target_pattern, (limit * 2) - len(results))).fetchall()
-
-                    for r in rows:
-                        cid = r["case_id"]
-                        if cid not in seen_case_ids:
-                            t_title = r["title"] or cid
-                            h_holding = r["holding_preview"] or t_title
-                            if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
-                                continue
-                            seen_case_ids.add(cid)
-                            
-                            # 萃取法條
-                            raw_lc = r["laws_cited"] or ""
-                            if not raw_lc and h_holding:
-                                extracted = extract_statute_citations_from_text(h_holding)
-                                raw_lc = "、".join([x["canonical"] for x in extracted])
-                            
-                            results.append({
-                                "case_id": cid,
-                                "court": r["court"],
-                                "year": r["jud_year"],
-                                "word": r["jud_word"],
-                                "no": r["jud_no"],
-                                "date": r["date"],
-                                "title": t_title,
-                                "level": "權威司法裁判",
-                                "holding": h_holding,
-                                "laws_cited": raw_lc or f"{clean_law}第{clean_art}條",
-                                "official_url": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
-                            })
+                    for r in hits:
+                        cid = r.get("case_id", "")
+                        if not cid or cid in seen_case_ids:
+                            continue
+                        seen_case_ids.add(cid)
+                        t_title = r.get("title") or cid
+                        h_holding = r.get("holding") or t_title
+                        if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
+                            continue
+                        lc_val = r.get("laws_cited", [])
+                        raw_lc = "、".join(lc_val) if isinstance(lc_val, list) else str(lc_val or "")
+                        if not raw_lc and h_holding:
+                            extracted = extract_statute_citations_from_text(h_holding)
+                            raw_lc = "、".join([x["canonical"] for x in extracted])
+                        results.append({
+                            "case_id": cid,
+                            "court": r.get("court", ""),
+                            "year": r.get("jud_year", ""),
+                            "word": r.get("jud_word", ""),
+                            "no": r.get("jud_no", ""),
+                            "date": r.get("date", ""),
+                            "title": t_title,
+                            "level": r.get("level") or "權威司法裁判",
+                            "holding": h_holding,
+                            "laws_cited": raw_lc or cited_target,
+                            "official_url": r.get("official_url") or db_engine.get_official_url(cid, r.get("jid", ""))
+                        })
             except Exception:
                 pass
 
