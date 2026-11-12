@@ -67,19 +67,37 @@ class JudicialAuthorityEngine:
 
     def _get_conn(self, read_only: bool = False) -> sqlite3.Connection:
         if read_only and self.db_path.exists():
-            uri = f"file:///{self.db_path.resolve().as_posix()}?mode=ro"
+            uri = f"{self.db_path.resolve().as_uri()}?mode=ro"
             conn = sqlite3.connect(uri, uri=True, timeout=60.0, factory=ClosingConnection)
         else:
             conn = sqlite3.connect(str(self.db_path), timeout=60.0, factory=ClosingConnection)
-        conn.row_factory = sqlite3.Row
         try:
+            conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout = 60000;")
             if not read_only:
                 conn.execute("PRAGMA synchronous = NORMAL;")
             conn.execute("PRAGMA temp_store = MEMORY;")
         except Exception:
-            pass
+            conn.close()
+            raise
         return conn
+
+    @staticmethod
+    def _extract_query_tokens(query: str) -> List[str]:
+        if not query:
+            return []
+        cleaned = str(query).replace("\x00", " ")
+        cleaned = re.sub(r'["\'*^:();{}\[\]<>+~|&]+', " ", cleaned)
+        raw_tokens = [t.strip() for t in re.split(r"[\s,，、]+", cleaned) if t.strip()]
+        return [t for t in raw_tokens if t.upper() not in ("AND", "OR", "NOT", "NEAR")]
+
+    @classmethod
+    def _build_fts5_query(cls, query: str) -> str:
+        """Sanitize query and tokenize into FTS5 `\"tok1\" AND \"tok2\"` expression."""
+        tokens = cls._extract_query_tokens(query)
+        if not tokens:
+            return ""
+        return " AND ".join(f'"{tok}"' for tok in tokens[:8])
 
     def _init_db(self):
         with self._get_conn(read_only=False) as conn:
@@ -219,7 +237,8 @@ class JudicialAuthorityEngine:
         limit: int = 50
     ) -> List[Dict[str, Any]]:
         """全方位權威檢索：支援關鍵字 FTS 全文比對、字號、引用法條與領域分類過濾"""
-        query = query.strip()
+        query = (query or "").replace("\x00", "").strip()
+        safe_limit = max(1, int(limit or 50))
         with self._get_conn(read_only=True) as conn:
             conditions = []
             params = []
@@ -233,39 +252,45 @@ class JudicialAuthorityEngine:
                 params.append(sub_type)
 
             if query:
-                clean_q = re.sub(r'[\'"]', '', query)
-                sql = f"""
-                    SELECT r.*
-                    FROM authority_records r
-                    WHERE r.rowid IN (SELECT rowid FROM authority_fts WHERE authority_fts MATCH ?)
-                """
-                fts_query = f'"{clean_q}"'
-                q_params = [fts_query] + params
-                if conditions:
-                    sql += " AND " + " AND ".join(conditions)
-                sql += f" ORDER BY r.date DESC LIMIT {limit}"
-                try:
-                    cur = conn.execute(sql, q_params)
-                    rows = cur.fetchall()
-                    if rows:
-                        return [dict(row) for row in rows]
-                except Exception:
-                    pass
+                fts_query = self._build_fts5_query(query)
+                if fts_query:
+                    sql = """
+                        SELECT r.*
+                        FROM authority_records r
+                        WHERE r.rowid IN (SELECT rowid FROM authority_fts WHERE authority_fts MATCH ?)
+                    """
+                    q_params = [fts_query] + params
+                    if conditions:
+                        sql += " AND " + " AND ".join(conditions)
+                    sql += " ORDER BY r.date DESC LIMIT ?"
+                    q_params.append(safe_limit)
+                    try:
+                        cur = conn.execute(sql, q_params)
+                        rows = cur.fetchall()
+                        if rows:
+                            return [dict(row) for row in rows]
+                    except Exception:
+                        pass
 
-                # Fallback LIKE search
-                like_conds = list(conditions)
-                like_params = list(params)
-                like_conds.append("(r.case_no LIKE ? OR r.title LIKE ? OR r.holding LIKE ? OR r.laws_cited LIKE ?)")
-                like_pattern = f"%{query}%"
-                like_params.extend([like_pattern, like_pattern, like_pattern, like_pattern])
-                where_clause = " WHERE " + " AND ".join(like_conds)
-                sql = f"SELECT * FROM authority_records r {where_clause} ORDER BY r.date DESC LIMIT {limit}"
-                cur = conn.execute(sql, like_params)
-                return [dict(row) for row in cur.fetchall()]
+                # Fallback LIKE search (multi-token AND match on clean tokens)
+                tokens = self._extract_query_tokens(query)[:6]
+                if tokens:
+                    like_conds = list(conditions)
+                    like_params = list(params)
+                    for tok in tokens:
+                        like_conds.append("(r.case_no LIKE ? OR r.title LIKE ? OR r.holding LIKE ? OR r.laws_cited LIKE ?)")
+                        pat = f"%{tok}%"
+                        like_params.extend([pat, pat, pat, pat])
+                    like_params.append(safe_limit)
+                    where_clause = " WHERE " + " AND ".join(like_conds)
+                    sql = f"SELECT * FROM authority_records r {where_clause} ORDER BY r.date DESC LIMIT ?"
+                    cur = conn.execute(sql, like_params)
+                    return [dict(row) for row in cur.fetchall()]
+                return []
             else:
                 where_clause = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-                sql = f"SELECT * FROM authority_records r {where_clause} ORDER BY r.date DESC LIMIT {limit}"
-                cur = conn.execute(sql, params)
+                sql = f"SELECT * FROM authority_records r {where_clause} ORDER BY r.date DESC LIMIT ?"
+                cur = conn.execute(sql, params + [safe_limit])
                 return [dict(row) for row in cur.fetchall()]
 
     # =========================================================================
@@ -385,9 +410,10 @@ class JudicialAuthorityEngine:
         """
         後端查詢介面 1：支援判例字號、要旨與全文檢索，以及審別（民事/刑事/行政）篩選
         """
-        keyword = keyword.strip()
+        keyword = (keyword or "").replace("\x00", "").strip()
         if not keyword:
             return []
+        safe_limit = max(1, int(limit or 20))
 
         conditions = []
         params = []
@@ -398,25 +424,26 @@ class JudicialAuthorityEngine:
             params.append(f"%{clean_sys}%")
 
         with self._get_conn(read_only=True) as conn:
-            clean_q = re.sub(r"""['"]""", "", keyword)
-            sql = f"""
-                SELECT p.id, p.precedent_id, p.case_no, p.court, p.year, p.holding, p.laws_cited, p.status, p.sys_type, p.date
-                FROM precedents p
-                WHERE p.rowid IN (SELECT rowid FROM precedents_fts WHERE precedents_fts MATCH ?)
-            """
-            fts_query = f'"{clean_q}"'
-            q_params = [fts_query] + params
-            if conditions:
-                sql += " AND " + " AND ".join(conditions)
-            sql += f" LIMIT {limit}"
+            fts_query = self._build_fts5_query(keyword)
+            if fts_query:
+                sql = """
+                    SELECT p.id, p.precedent_id, p.case_no, p.court, p.year, p.holding, p.laws_cited, p.status, p.sys_type, p.date
+                    FROM precedents p
+                    WHERE p.rowid IN (SELECT rowid FROM precedents_fts WHERE precedents_fts MATCH ?)
+                """
+                q_params = [fts_query] + params
+                if conditions:
+                    sql += " AND " + " AND ".join(conditions)
+                sql += " LIMIT ?"
+                q_params.append(safe_limit)
 
-            try:
-                cur = conn.execute(sql, q_params)
-                rows = cur.fetchall()
-                if rows:
-                    return [dict(r) for r in rows]
-            except Exception:
-                pass
+                try:
+                    cur = conn.execute(sql, q_params)
+                    rows = cur.fetchall()
+                    if rows:
+                        return [dict(r) for r in rows]
+                except Exception:
+                    pass
 
             # Fast case_no index lookup if keyword looks like a citation (嚴禁無索引全表掃描)
             if any(k in keyword for k in ["字", "號", "年", "第"]):
@@ -425,9 +452,25 @@ class JudicialAuthorityEngine:
                 if norm_v not in variants:
                     variants.append(norm_v)
                 placeholders = ",".join("?" for _ in variants)
-                c_sql = f"SELECT id, precedent_id, case_no, court, year, holding, laws_cited, status, sys_type, date FROM precedents WHERE case_no IN ({placeholders}) OR precedent_id IN ({placeholders}) LIMIT {limit}"
-                cur = conn.execute(c_sql, variants + variants)
+                c_sql = f"SELECT id, precedent_id, case_no, court, year, holding, laws_cited, status, sys_type, date FROM precedents WHERE case_no IN ({placeholders}) OR precedent_id IN ({placeholders}) LIMIT ?"
+                cur = conn.execute(c_sql, variants + variants + [safe_limit])
                 rows = cur.fetchall()
+                if rows:
+                    return [dict(r) for r in rows]
+
+            # Tokenized AND-LIKE fallback when unicode61 FTS hits 0 on unspaced CJK compounds
+            tokens = self._extract_query_tokens(keyword)[:6]
+            if tokens:
+                like_conds = list(conditions)
+                like_params = list(params)
+                for tok in tokens:
+                    like_conds.append("(p.case_no LIKE ? OR p.title LIKE ? OR p.holding LIKE ? OR p.laws_cited LIKE ?)")
+                    pat = f"%{tok}%"
+                    like_params.extend([pat, pat, pat, pat])
+                like_params.append(safe_limit)
+                where_clause = " WHERE " + " AND ".join(like_conds)
+                l_sql = f"SELECT id, precedent_id, case_no, court, year, holding, laws_cited, status, sys_type, date FROM precedents p {where_clause} LIMIT ?"
+                rows = conn.execute(l_sql, like_params).fetchall()
                 if rows:
                     return [dict(r) for r in rows]
 
@@ -437,6 +480,7 @@ class JudicialAuthorityEngine:
         """
         後端查詢介面 2：依據法條（如「民法第184條」）精準撈取關聯判例
         """
+        safe_limit = max(1, int(limit or 15))
         clean_no = re.sub(r'[第條\s]', '', str(article_no)).replace('之', '-')
         # 構造可能法條格式
         match_patterns = [
@@ -451,25 +495,27 @@ class JudicialAuthorityEngine:
         elif law_name == "刑法":
             match_patterns.append(f"%中華民國刑法第{clean_no}條%")
 
+        # 先行以唯讀檢查並關閉連線，避免後續自動匯入開寫入時發生自鎖
         with self._get_conn(read_only=True) as conn:
-            # 確保有資料
             has_data = conn.execute("SELECT 1 FROM precedents LIMIT 1").fetchone()
-            if not has_data:
-                self.import_precedents_from_catalog()
+        if not has_data:
+            self.import_precedents_from_catalog()
 
+        with self._get_conn(read_only=True) as conn:
             # 多模式比對
             clauses = ["(p.laws_cited LIKE ? OR p.holding LIKE ? OR p.title LIKE ?)"] * len(match_patterns)
-            sql = f"SELECT * FROM precedents p WHERE {' OR '.join(clauses)} ORDER BY p.year DESC LIMIT {limit}"
+            sql = f"SELECT * FROM precedents p WHERE {' OR '.join(clauses)} ORDER BY p.year DESC LIMIT ?"
             flat_params = []
             for pat in match_patterns:
                 flat_params.extend([pat, pat, pat])
+            flat_params.append(safe_limit)
 
             cur = conn.execute(sql, flat_params)
             rows = cur.fetchall()
             return [dict(r) for r in rows]
 
-    def get_authority_stats(self) -> Dict[str, Any]:
-        with self._get_conn() as conn:
+    def get_authority_stats(self, read_only: bool = True) -> Dict[str, Any]:
+        with self._get_conn(read_only=read_only) as conn:
             total_auth = conn.execute("SELECT COUNT(*) FROM authority_records").fetchone()[0]
             total_prec = conn.execute("SELECT COUNT(*) FROM precedents").fetchone()[0]
             cat_rows = conn.execute("SELECT category, COUNT(*) FROM authority_records GROUP BY category").fetchall()
@@ -631,7 +677,7 @@ class JudicialAuthorityEngine:
                 "title": "詐欺集團車手取款與洗錢防制法之競合與沒收標的認定",
                 "holding": "基層車手提領贓款並轉交上游，同時成立加重詐欺取財罪及洗錢防制法一般洗錢罪，應從一重處斷；提領總額非車手個人犯罪所得，僅得就其實際取得之報酬宣告沒收。",
                 "reasoning": "車手提領金錢固構成掩飾隱匿金流之洗錢行為，惟其在組織中地位低微，沒收新制採澈底剝奪不法利得原則，應以其真正取得支配之犯罪利得為限。",
-                "laws_cited": ["洗錢防制法第14條第1項", "刑法第339條之4", "刑法第38條之1"],
+                "laws_cited": ["洗錢防制法第19條", "刑法第339條之4", "刑法第38條之1"],
                 "status": "大字終局裁定",
                 "extra_meta": {"court_division": "刑事大法庭", "type": "終局裁定"}
             },

@@ -13,12 +13,31 @@ db_bridge_server.py
   或 python db_bridge_server.py
 """
 
-from typing import Optional
-from fastapi import FastAPI, Query
+from typing import Any, Dict, Optional
+import hmac
+import logging
+import os
+import re
+
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from build_million_judgments_db import get_million_db_engine
 from judicial_appeal_chain import get_appeal_chain_engine
 from authority_engine import get_engine as get_authority_engine
+
+logger = logging.getLogger(__name__)
+
+_PATH_KEYS_TO_REDACT = frozenset({
+    "path",
+    "index_db_path",
+    "db_path",
+    "shards_dir",
+    "base_dir",
+    "inbox_dir",
+})
+_LOCAL_PATH_RE = re.compile(r"^(?:[A-Za-z]:[/\\]|\\\\|/)")
 
 app = FastAPI(
     title="LawExamData Judicial DB Bridge API",
@@ -26,25 +45,103 @@ app = FastAPI(
     description="高速唯讀穿透查詢本機 797 萬筆裁判索引與權威判例庫",
 )
 
+_cors_origins_raw = os.getenv("DB_BRIDGE_CORS_ORIGINS", "*").strip()
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] or ["*"]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
+def _get_bridge_token() -> str:
+    return os.getenv("DB_BRIDGE_TOKEN", "").strip()
+
+
+def verify_bearer_token(authorization: Optional[str] = Header(default=None)) -> None:
+    """Validate optional Bearer token configured via DB_BRIDGE_TOKEN."""
+    expected = _get_bridge_token()
+    if not expected:
+        return
+    if not authorization:
+        raise HTTPException(
+            status_code=401,
+            detail="Missing Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid authorization scheme; expected Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    provided = parts[1].strip()
+    if not provided or not hmac.compare_digest(
+        provided.encode("utf-8"), expected.encode("utf-8")
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Bearer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+
+def _redact_local_paths(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove local filesystem path fields and path-like string values."""
+    cleaned: Dict[str, Any] = {}
+    for key, val in payload.items():
+        if key in _PATH_KEYS_TO_REDACT:
+            continue
+        if isinstance(val, str) and _LOCAL_PATH_RE.match(val.strip()):
+            continue
+        if isinstance(val, dict):
+            cleaned[key] = _redact_local_paths(val)
+        else:
+            cleaned[key] = val
+    return cleaned
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return clean JSON error without leaking raw tracebacks or local paths."""
+    logger.exception("Unhandled error in db_bridge_server on %s", request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"ok": False, "error": "Internal server error"},
+    )
+
 
 @app.get("/health")
 def health():
     eng = get_million_db_engine()
-    return {"ok": True, "mode": eng.db_mode, "available": eng.is_available()}
+    return {
+        "ok": True,
+        "mode": getattr(eng, "db_mode", "unknown"),
+        "available": bool(eng.is_available()),
+    }
 
 
-@app.get("/stats")
+@app.get("/stats", dependencies=[Depends(verify_bearer_token)])
 def stats():
     eng = get_million_db_engine()
-    info = eng.get_db_info()
+    raw_info = eng.get_db_info()
+    info = _redact_local_paths(raw_info) if isinstance(raw_info, dict) else {}
     try:
-        auth_stats = get_authority_engine().get_authority_stats()
+        auth_eng = get_authority_engine()
+        try:
+            raw_auth = auth_eng.get_authority_stats(read_only=True)
+        except TypeError:
+            raw_auth = auth_eng.get_authority_stats()
+        auth_stats = _redact_local_paths(raw_auth) if isinstance(raw_auth, dict) else {}
     except Exception:
         auth_stats = {}
     return {**info, "authority": auth_stats}
 
 
-@app.get("/search")
+@app.get("/search", dependencies=[Depends(verify_bearer_token)])
 def search(
     query: str = "",
     jud_year: str = "",
@@ -76,21 +173,21 @@ def search(
     )
 
 
-@app.get("/lookup")
+@app.get("/lookup", dependencies=[Depends(verify_bearer_token)])
 def lookup(citation: str):
     eng = get_million_db_engine()
     res = eng.find_by_citation(citation)
     return res if res else {"found": False, "citation": citation}
 
 
-@app.get("/redirect")
+@app.get("/redirect", dependencies=[Depends(verify_bearer_token)])
 def redirect_target(case_id: str):
     eng = get_million_db_engine()
     res = eng.get_redirect_target(case_id)
     return res if res else {"is_redirect": False, "case_id": case_id}
 
 
-@app.get("/appeal_chain")
+@app.get("/appeal_chain", dependencies=[Depends(verify_bearer_token)])
 def appeal_chain(
     case_id: str = "",
     court: str = "",

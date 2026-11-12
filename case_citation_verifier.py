@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging
 import sqlite3
 import tempfile
 import urllib.parse
@@ -8,6 +9,31 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 from config import DATA_DIR, RAW_DATA_DIR, JUDICIAL_1M_DIR, CONSTITUTIONAL_DIR
+
+logger = logging.getLogger(__name__)
+
+
+class ClosingConnection(sqlite3.Connection):
+    """Ensure SQLite connections close upon exiting a `with` block."""
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
+def _open_ro_sqlite(db_path: Path, timeout: float = 30.0) -> ClosingConnection:
+    """Open a read-only SQLite connection with busy timeout and guaranteed cleanup."""
+    uri = f"{Path(db_path).resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=timeout, factory=ClosingConnection)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 60000;")
+    except Exception:
+        conn.close()
+        raise
+    return conn
 
 FULL_TO_HALF = str.maketrans("０１２３４５６７８９", "0123456789")
 CHINESE_NUMS = {
@@ -342,8 +368,7 @@ class CaseCitationVerifier:
             raw_res = cit.get("raw", "")
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
-                        a_conn.row_factory = sqlite3.Row
+                    with _open_ro_sqlite(self.authority_db_path, timeout=30.0) as a_conn:
                         p_query = f"%{y}%{n}%決議%" if n else f"%{y}%決議%"
                         r_row = a_conn.execute(
                             "SELECT case_no, precedent_id, title, holding, reasoning, source_url FROM precedents WHERE case_no LIKE ? OR title LIKE ? LIMIT 1",
@@ -363,8 +388,8 @@ class CaseCitationVerifier:
                             result["holding"] = r_row["holding"] or r_row["reasoning"] or ""
                             result["official_url"] = "https://judgment.judicial.gov.tw/FJUD/default.aspx"
                             return result
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Authority DB RESOLUTION lookup failed: %s", exc)
 
         # ---------------------------------------------------------------------
         # 檢驗情境 A: 憲法法庭判決 / 裁定 (CONSTITUTIONAL)
@@ -386,13 +411,12 @@ class CaseCitationVerifier:
                                 result["date"] = c_data.get("date", "")
                                 result["official_url"] = f"https://cons.judicial.gov.tw/docdata.aspx?fid=38&id={urllib.parse.quote(result['case_id'])}"
                                 return result
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.warning("Constitutional corpus file read failed (%s): %s", fp, exc)
 
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
-                        a_conn.row_factory = sqlite3.Row
+                    with _open_ro_sqlite(self.authority_db_path, timeout=30.0) as a_conn:
                         row = a_conn.execute(
                             "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND case_no LIKE ? AND (case_no LIKE ? OR case_no LIKE ?) LIMIT 1",
                             (f"%{y}%", f"%第{n}號%", f"%第 {n} 號%")
@@ -406,8 +430,8 @@ class CaseCitationVerifier:
                             result["date"] = row["date"] or ""
                             result["official_url"] = f"https://cons.judicial.gov.tw/"
                             return result
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Authority DB CONSTITUTIONAL lookup failed: %s", exc)
 
         # ---------------------------------------------------------------------
         # 檢驗情境 B: 司法院大法官解釋 (INTERPRETATION)
@@ -427,13 +451,12 @@ class CaseCitationVerifier:
                         result["date"] = c_data.get("date", "")
                         result["official_url"] = f"https://cons.judicial.gov.tw/docdata.aspx?fid=100&id={n}"
                         return result
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Interpretation corpus file read failed (%s): %s", target_fn, exc)
 
             if self.authority_db_path.exists():
                 try:
-                    with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
-                        a_conn.row_factory = sqlite3.Row
+                    with _open_ro_sqlite(self.authority_db_path, timeout=30.0) as a_conn:
                         row = a_conn.execute(
                             "SELECT case_no, title, holding, reasoning, date FROM authority_records WHERE category = 'CONSTITUTIONAL' AND (case_no LIKE ? OR case_no LIKE ?) LIMIT 1",
                             (f"%釋字第{n}號%", f"%釋字第 {n} 號%")
@@ -447,13 +470,13 @@ class CaseCitationVerifier:
                             result["date"] = row["date"] or ""
                             result["official_url"] = f"https://cons.judicial.gov.tw/docdata.aspx?fid=100&id={n}"
                             return result
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("Authority DB INTERPRETATION lookup failed: %s", exc)
 
         # ---------------------------------------------------------------------
         # 檢驗情境 C: 百萬裁判資料庫 / 國考精華子庫毫秒級比對 (idx_meta_ywn + 唯讀 URI)
         # ---------------------------------------------------------------------
-        if (y and n) or cat in ("CONSTITUTIONAL", "INTERPRETATION"):
+        if (y and n) or category in ("CONSTITUTIONAL", "INTERPRETATION"):
             try:
                 from build_million_judgments_db import get_million_db_engine
                 db_eng = get_million_db_engine()
@@ -518,12 +541,7 @@ class CaseCitationVerifier:
 
         if self.authority_db_path.exists():
             try:
-                with sqlite3.connect(str(self.authority_db_path), timeout=30.0) as a_conn:
-                    a_conn.row_factory = sqlite3.Row
-                    try:
-                        a_conn.execute("PRAGMA busy_timeout = 30000;")
-                    except Exception:
-                        pass
+                with _open_ro_sqlite(self.authority_db_path, timeout=30.0) as a_conn:
                     # 準確比對案號：year 匹配且包含第 n 號
                     exact_p1 = f"%{y}%第{n}號%"
                     exact_p2 = f"%{y}%第 {n} 號%"
@@ -563,8 +581,8 @@ class CaseCitationVerifier:
                             result["laws_cited"] = auth_row["laws_cited"] or ""
                             result["official_url"] = self.build_official_judicial_url(result["case_id"])
                             return result
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Authority DB precedent/record lookup failed: %s", exc)
 
         db_label = "百萬裁判索引"
         try:
@@ -572,8 +590,8 @@ class CaseCitationVerifier:
             cnt = get_million_db_engine().get_total_count()
             if cnt > 0:
                 db_label = f"{cnt:,} 筆"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to query master DB count: %s", exc)
         result["is_verified"] = False
         result["match_source"] = "UNVERIFIED_HALLUCINATION"
         result["warning"] = (
@@ -584,11 +602,13 @@ class CaseCitationVerifier:
         return result
 
     def build_official_judicial_url(self, case_id: str, jid: str = "") -> str:
-        if not case_id:
+        jid_clean = re.sub(r"\s+", "", str(jid or "")).strip()
+        if jid_clean and "," in jid_clean and len(jid_clean.split(",")) >= 4:
+            return f"https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id={jid_clean}"
+        clean_cid = re.sub(r"\(.*?\)|（.*?）", "", str(case_id or "")).strip()
+        if not clean_cid:
             return "https://judgment.judicial.gov.tw/FJUD/default.aspx"
-        clean = re.sub(r"\s+", "", case_id)
-        encoded = urllib.parse.quote(clean)
-        return f"https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id={encoded}"
+        return f"https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?q={urllib.parse.quote(clean_cid)}"
 
     # =========================================================================
     # 3. 內文全面防偽標註與查核報告抽屜 (Decorator & Audit Report)

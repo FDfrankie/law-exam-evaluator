@@ -7,20 +7,13 @@ import os
 import sys
 import json
 import re
+import logging
 from typing import Dict, Any, List, Optional, Tuple
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except Exception:
-    try:
-        import google.generativeai as legacy_genai
-    except Exception:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+from config import DEFAULT_GEMINI_MODEL
+from llm_client import generate_content, LlmCallError
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+logger = logging.getLogger(__name__)
 from legal_query_engine import (
     get_precedents_catalog,
     get_precedent_by_id,
@@ -933,37 +926,35 @@ BUILTIN_LANDMARK_DOCS: List[Dict[str, Any]] = [
 
 【理由要旨】
 一、爭點：
-提供自己金融帳戶提款卡與密碼予詐欺集團成員之「人頭帳戶提供者」，究成立刑法第30條第1項、第339條第1項之詐欺幫助犯，抑或該當洗錢防制法第14條第1項之一般洗錢罪正犯？
+提供自己金融帳戶提款卡與密碼予詐欺集團成員之「人頭帳戶提供者」，究成立刑法第30條第1項、第339條第1項之詐欺幫助犯，抑或該當洗錢防制法第19條第1項（2024年修正前原為第14條第1項）之一般洗錢罪正犯？
 二、最高法院統一刑罰論理：
-（一）洗錢防制法第2條第2款規定，洗錢行為包括「掩飾或隱匿特定犯罪所得來源、去向、所在，或以任何方式使他人隱匿特定犯罪所得」之行為。
+（一）洗錢防制法第2條規定，洗錢行為包括「隱匿特定犯罪所得或掩飾其來源」、「妨礙或危害國家對於特定犯罪所得之調查、發現、保全、沒收或追徵」等行為態樣。
 （二）提供金融帳戶金融卡及密碼予非親非故之他人，使犯罪集團得以利用該帳戶作為向被害人詐欺取財匯款之中繼站，該帳戶即產生遮斷資金金流追查、掩飾犯罪所得去向之功能。
-（三）提供者如依其智識經驗，能預見金融帳戶可能被用於掩飾重大犯罪所得，竟仍容任其發生而交出卡片密碼者，主觀上已具備洗錢之「不確定故意（間接故意）」，應成立洗錢防制法第14條第1項之一般洗錢罪，不因其未實際經手提款而免除正犯罪責。"""
+（三）提供者如依其智識經驗，能預見金融帳戶可能被用於掩飾重大犯罪所得，竟仍容任其發生而交出卡片密碼者，主觀上已具備洗錢之「不確定故意（間接故意）」，依現行洗錢防制法第19條第1項（2024年修正前原第14條第1項）應論以一般洗錢罪，不因其未實際經手提款而免除正犯罪責。"""
     },
     {
         "id": "DOC_7_SUPREME_COURT_40_86",
-        "doc_type": "🏛️ 最高法院判例",
-        "title": "最高法院 40 年台上字第 86 號判例（無權代理之效力與善意相對人保護）",
-        "text": """最高法院 40 年台上字第 86 號民事判例
+        "doc_type": "🏛️ 最高法院刑事判例",
+        "title": "最高法院 40 年台上字第 86 號刑事判例（證據裁判原則與禁止推測擬制）",
+        "text": """最高法院 40 年台上字第 86 號刑事判例
 【裁判字號】：最高法院 40 年台上字第 86 號
-【裁判類別】：民事判例
+【裁判類別】：刑事判例（依法院組織法第57條之1第2項效力與最高法院裁判相同）
 【裁判要旨】：
-無權代理人以本人名義所為之法律行為，非經本人承認，對於本人不生效力，民法第170條第1項定有明文。
-是以無代理權人以本人名義與相對人訂立買賣契約，在本人承認之前，該契約係處於效力未定之狀態。
-相對人得定相當期限，催告本人確答是否承認，本人逾期未為確答者，視為拒絕承認；相對人於本人未承認前，亦得行使撤回權。
-若本人拒絕承認，除符合表見代理（民法第169條）應負授權人之責任外，本人對該法律行為自始不負任何履約或移轉責任，善意相對人僅得本於民法第110條規定，向無權代理人請求損害賠償。"""
+事實之認定，應憑證據，如未能發現相當證據，或證據不足以證明，自不能以推測或擬制之方法，以為裁判基礎。
+【理由摘要】：
+按犯罪事實應依證據認定之（刑事訴訟法第154條）。被告始終否認行竊，除告訴人發覺失竊時見被告態度慌張乃鳴警拿獲外，別無起獲贓物或具體事實證據足以證明，要難僅憑被告曾供有經常在某地帶活動等空泛之詞指係慣竊，作為判罪之根據。"""
     },
     {
         "id": "DOC_8_SUPREME_COURT_30_482",
-        "doc_type": "🏛️ 最高法院判例",
-        "title": "最高法院 30 年上字第 482 號判例（契約合意解除與法定解除權之競合）",
-        "text": """最高法院 30 年上字第 482 號民事判例
+        "doc_type": "🏛️ 最高法院刑事判例",
+        "title": "最高法院 30 年上字第 482 號刑事判例（積極證據不足時被告虛偽抗辯不得作為有罪證據）",
+        "text": """最高法院 30 年上字第 482 號刑事判例
 【裁判字號】：最高法院 30 年上字第 482 號
-【裁判類別】：民事判例
+【裁判類別】：刑事判例（依法院組織法第57條之1第2項效力與最高法院裁判相同）
 【裁判要旨】：
-契約之合意解除（協議解除），係由契約當事人以第二次契約消滅第一次契約之權利義務關係，其本質為互為要約與承諾之契約行為；
-與當事人一方本於民法法定解除權（如給付遲延、給付不能）或契約約定解除權行使之單方形成權，其性質截然有別。
-合意解除成立後，當事人之間應如何清算、返還已交付之給付或賠償損失，應悉依雙方合意解除之契約約定內容為準。
-民法第259條關於法定解除權行使後回復原狀之規定，在合意解除之場合，並非當然予以準用。當事人若未特別約定返還已受領之價金或約定沒收充作違約金，法院應探求當事人之真意，不得逕行命依民法第259條回復原狀。"""
+事實審法院對於證據之取捨，依法雖有自由判斷之權，然積極證據不足證明犯罪事實時，被告之抗辯或反證縱屬虛偽，仍不能以此資為積極證據應予採信之理由。
+【適用原則】：
+依無罪推定及刑事訴訟法第154條規定，檢察官負有實質舉證責任。即便被告提出虛偽不在場證明或辯詞矛盾，在積極有罪證據尚有不足時，法院仍不得反推被告有罪。"""
     },
     {
         "id": "DOC_9_JUDICIAL_YUAN_2949",
@@ -1146,8 +1137,8 @@ def find_legal_doc_by_citation(citation: str) -> Optional[Dict[str, Any]]:
     全方位法學字號檢索引擎（裁判字號・大法官解釋・憲判字・中央主管機關長篇函釋）：
     支援縮寫、案號全名、機關公文字號、純字軌數字與發文字號：
     1. 優先比對內建指標法學判解全文庫 (BUILTIN_LANDMARK_DOCS)
-    2. 比對中央部會 628+ 則行政函釋與令釋大典 (含經濟部、金管會、智慧財產局、法務部、勞動部)
-    3. 比對全國 1,256+ 裁判大典目錄庫 (含最高法院民刑大法庭、憲法法庭判決與歷審脈絡鏈)
+    2. 比對中央部會行政函釋與令釋大典 (含經濟部、金管會、智慧財產局、法務部、勞動部)
+    3. 比對本機權威裁判目錄庫與司法大庫 (含最高法院民刑大法庭、憲法法庭判決與歷審脈絡鏈)
 
     回傳字典：
     - 若命中：{"found": True, "matched": True, "title": ..., "doc_type": ..., "text": ..., "holding_snippet": ..., "court_or_agency": ..., "laws_cited": [...], "search_urls": ..., "source_type": ...}
@@ -1380,39 +1371,19 @@ class AILegalSummarizer:
     一鍵 AI 裁判與長篇函釋核心要旨自動精鍊引擎
     """
     def __init__(self):
-        self.api_key = get_gemini_api_key()
+        pass
 
     def _call_model(self, prompt: str) -> str:
-        models_to_try = get_gemini_models_to_try()
-        last_error = None
-
-        if USE_MODERN_GENAI:
-            client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
-            for model_name in models_to_try:
-                try:
-                    resp = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-        else:
-            if self.api_key:
-                legacy_genai.configure(api_key=self.api_key)
-            for model_name in models_to_try:
-                try:
-                    m = legacy_genai.GenerativeModel(model_name)
-                    resp = m.generate_content(prompt)
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-
-        raise RuntimeError(f"AI 法學摘要引擎調用失敗: {last_error}")
+        """透過統一 llm_client 呼叫 Gemini（每次動態讀取最新 API Key）。"""
+        try:
+            return generate_content(
+                prompt,
+                primary_model=DEFAULT_GEMINI_MODEL,
+                temperature=0.2,
+            )
+        except Exception as exc:
+            logger.warning("AILegalSummarizer LLM call failed: %s", exc)
+            raise RuntimeError(f"AI 法學摘要引擎調用失敗: {exc}") from exc
 
     def summarize(
         self,
@@ -1544,7 +1515,26 @@ class AILegalSummarizer:
 請直接以格式清晰、排版優美、專業嚴謹之繁體中文 Markdown 文本輸出！
 """
         res_md = self._call_model(prompt)
-        full_res_md = res_md.strip() + "\n\n---\n\n" + evolution_md
+        case_ver_res: Dict[str, Any] = {}
+        try:
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            case_ver_res = verifier.verify_and_decorate_response(
+                res_md, context_topic=title or subject, auto_badge=True
+            )
+            if case_ver_res.get("annotated_text"):
+                res_md = case_ver_res["annotated_text"]
+        except Exception as exc:
+            logger.warning("AILegalSummarizer CaseCitationVerifier failed: %s", exc)
+
+        parts = [res_md.strip()]
+        audit_md = case_ver_res.get("audit_markdown", "")
+        if audit_md:
+            parts.append(audit_md.strip())
+        if evolution_md:
+            parts.append(evolution_md)
+        full_res_md = "\n\n---\n\n".join(parts)
+
         return {
             "title": title,
             "doc_type": doc_type,
@@ -1554,5 +1544,6 @@ class AILegalSummarizer:
             "is_procedural_dismissal": False,
             "discard_reason": "",
             "history_instances": history_instances,
-            "substantive_prior_instance": substantive_prior
+            "substantive_prior_instance": substantive_prior,
+            "case_verification": case_ver_res,
         }

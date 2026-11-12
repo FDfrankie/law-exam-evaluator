@@ -12,6 +12,7 @@ import re
 import io
 import json
 import uuid
+import logging
 import random
 import hashlib
 import unicodedata
@@ -23,6 +24,33 @@ from config import (
     RAW_DATA_DIR, DATA_DIR, get_gemini_api_key,
     DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
 )
+import llm_client
+
+logger = logging.getLogger(__name__)
+
+_WITHDRAWN_STATUSES = {"under_review", "adjudication_failed"}
+# File-mtime JSON cache: path_str -> (mtime_ns, size, parsed_data)
+_JSON_FILE_CACHE: Dict[str, Tuple[int, int, Any]] = {}
+
+
+def _read_json_cached(path: Path) -> Tuple[Any, bool]:
+    """Read JSON from disk only when (st_mtime_ns, st_size) changes. Returns (data, from_cache)."""
+    resolved_key = str(path.resolve())
+    st = path.stat()
+    sig = (st.st_mtime_ns, st.st_size)
+    cached = _JSON_FILE_CACHE.get(resolved_key)
+    if cached is not None and cached[0] == sig[0] and cached[1] == sig[1]:
+        return cached[2], True
+    data = json.loads(path.read_text(encoding="utf-8"))
+    _JSON_FILE_CACHE[resolved_key] = (sig[0], sig[1], data)
+    return data, False
+
+
+def _invalidate_json_cache(path: Path) -> None:
+    try:
+        _JSON_FILE_CACHE.pop(str(path.resolve()), None)
+    except Exception:
+        pass
 
 # 考科分類常量定義
 SUBJECT_ADMIN_LAW = "行政法"
@@ -93,16 +121,28 @@ class MCQBankManager:
         except Exception as e:
             print(f"[MCQStorage Init Error] {e}")
 
+    @staticmethod
+    def _file_sig(path: Path) -> Optional[Tuple[int, int]]:
+        try:
+            if path.exists():
+                st = path.stat()
+                return (st.st_mtime_ns, st.st_size)
+        except Exception:
+            pass
+        return None
+
     def _load_dynamic_bank(self) -> List[Dict[str, Any]]:
-        """載入動態題庫 (包含 AI 生成題、上傳題與修正後試題)"""
+        """載入動態題庫 (包含 AI 生成題、上傳題與修正後試題)，支援檔案 mtime 快取"""
         for p in (COMMUNITY_MCQ_FILE, REPO_COMMUNITY_MCQ_FILE):
             if p.exists():
                 try:
-                    data = json.loads(p.read_text(encoding="utf-8"))
+                    data, _ = _read_json_cached(p)
                     if isinstance(data, list):
-                        return data
-                except Exception:
-                    pass
+                        self._dynamic_bank_sig = (str(p), self._file_sig(p))
+                        return [dict(item) if isinstance(item, dict) else item for item in data]
+                except Exception as exc:
+                    logger.warning("載入動態題庫失敗 (%s): %s", p, exc)
+        self._dynamic_bank_sig = None
         return []
 
     def _save_dynamic_bank(self):
@@ -112,19 +152,27 @@ class MCQBankManager:
             try:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content, encoding="utf-8")
-            except Exception:
-                pass
+                _invalidate_json_cache(p)
+            except Exception as exc:
+                logger.warning("儲存動態題庫失敗 (%s): %s", p, exc)
+        for p in (COMMUNITY_MCQ_FILE, REPO_COMMUNITY_MCQ_FILE):
+            sig = self._file_sig(p)
+            if sig is not None:
+                self._dynamic_bank_sig = (str(p), sig)
+                break
 
     def _load_reports_log(self) -> Dict[str, Any]:
-        """載入試題報錯與撤下紀錄字典"""
+        """載入試題報錯與撤下紀錄字典，支援檔案 mtime 快取"""
         for p in (MCQ_REPORTS_FILE, REPO_MCQ_REPORTS_FILE):
             if p.exists():
                 try:
-                    data = json.loads(p.read_text(encoding="utf-8"))
+                    data, _ = _read_json_cached(p)
                     if isinstance(data, dict):
-                        return data
-                except Exception:
-                    pass
+                        self._reports_log_sig = (str(p), self._file_sig(p))
+                        return {k: (dict(v) if isinstance(v, dict) else v) for k, v in data.items()}
+                except Exception as exc:
+                    logger.warning("載入試題報錯紀錄失敗 (%s): %s", p, exc)
+        self._reports_log_sig = None
         return {}
 
     def _save_reports_log(self):
@@ -134,8 +182,29 @@ class MCQBankManager:
             try:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content, encoding="utf-8")
-            except Exception:
-                pass
+                _invalidate_json_cache(p)
+            except Exception as exc:
+                logger.warning("儲存試題報錯紀錄失敗 (%s): %s", p, exc)
+        for p in (MCQ_REPORTS_FILE, REPO_MCQ_REPORTS_FILE):
+            sig = self._file_sig(p)
+            if sig is not None:
+                self._reports_log_sig = (str(p), sig)
+                break
+
+    def _refresh_from_disk_if_changed(self) -> None:
+        """僅在外部磁碟檔案 mtime/size 變動時重新載入動態庫與報錯紀錄，避免每次 rerun 重複讀取"""
+        for p in (COMMUNITY_MCQ_FILE, REPO_COMMUNITY_MCQ_FILE):
+            sig = self._file_sig(p)
+            if sig is not None:
+                if getattr(self, "_dynamic_bank_sig", None) != (str(p), sig):
+                    self.dynamic_bank = self._load_dynamic_bank()
+                break
+        for p in (MCQ_REPORTS_FILE, REPO_MCQ_REPORTS_FILE):
+            sig = self._file_sig(p)
+            if sig is not None:
+                if getattr(self, "_reports_log_sig", None) != (str(p), sig):
+                    self.reports_log = self._load_reports_log()
+                break
 
     @staticmethod
     def _generate_question_hash(q_text: str, opt_a: str = "") -> str:
@@ -145,7 +214,8 @@ class MCQBankManager:
         return hashlib.md5(f"{clean_q}_{clean_a}".encode("utf-8")).hexdigest()[:12]
 
     def load_all_base_questions(self) -> List[Dict[str, Any]]:
-        """全量彙整所有底層靜態題庫與動態社群題庫"""
+        """全量彙整所有底層靜態題庫與動態社群題庫（結合檔案 mtime 快取避免每次重讀磁碟）"""
+        self._refresh_from_disk_if_changed()
         all_qs = []
         seen_hashes = set()
 
@@ -158,7 +228,7 @@ class MCQBankManager:
         for bp in bank_paths:
             if bp.exists():
                 try:
-                    data = json.loads(bp.read_text(encoding="utf-8"))
+                    data, _ = _read_json_cached(bp)
                     for q in data.get("questions", []):
                         q_copy = dict(q)
                         q_copy["subject"] = SUBJECT_ADMIN_LAW
@@ -172,8 +242,8 @@ class MCQBankManager:
                             all_qs.append(q_copy)
                             seen_hashes.add(h)
                     break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("讀取行政法靜態題庫失敗 (%s): %s", bp, exc)
 
         # 2. 跨科全真模擬題庫 (86 題)
         multi_bank_paths = [
@@ -184,7 +254,7 @@ class MCQBankManager:
         for mbp in multi_bank_paths:
             if mbp.exists():
                 try:
-                    mdata = json.loads(mbp.read_text(encoding="utf-8"))
+                    mdata, _ = _read_json_cached(mbp)
                     for q in mdata:
                         q_copy = dict(q)
                         qid = q_copy.get("id") or f"multi_{q_copy.get('subject')}_{q_copy.get('question_no', 0)}"
@@ -196,8 +266,8 @@ class MCQBankManager:
                             all_qs.append(q_copy)
                             seen_hashes.add(h)
                     break
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("讀取跨科靜態題庫失敗 (%s): %s", mbp, exc)
 
         # 3. 動態題庫 (包含 AI 生成、PDF 上傳與修正題)
         for dq in self.dynamic_bank:
@@ -250,7 +320,7 @@ class MCQBankManager:
                 stats[sub] = {"total": 0, "active": 0, "under_review": 0, "corrected": 0}
             stats[sub]["total"] += 1
             st = q.get("status", "active")
-            if st == "under_review":
+            if st in _WITHDRAWN_STATUSES:
                 stats[sub]["under_review"] += 1
             elif st == "verified_corrected":
                 stats[sub]["active"] += 1
@@ -373,8 +443,8 @@ class MCQBankManager:
         all_qs = self.load_all_base_questions()
         norm_sub = normalize_subject_key(subject)
 
-        # 1. 基本活躍性過濾 (撤下題不予抽考)
-        active_pool = [q for q in all_qs if q.get("status") != "under_review"]
+        # 1. 基本活躍性過濾 (撤下題與審查異常題不予抽考)
+        active_pool = [q for q in all_qs if q.get("status") not in _WITHDRAWN_STATUSES]
 
         # 2. 考科過濾
         if norm_sub != SUBJECT_ALL_MIXED:
@@ -402,8 +472,8 @@ class MCQBankManager:
                 active_pool = filtered
 
         if not active_pool:
-            # 寬鬆退回考科全庫
-            active_pool = [q for q in all_qs if q.get("status") != "under_review"]
+            # 寬鬆退回考科全庫（仍嚴格排除撤下題與審查異常題）
+            active_pool = [q for q in all_qs if q.get("status") not in _WITHDRAWN_STATUSES]
             if norm_sub != SUBJECT_ALL_MIXED:
                 active_pool = [q for q in active_pool if normalize_subject_key(q.get("subject", "")) == norm_sub]
 
@@ -416,9 +486,9 @@ class MCQBankManager:
             qc = dict(q)
             qc["original_no"] = qc.get("question_no")
             qc["question_no"] = i
-            ans = str(qc.get("answer", "A")).strip().upper()
-            if ans not in ("A", "B", "C", "D"):
-                ans = "A"
+            raw_ans = str(qc.get("answer") or "").strip().upper()
+            m_ans = re.search(r'([A-D])', raw_ans) if len(raw_ans) <= 4 else None
+            ans = raw_ans if raw_ans in ("A", "B", "C", "D") else (m_ans.group(1) if m_ans else "")
             qc["answer"] = ans
             answer_key[str(i)] = ans
             reindexed_qs.append(qc)
@@ -451,6 +521,12 @@ class MCQBankManager:
             q_text = q.get("question", "")
             opts = q.get("options", {})
             h = self._generate_question_hash(q_text, opts.get("A", ""))
+            raw_ans = str(q.get("answer") or "").strip().upper()
+            m_ans = re.match(r'^[\(（\[]?\s*([A-D])\s*[\)）\]]?$', raw_ans)
+            norm_ans = m_ans.group(1) if m_ans else ""
+            if not norm_ans or q.get("is_malformed"):
+                logger.warning("略過入庫格式不完整或無有效解答之 AI 試題: %s", str(q_text)[:40])
+                continue
             if h not in existing_hashes:
                 entry = {
                     "id": f"mcq_ai_{uuid.uuid4().hex[:10]}",
@@ -460,7 +536,7 @@ class MCQBankManager:
                     "case_facts": q.get("case_facts", ""),
                     "question": q_text,
                     "options": opts,
-                    "answer": str(q.get("answer", "A")).strip().upper()[:1],
+                    "answer": norm_ans,
                     "explanation": q.get("explanation", ""),
                     "core_issue": q.get("core_issue", ""),
                     "source": f"AI智慧命題 ({norm_sub} - {now_str})",
@@ -516,7 +592,7 @@ class MCQBankManager:
 
                 # 從 (D) 後續中抽取答案或解析
                 od = od_all
-                ans = "A"
+                ans = ""
                 exp = ""
                 m_ans = re.search(r'(?:答案|正確答案|解答)[：:\s]*\(?([A-D])\)?', od_all, re.IGNORECASE)
                 if m_ans:
@@ -524,6 +600,7 @@ class MCQBankManager:
                     od = od_all[:m_ans.start()].strip()
                     exp = od_all[m_ans.end():].strip()
 
+                default_exp = f"【解析】：本題依據{norm_sub}法理與最高法院判決見解，正確答案為 ({ans})。" if ans else "【解析】：PDF 原始文本未附明確答案，請後續審校補充。"
                 opts = {"A": oa[:300], "B": ob[:300], "C": oc[:300], "D": od[:300]}
                 h = self._generate_question_hash(q_text, oa)
                 extracted.append({
@@ -534,9 +611,9 @@ class MCQBankManager:
                     "question": q_text[:800],
                     "options": opts,
                     "answer": ans,
-                    "explanation": exp[:1200] if exp else f"【解析】：本題依據{norm_sub}法理與最高法院判決見解，正確答案為 ({ans})。",
+                    "explanation": exp[:1200] if exp else default_exp,
                     "source": f"試卷PDF匯入《{filename}》({now_str})",
-                    "status": "active",
+                    "status": "active" if ans else "under_review",
                     "created_at": now_str
                 })
 
@@ -583,7 +660,7 @@ class MCQBankManager:
 
         # 分離選項 D 與可能附帶之答案解析
         od = od_raw
-        ans = "A"
+        ans = ""
         exp = ""
         m_ans = re.search(r'(?:答案|正確答案|解答|解析)[：:\s]*\(?([A-D])\)?', od_raw, re.IGNORECASE)
         if m_ans:
@@ -591,6 +668,7 @@ class MCQBankManager:
             od = od_raw[:m_ans.start()].strip()
             exp = od_raw[m_ans.start():].strip()
 
+        default_exp = f"【解析】：本題經考點分析，正確選項為 ({ans})。" if ans else "【解析】：PDF 原始文本未附明確答案，請後續審校補充。"
         h = self._generate_question_hash(q_stem, oa)
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         return {
@@ -601,9 +679,9 @@ class MCQBankManager:
             "question": q_stem[:800],
             "options": {"A": oa[:300], "B": ob[:300], "C": oc[:300], "D": od[:300]},
             "answer": ans,
-            "explanation": exp[:1200] if exp else f"【解析】：本題經考點分析，正確選項為 ({ans})。",
+            "explanation": exp[:1200] if exp else default_exp,
             "source": f"試卷PDF《{filename}》",
-            "status": "active",
+            "status": "active" if ans else "under_review",
             "created_at": now_str
         }
 
@@ -667,15 +745,68 @@ class MCQBankManager:
         # Step 3: 若有理由，呼叫 Gemini 進行專業法學審查與自動修正
         adjudication_res = self._call_ai_adjudicator(question_item, user_reason_clean)
 
-        is_valid = adjudication_res.get("is_valid", False)
-        verdict = adjudication_res.get("verdict", "")
-        rationale = adjudication_res.get("legal_rationale", "")
+        failed = (
+            not isinstance(adjudication_res, dict)
+            or adjudication_res.get("success") is False
+            or "is_valid" not in adjudication_res
+            or not isinstance(adjudication_res.get("is_valid"), bool)
+        )
+
+        new_ans = ""
+        if not failed and adjudication_res.get("is_valid") is True:
+            raw_new_ans = (adjudication_res.get("corrected_answer") or question_item.get("answer") or "").strip().upper()
+            m_new_ans = re.match(r'^[\(（\[]?\s*([A-D])\s*[\)）\]]?', raw_new_ans)
+            new_ans = m_new_ans.group(1) if m_new_ans else ""
+            if not new_ans:
+                failed = True
+                adjudication_res = {
+                    "success": False,
+                    "error_type": "InvalidCorrectedAnswer",
+                    "error": f"AI 判定需修正但未提供合法 A-D 選項答案: {raw_new_ans!r}",
+                }
+
+        if failed:
+            err_msg = (adjudication_res or {}).get("error") if isinstance(adjudication_res, dict) else "AI 審查調用失敗"
+            err_msg = err_msg or "AI 審查調用失敗"
+            err_type = (adjudication_res or {}).get("error_type") if isinstance(adjudication_res, dict) else "AdjudicationError"
+            err_type = err_type or "AdjudicationError"
+            logger.warning("試題 %s AI 疑義裁量失敗 (%s): %s；維持撤下狀態不重新上架", qid, err_type, err_msg)
+
+            report_record.update({
+                "status": "adjudication_failed",
+                "error": err_msg,
+                "error_type": err_type,
+                "review_note": f"AI 審查調用失敗（{err_type}），已維持撤下狀態並保留原題與原詳解。",
+                "failed_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            })
+            self.reports_log[qid] = report_record
+            self.reports_log[qhash] = report_record
+            for dq in self.dynamic_bank:
+                if str(dq.get("id")) == qid or dq.get("hash") == qhash:
+                    dq["status"] = "adjudication_failed"
+                    dq["review_note"] = report_record["review_note"]
+            self._save_dynamic_bank()
+            self._save_reports_log()
+
+            return {
+                "success": False,
+                "status": "adjudication_failed",
+                "is_withdrawn": True,
+                "is_adjudicated": False,
+                "is_valid": False,
+                "error": err_msg,
+                "error_type": err_type,
+                "message": f"⚠️ AI 試題審查失敗（{err_msg}）。本題已維持撤下狀態，原始題目與詳解未更動。",
+            }
+
+        is_valid = adjudication_res["is_valid"]
+        verdict = str(adjudication_res.get("verdict") or "")
+        rationale = str(adjudication_res.get("legal_rationale") or "")
 
         if is_valid:
             # 考生有理：全面修正題目、選項、答案與詳解
             new_q = adjudication_res.get("corrected_question") or question_item.get("question")
             new_opts = adjudication_res.get("corrected_options") or question_item.get("options")
-            new_ans = (adjudication_res.get("corrected_answer") or question_item.get("answer", "A")).strip().upper()[:1]
             new_exp = adjudication_res.get("corrected_explanation") or f"【AI 修正後詳解】：經考生提出疑義，依最新裁判見解，正確答案修正為 ({new_ans})。{rationale}"
 
             review_summary = f"【考生指摘有據・已修正】：{verdict}\n法理依據：{rationale}"
@@ -731,8 +862,9 @@ class MCQBankManager:
             }
         else:
             # 考生理解有誤，原題與答案依法有據：補充釋疑說明並維持
-            orig_ans = question_item.get("answer", "A")
-            clarification = f"\n\n💡【考生疑義釋疑】：有考生提問『{user_reason_clean}』。經 AI 依司法院裁判與法理深入複核：{rationale}，本題原命題與答案 ({orig_ans}) 依法並無違誤。"
+            orig_ans = str(question_item.get("answer") or "").strip().upper()
+            ans_label = f" ({orig_ans})" if orig_ans else ""
+            clarification = f"\n\n💡【考生疑義釋疑】：有考生提問『{user_reason_clean}』。經 AI 依司法院裁判與法理深入複核：{rationale}，本題原命題與答案{ans_label}依法並無違誤。"
             orig_exp = question_item.get("explanation", "") + clarification
 
             review_summary = f"【原題正當・補充釋疑】：{verdict}\n釋疑法理：{rationale}"
@@ -762,18 +894,11 @@ class MCQBankManager:
                 "rationale": rationale,
                 "new_answer": orig_ans,
                 "new_explanation": orig_exp,
-                "message": f"💡 審查完成：AI 判定原答案 ({orig_ans}) 依法有據（{verdict}）。釋疑理由已增補至本題詳細解析中並重新上架！"
+                "message": f"💡 審查完成：AI 判定原答案{ans_label}依法有據（{verdict}）。釋疑理由已增補至本題詳細解析中並重新上架！"
             }
 
     def _call_ai_adjudicator(self, q_item: Dict[str, Any], user_reason: str) -> Dict[str, Any]:
-        """呼叫 Gemini 進行一試試題疑義裁量"""
-        api_key = get_gemini_api_key()
-        if not api_key:
-            return {
-                "is_valid": False,
-                "verdict": "未配置 API Key，暫維持撤下待審",
-                "legal_rationale": "因目前無可用的 Gemini API Key，題目將持續保留於待審清單中。"
-            }
+        """呼叫 Gemini 進行一試試題疑義裁量（經由 llm_client 支援模型容錯、指數退避重試與嚴格 JSON 模式）"""
 
         prompt = f"""
 你是一位深諳中華民國司律一試（司法官、律師國家考試）命題審查規範的權威法學教授與大法官評議召集人。
@@ -787,7 +912,7 @@ class MCQBankManager:
   (B) {q_item.get("options", {}).get("B", "")}
   (C) {q_item.get("options", {}).get("C", "")}
   (D) {q_item.get("options", {}).get("D", "")}
-- 原定公布答案：({q_item.get("answer", "A")})
+- 原定公布答案：({q_item.get("answer") or "未定"})
 - 原題附帶詳解：{q_item.get("explanation", "")}
 
 【考生提出之報錯理由與爭執論點】：
@@ -814,40 +939,33 @@ class MCQBankManager:
 }}
 """
 
-        # 嘗試使用 google.genai 或 google.generativeai
         try:
-            try:
-                from google import genai
-                from google.genai import types as genai_types
-                client = genai.Client(api_key=api_key)
-                cfg = genai_types.GenerateContentConfig(temperature=0.2)
-                resp = client.models.generate_content(
-                    model=DEFAULT_GEMINI_MODEL,
-                    contents=prompt,
-                    config=cfg
-                )
-                raw_text = resp.text
-            except Exception:
-                import google.generativeai as legacy_genai
-                legacy_genai.configure(api_key=api_key)
-                m = legacy_genai.GenerativeModel(DEFAULT_GEMINI_MODEL)
-                resp = m.generate_content(prompt, generation_config={"temperature": 0.2})
-                raw_text = resp.text
-
-            clean_json = raw_text.strip()
-            if "```" in clean_json:
-                m_code = re.search(r'```(?:json)?\s*([\s\S]+?)\s*```', clean_json)
-                if m_code:
-                    clean_json = m_code.group(1).strip()
-
-            parsed = json.loads(clean_json)
-            return parsed
-        except Exception as e:
-            # 容錯回傳
+            parsed = llm_client.generate_json(prompt, temperature=0.2)
+            if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+                parsed = parsed[0]
+            if not isinstance(parsed, dict) or not isinstance(parsed.get("is_valid"), bool):
+                logger.warning("AI 審查回傳格式異常（缺少有效之布林值 is_valid 裁決）: %r", type(parsed).__name__)
+                return {
+                    "success": False,
+                    "error_type": "InvalidAdjudicationResponse",
+                    "error": "AI 審查回傳格式異常（缺少有效之 is_valid 裁決欄位）",
+                }
+            res = dict(parsed)
+            res["success"] = True
+            return res
+        except llm_client.MissingApiKeyError as e:
+            logger.warning("AI 試題裁量失敗（未配置 GEMINI_API_KEY）: %s", e)
             return {
-                "is_valid": False,
-                "verdict": f"AI 審查調用發生異常: {str(e)[:60]}",
-                "legal_rationale": f"因 API 調用或解析格式問題，已先將試題撤下以策安全。異常詳情: {e}"
+                "success": False,
+                "error_type": "MissingApiKeyError",
+                "error": str(e),
+            }
+        except (llm_client.AuthError, llm_client.LlmCallError, ValueError, json.JSONDecodeError, Exception) as e:
+            logger.warning("AI 試題裁量失敗 (%s): %s", type(e).__name__, e)
+            return {
+                "success": False,
+                "error_type": type(e).__name__,
+                "error": str(e),
             }
 
 

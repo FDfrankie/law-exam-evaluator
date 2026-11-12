@@ -17,31 +17,29 @@ AI 裁判深度精華摘要與判旨提煉引擎（對標 Lawsnote 裁判摘要�
 import os
 import re
 import json
+import logging
 import sqlite3
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 from config import (
     DATA_DIR,
     JUDICIAL_1M_DIR,
-    get_gemini_api_key,
-    get_gemini_models_to_try
 )
+from llm_client import generate_content, LlmCallError
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    HAS_GENAI = True
-    USE_MODERN_GENAI = True
-except ImportError:
+logger = logging.getLogger(__name__)
+
+
+def get_case_citation_verifier():
+    """取得案號防偽驗證器（供 UI 與摘要器共用）"""
     try:
-        import google.generativeai as legacy_genai
-        HAS_GENAI = True
-        USE_MODERN_GENAI = False
-    except ImportError:
-        HAS_GENAI = False
-        USE_MODERN_GENAI = False
+        from case_citation_verifier import get_case_verifier
+        return get_case_verifier()
+    except Exception as exc:
+        logger.warning("Failed to initialize CaseCitationVerifier: %s", exc)
+        return None
 
 
 class JudgmentSummarizer:
@@ -60,51 +58,125 @@ class JudgmentSummarizer:
         if getattr(self, "_initialized", False):
             return
         self._initialized = True
-        self.api_key = get_gemini_api_key()
         self.cache_db_path = Path(DATA_DIR) / "judgment_summaries_cache.db"
         self._init_cache_db()
 
+    @staticmethod
+    def _ensure_cache_schema(conn: sqlite3.Connection):
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS judgment_summaries (
+                hash_key TEXT PRIMARY KEY,
+                case_id TEXT,
+                court TEXT,
+                date TEXT,
+                summary_json TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_js_case_id ON judgment_summaries(case_id);")
+
     def _init_cache_db(self):
+        conn = None
         try:
             self.cache_db_path.parent.mkdir(parents=True, exist_ok=True)
-            with sqlite3.connect(str(self.cache_db_path)) as conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS judgment_summaries (
-                        hash_key TEXT PRIMARY KEY,
-                        case_id TEXT,
-                        court TEXT,
-                        date TEXT,
-                        summary_json TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_js_case_id ON judgment_summaries(case_id);")
-        except Exception:
-            pass
+            conn = sqlite3.connect(str(self.cache_db_path))
+            self._ensure_cache_schema(conn)
+            conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to initialize judgment cache DB %s: %s", self.cache_db_path, exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def _get_cache(self, hash_key: str) -> Optional[Dict[str, Any]]:
+        if not self.cache_db_path.exists():
+            return None
+        conn = None
         try:
-            with sqlite3.connect(str(self.cache_db_path)) as conn:
-                conn.row_factory = sqlite3.Row
-                row = conn.execute(
-                    "SELECT summary_json FROM judgment_summaries WHERE hash_key = ?",
-                    (hash_key,)
-                ).fetchone()
-                if row and row["summary_json"]:
-                    return json.loads(row["summary_json"])
-        except Exception:
-            pass
+            uri = f"file:{self.cache_db_path.resolve().as_posix()}?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                "SELECT summary_json FROM judgment_summaries WHERE hash_key = ?",
+                (hash_key,)
+            ).fetchone()
+            if row and row["summary_json"]:
+                data = json.loads(row["summary_json"])
+                if isinstance(data, dict) and data.get("success") is True:
+                    return data
+        except Exception as exc:
+            logger.warning("Failed to read judgment cache %s: %s", self.cache_db_path, exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         return None
 
     def _set_cache(self, hash_key: str, case_id: str, court: str, date: str, summary_data: Dict[str, Any]):
+        if not isinstance(summary_data, dict) or not summary_data.get("success"):
+            return
+        conn = None
         try:
-            with sqlite3.connect(str(self.cache_db_path)) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO judgment_summaries (hash_key, case_id, court, date, summary_json) VALUES (?, ?, ?, ?, ?)",
-                    (hash_key, case_id, court, date, json.dumps(summary_data, ensure_ascii=False))
-                )
-        except Exception:
-            pass
+            self.cache_db_path.parent.mkdir(parents=True, exist_ok=True)
+            # 確保二進位欄位不會寫入 JSON 快取造成 TypeError
+            cacheable = {
+                k: v for k, v in summary_data.items()
+                if k not in ("docx_bytes", "pdf_bytes")
+            }
+            payload = json.dumps(cacheable, ensure_ascii=False)
+            conn = sqlite3.connect(str(self.cache_db_path))
+            self._ensure_cache_schema(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO judgment_summaries (hash_key, case_id, court, date, summary_json) VALUES (?, ?, ?, ?, ?)",
+                (hash_key, case_id, court, date, payload)
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.warning("Failed to write judgment cache %s: %s", self.cache_db_path, exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _is_case_verified(summary_data: Dict[str, Any]) -> bool:
+        if summary_data.get("case_verified") is True:
+            return True
+        cv = summary_data.get("case_verification")
+        if isinstance(cv, dict) and cv.get("is_verified") is True:
+            return True
+        cid = (summary_data.get("case_id") or "").strip()
+        if cid:
+            for cit in summary_data.get("citations") or []:
+                if isinstance(cit, dict) and cit.get("is_verified") is True:
+                    if cid in (cit.get("case_id") or "") or (cit.get("case_id") or "") in cid:
+                        return True
+        return False
+
+    @classmethod
+    def _get_verification_labels(cls, summary_data: Dict[str, Any]) -> Tuple[str, str]:
+        """回傳 (DOCX 核驗標籤, PDF 核驗標籤)，絕不偽稱未核驗案號已通過正本核驗"""
+        if cls._is_case_verified(summary_data):
+            return (
+                "🛡️ 案號驗證：司法院官方正本核驗通過",
+                "✅ 司法院官方正本核驗通過",
+            )
+        if (summary_data.get("case_id") or "").strip():
+            return (
+                "⚠️ 案號驗證：未通過本機正本核驗（請逕向司法院網站查證）",
+                "⚠️ 未通過本機正本核驗（請查證）",
+            )
+        return (
+            "ℹ️ 案號驗證：未指定裁判案號（依輸入內文摘錄）",
+            "ℹ️ 未指定案號（依輸入內文摘錄）",
+        )
 
     def summarize_judgment(
         self,
@@ -128,8 +200,8 @@ class JudgmentSummarizer:
                 if doc and doc.get("found"):
                     judgment_text = doc.get("text", "") or doc.get("holding_snippet", "")
                     court = court or doc.get("court_or_agency", "")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to look up judgment text for %s: %s", case_id, exc)
 
         if not judgment_text or not judgment_text.strip():
             return {"success": False, "error": "請提供欲摘要之裁判內文或案號！"}
@@ -137,17 +209,16 @@ class JudgmentSummarizer:
         clean_text = judgment_text.strip()
         hash_key = hashlib.md5(f"{case_id}_{clean_text[:1000]}".encode('utf-8')).hexdigest()
 
-        # 1. 檢查快取
+        # 1. 檢查快取（僅讀取已成功之快取結果，並於讀取時按需重建檔案位元組）
         if not force_regenerate:
             cached = self._get_cache(hash_key)
-            if cached:
+            if cached and cached.get("success") is True and (cached.get("summary_markdown") or cached.get("markdown_result")):
                 cached["cached"] = True
+                cached.setdefault("case_verified", self._is_case_verified(cached))
                 if not cached.get("dimensions"):
                     cached["dimensions"] = self._extract_dimensions(cached.get("summary_markdown", ""))
-                if "docx_bytes" not in cached or not cached.get("docx_bytes"):
-                    cached["docx_bytes"] = self.generate_summary_docx(cached)
-                if "pdf_bytes" not in cached or not cached.get("pdf_bytes"):
-                    cached["pdf_bytes"] = self.generate_summary_pdf(cached)
+                cached["docx_bytes"] = self.generate_summary_docx(cached)
+                cached["pdf_bytes"] = self.generate_summary_pdf(cached)
                 return cached
 
         # 2. 構建 Prompt
@@ -187,20 +258,46 @@ class JudgmentSummarizer:
 - 對於律師實務辦案或司法考試作答之實務指導意義。
 """
 
-        summary_content = self._call_llm(prompt)
+        try:
+            summary_content = self._call_llm(prompt)
+        except Exception as exc:
+            err_msg = str(exc) or "Gemini AI 摘要服務暫時無法使用"
+            logger.warning("JudgmentSummarizer LLM failed for case_id=%s: %s", case_id, err_msg)
+            return {
+                "success": False,
+                "error": err_msg,
+                "case_id": case_id,
+                "court": court,
+                "date": date,
+                "summary_markdown": "",
+                "markdown_result": "",
+                "audit_markdown": "",
+                "citations": [],
+                "case_verification": None,
+                "case_verified": False,
+                "dimensions": {},
+                "cached": False,
+                "docx_bytes": b"",
+                "pdf_bytes": b"",
+            }
 
         # 3. 案號防偽核驗 (Ground Truth Case Audit)
         audit_md = ""
         verified_citations = []
+        case_verification = None
+        is_case_verified = False
         try:
             from case_citation_verifier import get_case_verifier
             verifier = get_case_verifier()
+            if case_id:
+                case_verification = verifier.verify_citation(case_id)
+                is_case_verified = bool(case_verification.get("is_verified"))
             v_res = verifier.verify_text_citations(summary_content, auto_badge=True)
             summary_content = v_res.get("annotated_text", summary_content)
             audit_md = v_res.get("audit_markdown", "")
             verified_citations = v_res.get("citations", [])
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("CaseCitationVerifier failed in JudgmentSummarizer: %s", exc)
 
         dims = self._extract_dimensions(summary_content)
         result = {
@@ -212,78 +309,25 @@ class JudgmentSummarizer:
             "markdown_result": summary_content,
             "audit_markdown": audit_md,
             "citations": verified_citations,
+            "case_verification": case_verification,
+            "case_verified": is_case_verified,
             "dimensions": dims,
             "cached": False
         }
+
+        # 4. 存入快取（在附加 docx_bytes / pdf_bytes 之前寫入純 JSON 資料）
+        self._set_cache(hash_key, case_id, court, date, result)
+
         result["docx_bytes"] = self.generate_summary_docx(result)
         result["pdf_bytes"] = self.generate_summary_pdf(result)
-
-        # 4. 存入快取
-        self._set_cache(hash_key, case_id, court, date, result)
         return result
 
     def _call_llm(self, prompt: str) -> str:
-        if not HAS_GENAI:
-            return self._offline_summary_fallback(prompt)
-
-        models_to_try = get_gemini_models_to_try()
-        last_error = None
-
-        if USE_MODERN_GENAI:
-            client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
-            for model_name in models_to_try:
-                try:
-                    resp = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=genai_types.GenerateContentConfig(
-                            temperature=0.2,
-                            max_output_tokens=3000
-                        ) if hasattr(genai_types, 'GenerateContentConfig') else None
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-        else:
-            if self.api_key:
-                legacy_genai.configure(api_key=self.api_key)
-            for model_name in models_to_try:
-                try:
-                    m = legacy_genai.GenerativeModel(model_name)
-                    resp = m.generate_content(
-                        prompt,
-                        generation_config={"temperature": 0.2, "max_output_tokens": 3000}
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-
-        return self._offline_summary_fallback(prompt)
-
-    def _offline_summary_fallback(self, prompt: str) -> str:
-        """離線或配額耗盡時之確定性法理摘要結構"""
-        return """### 📌 一、訴訟標的與基礎事實摘要
-本案涉及民刑事核心實體爭端。原審就兩造爭執事項所為裁判，當事人不服提起救濟。經法院審理認定基礎案件事實具備法定構成要件該當性。
-
-### ⚖️ 二、兩造主張要旨
-- **上訴人/原告主張**：主張權利受損，依法請求履行給付、損害賠償或撤銷原處分。
-- **被上訴人/被告答辯**：主張無故意過失、已依約清償、或罹於法定消滅時效。
-
-### 🎯 三、核心法律爭點
-法律構成要件解釋與實體法規適用邊界之界定。
-
-### 🏛️ 四、法院裁判主旨與判旨要旨
-法院審酌全辯論意旨及調查證據之結果，認定實體權利義務關係明確。原審判決採證認事符合經驗法則與論理法則，見解洵屬正當，依法定奪主旨。
-
-### 🧩 五、法院法律推演與要件涵攝
-依法條文義、立法目的與利益衡量進行縝密涵攝，確認法定要件成立與否。
-
-### 🌟 六、本件裁判之實務指引與指標價值
-確立同類案件之訴訟攻防策略、舉證責任分配與法規適用標準。"""
+        return generate_content(
+            prompt,
+            temperature=0.2,
+            max_output_tokens=3000,
+        )
 
 
 
@@ -353,13 +397,15 @@ class JudgmentSummarizer:
 
             doc.add_paragraph("─" * 48).alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+            docx_verify_label, _ = self._get_verification_labels(summary_data)
+
             # 基本資訊表
             tbl = doc.add_table(rows=2, cols=2)
             tbl.autofit = True
             tbl.cell(0, 0).text = f"🏛️ 審理法院：{court}"
             tbl.cell(0, 1).text = f"📅 裁判日期：{date or '依正本為準'}"
             tbl.cell(1, 0).text = f"🔖 裁判字號：{cid}"
-            tbl.cell(1, 1).text = f"🛡️ 案號驗證：司法院官方正本核驗通過"
+            tbl.cell(1, 1).text = docx_verify_label
 
             doc.add_paragraph("")
 
@@ -415,6 +461,7 @@ class JudgmentSummarizer:
             doc.save(buffer)
             return buffer.getvalue()
         except Exception as e:
+            logger.warning("Failed to generate judgment summary DOCX: %s", e)
             return b""
 
 
@@ -425,12 +472,13 @@ class JudgmentSummarizer:
             cid = summary_data.get("case_id") or "司法裁判書"
             court = summary_data.get("court") or "中華民國法院"
             date = summary_data.get("date") or ""
+            _, pdf_verify_label = self._get_verification_labels(summary_data)
 
             pdf = LegalPdfDocument(title=f"📑 裁判精鍊要旨・{cid}")
             pdf.add_title("🏛️ 中華民國司法裁判精鍊與深度判旨摘要書")
             pdf.add_table(
                 ["審理法院", "裁判案號", "裁判日期", "案號真偽核驗"],
-                [[court, cid, date or "依正本為準", "✅ 司法院官方正本核驗通過"]]
+                [[court, cid, date or "依正本為準", pdf_verify_label]]
             )
 
             dims = summary_data.get("dimensions", {})
@@ -458,7 +506,8 @@ class JudgmentSummarizer:
                     pdf.add_paragraph("（詳見裁判全文）", font_size=9.5, color=(0.5, 0.5, 0.5))
 
             return pdf.get_pdf_bytes()
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to generate judgment summary PDF: %s", e)
             return b""
 
 _summarizer_instance = None

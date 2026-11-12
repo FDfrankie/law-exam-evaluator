@@ -9,21 +9,11 @@ from PIL import Image
 import pdfplumber
 import docx
 
-try:
-    from google import genai
-    from google.genai import types
-    NEW_SDK = True
-except ImportError:
-    try:
-        import google.generativeai as genai
-        types = None
-        NEW_SDK = False
-    except ImportError:
-        genai = None
-        types = None
-        NEW_SDK = False
+import logging
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+from llm_client import LlmCallError, MissingApiKeyError, generate_content
+
+logger = logging.getLogger(__name__)
 
 def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str] = None) -> str:
     """
@@ -35,18 +25,6 @@ def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str]
     if not images:
         return ""
         
-    api_key = get_gemini_api_key()
-    if not api_key:
-        return "[提示] 未配置 GEMINI_API_KEY，無法執行手寫/影像 OCR 辨識。"
-
-    if NEW_SDK:
-        client = genai.Client(api_key=api_key)
-        config = types.GenerateContentConfig(temperature=0.2)
-    elif genai is not None:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name=DEFAULT_GEMINI_MODEL)
-    else:
-        return "[提示] 系統未安裝 google-genai 或 google-generativeai 套件，無法執行 OCR。"
 
     prompt = """
 你是一位精通台灣法學與繁體中文手寫辨識的專家與權威法學助理。
@@ -64,37 +42,24 @@ def ocr_handwritten_images(images: List[Image.Image], prompt_hint: Optional[str]
     # 若頁數過多，分批處理（每批最多 4 頁以確保最高辨識解析度）
     batch_size = 4
     results = []
-    
+
     for i in range(0, len(images), batch_size):
-        chunk = images[i:i + batch_size]
+        end_idx = min(i + batch_size, len(images))
+        chunk = images[i:end_idx]
         contents = [prompt] + chunk
-        models_to_try = get_gemini_models_to_try()
-        last_e = None
-        for m_name in models_to_try:
-            try:
-                if NEW_SDK:
-                    resp = client.models.generate_content(
-                        model=m_name,
-                        contents=contents,
-                        config=config
-                    )
-                else:
-                    cur_model = genai.GenerativeModel(model_name=m_name)
-                    resp = cur_model.generate_content(
-                        contents,
-                        generation_config=genai.types.GenerationConfig(
-                            temperature=0.2,
-                        )
-                    )
-                if resp and resp.text:
-                    results.append(resp.text.strip())
-                    last_e = None
-                    break
-            except Exception as e:
-                last_e = e
-                continue
-        if last_e:
-            results.append(f"[第 {i+1}~{min(i+batch_size, len(images))} 頁辨識異常: {last_e}]")
+        try:
+            text = generate_content(contents, temperature=0.2)
+            if text and text.strip():
+                results.append(text.strip())
+            else:
+                logger.warning("OCR 第 %d~%d 頁回傳空白內容", i + 1, end_idx)
+                results.append(f"[第 {i+1}~{end_idx} 頁辨識異常: 模型回傳空白內容]")
+        except MissingApiKeyError:
+            logger.warning("未配置 GEMINI_API_KEY，無法執行手寫/影像 OCR 辨識")
+            return "[提示] 未配置 GEMINI_API_KEY，無法執行手寫/影像 OCR 辨識。"
+        except (LlmCallError, Exception) as e:
+            logger.warning("OCR 第 %d~%d 頁辨識異常: %s", i + 1, end_idx, e)
+            results.append(f"[第 {i+1}~{end_idx} 頁辨識異常: {e}]")
 
     return "\n\n---\n\n".join(results)
 

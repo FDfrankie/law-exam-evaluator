@@ -13,132 +13,93 @@ import time
 import re
 import uuid
 from typing import Dict, Any, List, Optional, Callable
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except Exception:
-    try:
-        import google.generativeai as legacy_genai
-    except Exception:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+import logging
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try, RAW_DATA_DIR, DATA_DIR
+from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR
+import llm_client
+
+logger = logging.getLogger(__name__)
+
+
+def _verify_text_citations(
+    c_verifier: Any,
+    value: Any,
+    context_topic: str,
+    cits_acc: Optional[List[Any]] = None,
+) -> Any:
+    """Verify and decorate string or list-of-strings fields via CaseCitationVerifier."""
+    if isinstance(value, str):
+        if not value.strip():
+            return value
+        v_res = c_verifier.verify_and_decorate_response(value, context_topic=context_topic, auto_badge=True)
+        if cits_acc is not None and v_res.get("citations"):
+            cits_acc.extend(v_res["citations"])
+        return v_res.get("annotated_text") or value
+    if isinstance(value, list):
+        return [
+            _verify_text_citations(c_verifier, item, context_topic, cits_acc)
+            if isinstance(item, str) else item
+            for item in value
+        ]
+    return value
+
 
 class LawExamGenerator:
-    def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
-        self.api_key = get_gemini_api_key()
-        if not self.api_key:
-            raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
-        self.model_name = model_name
-        if USE_MODERN_GENAI:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
-            if legacy_genai is None:
-                raise RuntimeError("未安裝 google-genai 或 google-generativeai 套件！")
-            legacy_genai.configure(api_key=self.api_key)
-            self.model = legacy_genai.GenerativeModel(model_name=model_name)
+    def __init__(self, model_name: str = DEFAULT_GEMINI_MODEL, api_key: Optional[str] = None):
+        self._explicit_api_key = api_key
+        self.model_name = model_name or DEFAULT_GEMINI_MODEL
 
-    def _make_config(self, temperature: float = 0.3, response_mime_type: Optional[str] = "application/json") -> Any:
-        """根據目前載入之 SDK 動態生成安全相容之生成配置物件或字典"""
-        if USE_MODERN_GENAI:
-            kwargs = {"temperature": temperature}
-            if response_mime_type:
-                kwargs["response_mime_type"] = response_mime_type
-            return genai_types.GenerateContentConfig(**kwargs)
-        else:
-            kwargs = {"temperature": temperature}
-            if response_mime_type:
-                kwargs["response_mime_type"] = response_mime_type
-            try:
-                if legacy_genai is not None and hasattr(legacy_genai, "types") and hasattr(legacy_genai.types, "GenerationConfig"):
-                    return legacy_genai.types.GenerationConfig(**kwargs)
-            except Exception:
-                pass
-            return kwargs
+    @property
+    def api_key(self) -> str:
+        return get_gemini_api_key(self._explicit_api_key)
 
-    def _call_model(self, prompt: Any, generation_config: Any = None) -> Any:
-        models_to_try = get_gemini_models_to_try(self.model_name)
-        last_err = None
-        for m_name in models_to_try:
-            try:
-                if USE_MODERN_GENAI:
-                    if isinstance(generation_config, genai_types.GenerateContentConfig):
-                        cfg = generation_config
-                    elif isinstance(generation_config, dict):
-                        cfg = genai_types.GenerateContentConfig(**generation_config)
-                    elif generation_config is not None:
-                        temp = getattr(generation_config, "temperature", 0.3)
-                        mime = getattr(generation_config, "response_mime_type", None)
-                        cfg = genai_types.GenerateContentConfig(
-                            temperature=temp,
-                            response_mime_type=mime
-                        )
-                    else:
-                        cfg = genai_types.GenerateContentConfig(temperature=0.3)
-                    return self.client.models.generate_content(
-                        model=m_name,
-                        contents=prompt,
-                        config=cfg
-                    )
-                else:
-                    if legacy_genai is None:
-                        raise RuntimeError("Neither google-genai nor google-generativeai is installed.")
-                    mod = legacy_genai.GenerativeModel(model_name=m_name)
-                    return mod.generate_content(prompt, generation_config=generation_config)
-            except Exception as e:
-                err_str = str(e).lower()
-                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
-                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                last_err = e
-                continue
-        raise RuntimeError(f"所有 Gemini 模型呼叫均失敗: {last_err}")
+    def _make_config(self, temperature: float = 0.3, response_mime_type: Optional[str] = "application/json") -> Dict[str, Any]:
+        """建立相容於 llm_client 呼叫參數之設定字典"""
+        cfg: Dict[str, Any] = {"temperature": temperature}
+        if response_mime_type:
+            cfg["response_mime_type"] = response_mime_type
+        return cfg
+
+    def _call_model(self, prompt: Any, generation_config: Any = None) -> str:
+        temp = 0.3
+        mime = None
+        if isinstance(generation_config, dict):
+            temp = generation_config.get("temperature", 0.3)
+            mime = generation_config.get("response_mime_type")
+        elif generation_config is not None:
+            temp = getattr(generation_config, "temperature", 0.3)
+            mime = getattr(generation_config, "response_mime_type", None)
+        return llm_client.generate_content(
+            prompt,
+            primary_model=self.model_name,
+            temperature=temp,
+            response_mime_type=mime,
+            api_key=self._explicit_api_key,
+        )
 
     def _parse_json_safely(self, text: str) -> Any:
-        """安全解析模型返回的 JSON，自動過濾 markdown code fence 與修補微小語法問題"""
-        clean = text.strip()
-        # 移除 ```json 和 ```
-        if "```" in clean:
-            clean = re.sub(r"^```(?:json)?", "", clean, flags=re.MULTILINE)
-            clean = re.sub(r"```$", "", clean, flags=re.MULTILINE).strip()
-        
-        try:
-            return json.loads(clean)
-        except json.JSONDecodeError:
-            # 嘗試擷取最外層的 [ ... ] 或 { ... }
-            match = re.search(r"(\[.*\]|\{.*\})", clean, re.DOTALL)
-            if match:
-                try:
-                    return json.loads(match.group(1))
-                except Exception:
-                    pass
-            raise ValueError(f"無法解析為合法 JSON 格式，回傳片段：{clean[:200]}")
+        """安全解析模型返回的 JSON，委派 llm_client 平衡括號解析器處理 code fence 與前後文雜訊"""
+        return llm_client.parse_json_response(text)
 
     @staticmethod
     def _verify_and_align_mcq_item(item: Dict[str, Any]) -> Dict[str, Any]:
         """
         對 AI 生成的一試選擇題進行深度校驗與自癒修正：
-        1. 答案自洽性驗證：比對 explanation/options_analysis 中的分析結論，若 answer 與詳解結論矛盾，自動對齊。
+        1. 答案自洽性驗證與格式標準化：比對 explanation 中的分析結論，若 answer 與詳解結論矛盾則自動對齊；
+           若解答仍缺失或無效，標記為異常項目（絕不預設為 A）。
         2. 清理草稿獨白：過濾『等等，仔細計算...調整案件事實』等草稿自言自語洩漏。
-        3. 時間事實對齊：若解析中發現時間不符並修正了年份，將題幹對應年份同步更新，確保題幹與解析完全一致。
         """
         explanation = str(item.get("explanation", ""))
-        raw_answer = str(item.get("answer", "")).strip().upper()
+        raw_answer = str(item.get("answer", "")).strip()
         options = item.get("options", {})
 
-        # --- 1. 清理草稿獨白與時間調整洩漏 ---
+        # --- 1. 清理草稿獨白洩漏 ---
         leak_match = re.search(
             r'(?:本題中[：:]\s*)?(?:甲對乙之借款債權.*?始屆滿[？?]\s*)?(?:等等[，,]仔細計算|重新檢視時間點).*?(?:調整案件事實之時間邏輯|重新檢視時間點設定)[：:]?\s*',
             explanation,
             re.DOTALL
         )
         if leak_match:
-            # 若有調整時間，同步更新題幹
-            if "94年" in leak_match.group(0) or "94年" in explanation:
-                q_text = item.get("question", "")
-                if "96年1月1日" in q_text:
-                    item["question"] = q_text.replace("96年1月1日", "94年1月1日").replace("95年1月1日", "93年1月1日")
             clean_exp = explanation[:leak_match.start()] + explanation[leak_match.end():]
             clean_exp = re.sub(r'^[，。、；\s]+', '', clean_exp)
             item["explanation"] = clean_exp
@@ -178,17 +139,43 @@ class LawExamGenerator:
             if len(correct_opts) == 1:
                 detected_ans = correct_opts[0]
 
-        # 若抓取到明確的解析結論，且與 raw_answer 不一致，以詳解之實質論述為準進行修正
-        if detected_ans and detected_ans in ["A", "B", "C", "D"]:
-            item["answer"] = detected_ans
-        elif raw_answer in ["A", "B", "C", "D"]:
-            item["answer"] = raw_answer
-        else:
-            item["answer"] = "A"
+        # 標準化 raw_answer（支援 A / (A) / 選項B / 答案：C 等常見格式）
+        cleaned_ans = raw_answer.upper()
+        cleaned_ans = re.sub(r'^(?:正確)?(?:答案|選項)\s*[:：為是]?\s*', '', cleaned_ans).strip()
+        paren_ans = re.match(r'^[\(（\[]\s*([A-D])\s*[\)）\]]$', cleaned_ans)
+        if paren_ans:
+            cleaned_ans = paren_ans.group(1)
+        cleaned_ans = cleaned_ans.strip(" .．、:：")
+        norm_raw_answer = cleaned_ans if cleaned_ans in ("A", "B", "C", "D") else ""
 
-        # 確保 options 結構健全
-        if not isinstance(options, dict) or not options:
-            item["options"] = {"A": "選項A", "B": "選項B", "C": "選項C", "D": "選項D"}
+        # 若抓取到明確的解析結論，且與 raw_answer 不一致，以詳解之實質論述為準進行修正
+        if detected_ans and detected_ans in ("A", "B", "C", "D"):
+            item["answer"] = detected_ans
+            item["answer_valid"] = True
+        elif norm_raw_answer in ("A", "B", "C", "D"):
+            item["answer"] = norm_raw_answer
+            item["answer_valid"] = True
+        else:
+            logger.warning("MCQ 試題解答無效或缺失 (raw_answer=%r)，標記為異常項目", raw_answer)
+            item["answer"] = ""
+            item["answer_valid"] = False
+            item["is_malformed"] = True
+            item["validation_error"] = f"invalid_or_missing_answer:{raw_answer!r}"
+
+        # 確保 options 結構健全並標準化鍵名
+        norm_options: Dict[str, str] = {}
+        if isinstance(options, dict):
+            for k, v in options.items():
+                k_clean = re.sub(r'[\s\(\)（）\[\]\.．、:：]', '', str(k)).upper()
+                if k_clean in ("A", "B", "C", "D"):
+                    norm_options[k_clean] = str(v).strip()
+        item["options"] = norm_options
+        if all(k in norm_options and norm_options[k] for k in ("A", "B", "C", "D")):
+            item["options_valid"] = True
+        else:
+            logger.warning("MCQ 試題選項結構不完整 (keys=%s)", list(norm_options.keys()))
+            item["options_valid"] = False
+            item["is_malformed"] = True
 
         return item
 
@@ -302,32 +289,35 @@ class LawExamGenerator:
 ]
 只輸出純 JSON，勿添加其他多餘文字。
 """
-            resp = self._call_model(
-                prompt,
-                generation_config=self._make_config(
-                    temperature=0.35,
-                    response_mime_type="application/json"
-                )
-            )
-            
             try:
-                batch_items = self._parse_json_safely(resp.text)
-            except Exception as pe:
-                # 容錯重試一次
-                resp_retry = self._call_model(
-                    prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
-                    generation_config=self._make_config(temperature=0.2, response_mime_type="application/json")
+                batch_items = llm_client.generate_json(
+                    prompt,
+                    primary_model=self.model_name,
+                    temperature=0.35,
+                    api_key=self._explicit_api_key,
                 )
-                batch_items = self._parse_json_safely(resp_retry.text)
+            except (ValueError, json.JSONDecodeError) as pe:
+                logger.warning("一試試題 JSON 解析失敗或遭截斷，重試生成 (%s): %s", subject, pe)
+                batch_items = llm_client.generate_json(
+                    prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
+                    primary_model=self.model_name,
+                    temperature=0.2,
+                    api_key=self._explicit_api_key,
+                )
 
             if isinstance(batch_items, dict):
                 batch_items = [batch_items]
+            elif not isinstance(batch_items, list):
+                raise ValueError(f"一試試題預期為 JSON 陣列或物件，實際為 {type(batch_items).__name__}")
 
             for item in batch_items:
+                if not isinstance(item, dict):
+                    logger.warning("略過非物件格式的一試試題項目: %r", type(item).__name__)
+                    continue
                 item["question_no"] = current_q_index
                 item = self._verify_and_align_mcq_item(item)
-                ans = item.get("answer", "A")
-                answer_key[str(current_q_index)] = ans
+                ans = item.get("answer", "")
+                answer_key[str(current_q_index)] = ans if ans in ("A", "B", "C", "D") else ""
                 all_questions.append(item)
                 current_q_index += 1
 
@@ -335,20 +325,26 @@ class LawExamGenerator:
                 progress_callback(len(all_questions), count)
 
         exam_id = f"ai_exam_{uuid.uuid4().hex[:8]}"
-        # 逐題查核解析中引用之判解字號真實性
+        # 逐題查核題幹、選項、解析與法條依據中引用之判解字號真實性
         try:
             from case_citation_verifier import get_case_verifier
             c_verifier = get_case_verifier()
+            c_topic = f"{subject} {topic}"
+
             for q in all_questions:
-                exp_text = q.get("explanation", "")
-                if exp_text:
-                    v_res = c_verifier.verify_and_decorate_response(exp_text, auto_badge=True)
-                    if v_res.get("annotated_text"):
-                        q["explanation"] = v_res["annotated_text"]
-                    if v_res.get("citations"):
-                        q["citation_verification"] = v_res["citations"]
-        except Exception:
-            pass
+                q_cits: List[Any] = []
+                for field_name in ("question", "explanation", "legal_references"):
+                    if q.get(field_name):
+                        q[field_name] = _verify_text_citations(c_verifier, q[field_name], c_topic, q_cits)
+                opts = q.get("options")
+                if isinstance(opts, dict):
+                    for opt_k, opt_v in list(opts.items()):
+                        if isinstance(opt_v, str) and opt_v.strip():
+                            opts[opt_k] = _verify_text_citations(c_verifier, opt_v, c_topic, q_cits)
+                if q_cits:
+                    q["citation_verification"] = q_cits
+        except Exception as exc:
+            logger.warning("一試試題裁判字號查核失敗: %s", exc)
 
         return {
             "exam_id": exam_id,
@@ -380,7 +376,8 @@ class LawExamGenerator:
             from authority_engine import get_dynamic_legal_grounding
             g_res = get_dynamic_legal_grounding(f"{subject} {topic}", subject=subject, limit=5)
             grounding_instruction = g_res.get("grounding_prompt_block", "")
-        except Exception:
+        except Exception as exc:
+            logger.warning("二試命題動態裁判 Grounding 失敗: %s", exc)
             grounding_instruction = ""
 
         prompt = f"""
@@ -409,14 +406,42 @@ class LawExamGenerator:
 }}
 只輸出純 JSON。
 """
-        response = self._call_model(
-            prompt,
-            generation_config=self._make_config(
+        try:
+            exam_data = llm_client.generate_json(
+                prompt,
+                primary_model=self.model_name,
                 temperature=0.35,
-                response_mime_type="application/json"
+                api_key=self._explicit_api_key,
             )
-        )
-        return self._parse_json_safely(response.text)
+        except (ValueError, json.JSONDecodeError) as pe:
+            logger.warning("二試試題 JSON 解析失敗或遭截斷，重試生成 (%s): %s", subject, pe)
+            exam_data = llm_client.generate_json(
+                prompt + "\n注意：請務必確保 JSON 語法完整合法且閉合！",
+                primary_model=self.model_name,
+                temperature=0.2,
+                api_key=self._explicit_api_key,
+            )
+
+        if isinstance(exam_data, list) and len(exam_data) == 1 and isinstance(exam_data[0], dict):
+            exam_data = exam_data[0]
+
+        if isinstance(exam_data, dict):
+            try:
+                from case_citation_verifier import get_case_verifier
+                c_verifier = get_case_verifier()
+                c_topic = f"{subject} {topic}"
+                s2_cits: List[Any] = []
+                for field_name in ("question_facts", "sub_questions", "core_issues", "scoring_criteria"):
+                    if exam_data.get(field_name):
+                        exam_data[field_name] = _verify_text_citations(
+                            c_verifier, exam_data[field_name], c_topic, s2_cits
+                        )
+                if s2_cits:
+                    exam_data["citation_verification"] = s2_cits
+            except Exception as exc:
+                logger.warning("二試試題裁判字號查核失敗: %s", exc)
+
+        return exam_data
 
     def generate_model_answer(self, question: str, subject: str = "") -> str:
         """
@@ -425,14 +450,12 @@ class LawExamGenerator:
         """
         # --- 司法裁判動態 Grounding 檢索注入 ---
         grounding_instruction = ""
-        verifier_func = None
         try:
-            from authority_engine import get_dynamic_legal_grounding, verify_case_citations
-            verifier_func = verify_case_citations
+            from authority_engine import get_dynamic_legal_grounding
             g_res = get_dynamic_legal_grounding(f"{subject} {question}", subject=subject, limit=5)
             grounding_instruction = g_res.get("grounding_prompt_block", "")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("擬答動態裁判 Grounding 失敗: %s", exc)
 
         prompt = f"""
 你是一位司律二試榜首兼法學權威講座名師。
@@ -457,14 +480,13 @@ class LawExamGenerator:
 
 請直接以排版工整之 Markdown 格式輸出擬答全文。
 """
-        response = self._call_model(
+        ans_text = llm_client.generate_content(
             prompt,
-            generation_config=self._make_config(
-                temperature=0.3,
-                response_mime_type=None
-            )
+            primary_model=self.model_name,
+            temperature=0.3,
+            response_mime_type=None,
+            api_key=self._explicit_api_key,
         )
-        ans_text = response.text
         # 全量實體裁判案號防偽核驗與真跡超連結注入 (CaseCitationVerifier)
         try:
             from case_citation_verifier import get_case_verifier
@@ -478,8 +500,8 @@ class LawExamGenerator:
                 ans_text = v_res["annotated_text"]
             if v_res.get("audit_markdown"):
                 ans_text += "\n\n" + v_res["audit_markdown"]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("擬答裁判字號查核失敗: %s", exc)
         return ans_text
 
     @staticmethod
@@ -573,8 +595,8 @@ def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
                         all_questions.append(q_copy)
                         seen_hashes.add(h)
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("載入行政法題庫失敗 (%s): %s", bp, exc)
 
     # 2. 跨科全真模擬題庫 (民法、刑法、憲法、民事訴訟法、刑事訴訟法、商事法 86 題)
     multi_bank_paths = [
@@ -593,8 +615,8 @@ def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
                         all_questions.append(q_copy)
                         seen_hashes.add(h)
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("載入跨科題庫失敗 (%s): %s", mbp, exc)
 
     # 3. SFT 題庫
     sft_paths = [
@@ -617,8 +639,14 @@ def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
                                 m_opt = re.search(rf'\({opt_char}\)\s*([^\n\(]+)', raw_in)
                                 if m_opt:
                                     opts[opt_char] = m_opt.group(1).strip()
-                            m_ans = re.search(r'【正確解答】[：:]\s*\(?([A-D])\)?', raw_out)
-                            ans_char = m_ans.group(1) if m_ans else "A"
+                            m_ans = re.search(
+                                r'(?:【正確解答】|正確答案(?:為|是)?|故選|應選)\s*[：:]?\s*\(?([A-D])\)?',
+                                raw_out
+                            )
+                            if not m_ans:
+                                logger.warning("SFT 題目缺少有效解答標記，略過載入: %s", raw_in[:40])
+                                continue
+                            ans_char = m_ans.group(1).upper()
                             q_text_m = re.search(r'【案例事實與題目】[：:]\s*(.*?)(?=\(A\)|$)', raw_in, re.DOTALL)
                             q_text = q_text_m.group(1).strip() if q_text_m else raw_in[:200]
                             if len(opts) == 4:
@@ -641,8 +669,8 @@ def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
                                     })
                                     seen_hashes.add(h)
                 break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("載入 SFT 題庫失敗 (%s): %s", sp, exc)
 
     # 3. 內建跨科全真精選題庫
     curated_mcqs = [
@@ -746,5 +774,8 @@ def load_all_existing_stage1_mcqs(force_refresh: bool = False) -> list:
 
     for idx, q in enumerate(all_questions, 1):
         q["global_index"] = idx
+
+    _CACHED_STAGE1_MCQS = all_questions
+    _CACHED_STAGE1_MCQS_TIME = time.time()
 
     return all_questions

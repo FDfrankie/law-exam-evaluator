@@ -19,9 +19,13 @@ import sys
 import json
 import sqlite3
 import re
+import logging
+import tempfile
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable, Set
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 # 終端編碼防護
 if hasattr(sys.stdout, "reconfigure"):
@@ -34,16 +38,14 @@ if hasattr(sys.stdout, "reconfigure"):
 CURRENT_FILE = Path(__file__).resolve()
 CODE_DIR = CURRENT_FILE.parent
 PROJECT_ROOT = CODE_DIR.parent
-DATA_DIR = PROJECT_ROOT / "data"
 
 try:
-    from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+    from config import DATA_DIR, DEFAULT_GEMINI_MODEL
 except Exception:
-    def get_gemini_api_key():
-        return os.environ.get("GEMINI_API_KEY", "")
+    DATA_DIR = PROJECT_ROOT / "data"
     DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-    def get_gemini_models_to_try():
-        return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+
+from llm_client import generate_content, LlmCallError
 
 # 引入六法引擎
 try:
@@ -136,44 +138,61 @@ def get_topic_by_id(subject: str, topic_id: str) -> Optional[dict]:
 # ==============================================================================
 # 1.5 講義全域固化快取庫 (Global Materialized Textbook Cache - 0 Token 加載)
 # ==============================================================================
-def _find_textbook_db_path() -> Path:
-    """搜尋或建立教科書固化快取資料庫路徑"""
+def _find_textbook_db_path(for_write: bool = False) -> Path:
+    """搜尋或建立獨立的教科書固化快取資料庫路徑（絕不使用或寫入 judicial_authority.db）"""
     candidates = [
-        DATA_DIR / "judicial_authority.db",
-        PROJECT_ROOT / "data" / "judicial_authority.db",
-        CODE_DIR / "data" / "judicial_authority.db",
-        DATA_DIR / "textbook_cache.db",
+        Path(DATA_DIR) / "textbook_cache.db",
         CODE_DIR / "data" / "textbook_cache.db",
-        Path(r"G:\我的雲端硬碟\LawExamData\data\judicial_authority.db"),
-        Path(r"G:\我的雲端硬碟\LawExamData\judicial_authority.db")
+        Path(tempfile.gettempdir()) / "textbook_cache.db",
     ]
-    for p in candidates:
-        if p.exists() and p.is_file():
-            return p
-    # 預設存放位置
-    target = CODE_DIR / "data" / "textbook_cache.db"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    return target
+    if not for_write:
+        for p in candidates:
+            if p.exists() and p.is_file():
+                return p
+        return candidates[0]
+
+    for target in candidates:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists() and not os.access(target, os.W_OK):
+                continue
+            if not target.exists() and not os.access(target.parent, os.W_OK):
+                continue
+            return target
+        except OSError:
+            continue
+    return candidates[-1]
 
 
-def _get_json_cache_path() -> Path:
-    """回傳兼顧雲端 Streamlit Cloud 的持久化 JSON 快取路徑"""
+def _open_ro_sqlite(db_path: Path, timeout: float = 3.0) -> sqlite3.Connection:
+    """以唯讀模式開啟既有 SQLite 資料庫，防止在讀取路徑誤建表或鎖庫"""
+    uri = f"file:{db_path.resolve().as_posix()}?mode=ro"
+    return sqlite3.connect(uri, uri=True, timeout=timeout)
+
+
+def _get_json_cache_path(for_write: bool = False) -> Path:
+    """回傳兼顧雲端與唯讀環境的持久化 JSON 快取路徑"""
     candidates = [
+        Path(DATA_DIR) / "textbook_cache.json",
         CODE_DIR / "data" / "textbook_cache.json",
-        DATA_DIR / "textbook_cache.json",
-        PROJECT_ROOT / "data" / "textbook_cache.json",
-        Path(r"G:\我的雲端硬碟\LawExamData\code\data\textbook_cache.json")
+        Path(tempfile.gettempdir()) / "textbook_cache.json",
     ]
-    for p in candidates:
-        if p.exists():
-            return p
-    target = CODE_DIR / "data" / "textbook_cache.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    return target
+    if not for_write:
+        for p in candidates:
+            if p.exists():
+                return p
+        return candidates[0]
+    for target in candidates:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            return target
+        except OSError:
+            continue
+    return candidates[-1]
 
 
 def init_textbook_db(conn: sqlite3.Connection):
-    """建立 textbook_chapters 固化表"""
+    """建立 textbook_chapters 固化表（僅供寫入端呼叫）"""
     conn.execute("""
         CREATE TABLE IF NOT EXISTS textbook_chapters (
             chapter_id TEXT PRIMARY KEY,
@@ -190,18 +209,18 @@ def init_textbook_db(conn: sqlite3.Connection):
 
 def get_cached_chapter(chapter_id: str) -> Optional[Dict[str, Any]]:
     """
-    查詢是否存在已固化的教科書內文（優先查詢 SQLite，次之查詢 JSON 快取）
+    查詢是否存在已固化的教科書內文（唯讀查詢 SQLite，次之查詢 JSON 快取）
     達成「一人生成，全員受惠；秒讀零消耗」
     """
     if not chapter_id:
         return None
 
-    # 1. 優先查 SQLite
-    db_path = _find_textbook_db_path()
+    # 1. 優先以 ?mode=ro 查獨立 textbook_cache.db（絕不在讀取路徑執行 DDL）
+    db_path = _find_textbook_db_path(for_write=False)
     if db_path and db_path.exists():
+        conn = None
         try:
-            conn = sqlite3.connect(db_path, timeout=3.0)
-            init_textbook_db(conn)
+            conn = _open_ro_sqlite(db_path, timeout=3.0)
             cur = conn.cursor()
             cur.execute("""
                 SELECT chapter_id, subject, unit_title, topic_title, content_md, generated_at, token_cost
@@ -209,7 +228,6 @@ def get_cached_chapter(chapter_id: str) -> Optional[Dict[str, Any]]:
                 WHERE chapter_id = ?
             """, (chapter_id,))
             row = cur.fetchone()
-            conn.close()
             if row and row[4]:
                 return {
                     "chapter_id": row[0],
@@ -220,11 +238,20 @@ def get_cached_chapter(chapter_id: str) -> Optional[Dict[str, Any]]:
                     "generated_at": str(row[5] or ""),
                     "token_cost": row[6] or 0
                 }
+        except sqlite3.OperationalError as e_op:
+            if "no such table" not in str(e_op).lower():
+                logger.warning("[TextbookCache] SQLite 唯讀查詢失敗: %s", e_op)
         except Exception as e_db:
-            print(f"[TextbookCache] SQLite 讀取失敗: {e_db}")
+            logger.warning("[TextbookCache] SQLite 讀取失敗: %s", e_db)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
-    # 2. 次之查詢 JSON 快取（支援 Streamlit Cloud 跨平台）
-    json_path = _get_json_cache_path()
+    # 2. 次之查詢 JSON 快取（支援跨平台）
+    json_path = _get_json_cache_path(for_write=False)
     if json_path.exists():
         try:
             with open(json_path, "r", encoding="utf-8") as f:
@@ -232,7 +259,7 @@ def get_cached_chapter(chapter_id: str) -> Optional[Dict[str, Any]]:
             if isinstance(data, dict) and chapter_id in data:
                 return data[chapter_id]
         except Exception as e_json:
-            print(f"[TextbookCache] JSON 讀取失敗: {e_json}")
+            logger.warning("[TextbookCache] JSON 讀取失敗: %s", e_json)
 
     return None
 
@@ -245,16 +272,18 @@ def save_chapter_cache(
     content_md: str,
     token_cost: int = 0
 ):
-    """固化存入 SQLite 資料庫與持久化 JSON 檔案（一人生成，全員受惠）"""
+    """固化存入獨立 SQLite 快取資料庫與持久化 JSON 檔案（一人生成，全員受惠）"""
     if not chapter_id or not content_md:
         return
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 1. 寫入 SQLite
-    db_path = _find_textbook_db_path()
+    # 1. 寫入獨立 textbook_cache.db
+    db_path = _find_textbook_db_path(for_write=True)
+    conn = None
     try:
-        conn = sqlite3.connect(db_path, timeout=5.0)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(db_path), timeout=5.0)
         init_textbook_db(conn)
         conn.execute("""
             INSERT OR REPLACE INTO textbook_chapters 
@@ -262,15 +291,20 @@ def save_chapter_cache(
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (chapter_id, subject, unit_title, topic_title, content_md, now_str, token_cost))
         conn.commit()
-        conn.close()
     except Exception as e_db:
-        print(f"[TextbookCache] SQLite 寫入失敗: {e_db}")
+        logger.warning("[TextbookCache] SQLite 寫入失敗 %s: %s", db_path, e_db)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-    # 2. 同步寫入 JSON 快取（支援 Streamlit Cloud 與 Git 版本同步）
+    # 2. 同步寫入 JSON 快取
     json_paths = [
-        _get_json_cache_path(),
+        _get_json_cache_path(for_write=True),
         CODE_DIR / "data" / "textbook_cache.json",
-        DATA_DIR / "textbook_cache.json"
+        Path(DATA_DIR) / "textbook_cache.json",
     ]
     seen = set()
     for jp in json_paths:
@@ -298,7 +332,7 @@ def save_chapter_cache(
             with open(jp, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e_json:
-            print(f"[TextbookCache] JSON 寫入失敗 {jp}: {e_json}")
+            logger.warning("[TextbookCache] JSON 寫入失敗 %s: %s", jp, e_json)
 
 
 def is_chapter_cached(chapter_id: str) -> bool:
@@ -310,31 +344,39 @@ def get_all_cached_chapter_ids() -> Set[str]:
     """極速獲取所有已固化章節 ID 清單，供前端即時標記 🟢 或 ⚪"""
     cached_ids = set()
 
-    # 1. 查 SQLite
-    db_path = _find_textbook_db_path()
+    # 1. 唯讀查獨立 textbook_cache.db（不執行 DDL）
+    db_path = _find_textbook_db_path(for_write=False)
     if db_path and db_path.exists():
+        conn = None
         try:
-            conn = sqlite3.connect(db_path, timeout=2.0)
-            init_textbook_db(conn)
+            conn = _open_ro_sqlite(db_path, timeout=2.0)
             cur = conn.cursor()
             cur.execute("SELECT chapter_id FROM textbook_chapters")
             for row in cur.fetchall():
                 if row[0]:
                     cached_ids.add(row[0])
-            conn.close()
-        except Exception:
-            pass
+        except sqlite3.OperationalError as e_op:
+            if "no such table" not in str(e_op).lower():
+                logger.warning("[TextbookCache] 列出已快取章節 ID 失敗: %s", e_op)
+        except Exception as exc:
+            logger.warning("[TextbookCache] 讀取快取清單失敗: %s", exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     # 2. 查 JSON
-    json_path = _get_json_cache_path()
+    json_path = _get_json_cache_path(for_write=False)
     if json_path.exists():
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict):
                 cached_ids.update(data.keys())
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("[TextbookCache] JSON 清單讀取失敗: %s", exc)
 
     return cached_ids
 
@@ -422,11 +464,12 @@ def fetch_topic_context(topic: dict, max_articles: int = 6, max_precedents: int 
             "legislative_reason": leg_text[:500] if leg_text else ""
         })
 
-    # 2. 高速檢索 judicial_authority.db 命中判例（針對 precedents 4000+ 權威判例庫精準命中）
+    # 2. 高速檢索 judicial_authority.db 命中判例（唯讀開啟並確保連線關閉）
     auth_db_path = _find_authority_db_path()
-    if auth_db_path:
+    if auth_db_path and auth_db_path.exists():
+        conn = None
         try:
-            conn = sqlite3.connect(auth_db_path, timeout=3)
+            conn = _open_ro_sqlite(auth_db_path, timeout=3.0)
             cursor = conn.cursor()
 
             for art_item in articles_data:
@@ -456,15 +499,19 @@ def fetch_topic_context(topic: dict, max_articles: int = 6, max_precedents: int 
                                 "title": prec_id,
                                 "holding": holding[:350].strip()
                             })
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("[TextbookEngine] 判例查詢失敗 (%s): %s", kw_pat, exc)
 
                 if len(precedents_data) >= max_precedents:
                     break
-
-            conn.close()
         except Exception as e_db:
-            print(f"[TextbookEngine] 資料庫查詢錯誤: {e_db}")
+            logger.warning("[TextbookEngine] 資料庫查詢錯誤: %s", e_db)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     return {
         "topic": topic,
@@ -568,7 +615,6 @@ class TextbookGenerator:
 
     def __init__(self, model_name: str = DEFAULT_GEMINI_MODEL):
         self.model_name = model_name
-        self.api_key = get_gemini_api_key()
 
     def get_or_generate_chapter(
         self,
@@ -626,11 +672,8 @@ class TextbookGenerator:
         執行專題教材生成全流程：
         1. 自動搜集條文全文與權威判例上下文
         2. 組裝權威專題 Prompt
-        3. 調用 Gemini 模型長篇生成
+        3. 調用 Gemini 模型長篇生成（動態讀取最新 API Key）
         """
-        if not self.api_key:
-            raise ValueError("未偵測到 Gemini API Key，請先於設定區或環境變數填入 API Key！")
-
         if progress_callback:
             progress_callback("正在聯動六法全書與司法權威大庫，撈取條文意旨與判例要旨...")
 
@@ -662,8 +705,8 @@ class TextbookGenerator:
                 content_markdown = v_res["annotated_text"]
             if v_res.get("audit_markdown"):
                 content_markdown += "\n\n" + v_res["audit_markdown"]
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("TextbookGenerator CaseCitationVerifier failed: %s", exc)
 
         return {
             "success": True,
@@ -675,56 +718,14 @@ class TextbookGenerator:
         }
 
     def _call_ai(self, prompt: str) -> str:
-        """調用 Gemini 生成長篇教科書內容（支援 google-genai 新 SDK 與 legacy fallback）"""
-        # 1. 嘗試新版 google-genai
+        """透過統一 llm_client 呼叫 Gemini 生成長篇教科書內容"""
         try:
-            from google import genai
-            from google.genai import types as genai_types
-            client = genai.Client(api_key=self.api_key)
-
-            models_to_try = [self.model_name] + [m for m in get_gemini_models_to_try() if m != self.model_name]
-            last_err = None
-
-            for m in models_to_try:
-                try:
-                    cfg = genai_types.GenerateContentConfig(
-                        temperature=0.3,
-                        max_output_tokens=8192
-                    )
-                    resp = client.models.generate_content(
-                        model=m,
-                        contents=prompt,
-                        config=cfg
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as ex:
-                    last_err = ex
-                    continue
-
-            if last_err:
-                raise last_err
-        except ImportError:
-            pass
-
-        # 2. 嘗試舊版 google.generativeai
-        try:
-            import google.generativeai as legacy_genai
-            legacy_genai.configure(api_key=self.api_key)
-            models_to_try = [self.model_name, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-            last_err = None
-            for m in models_to_try:
-                try:
-                    mod = legacy_genai.GenerativeModel(model_name=m)
-                    resp = mod.generate_content(prompt)
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as ex:
-                    last_err = ex
-                    continue
-            if last_err:
-                raise last_err
-        except Exception as e_leg:
-            raise RuntimeError(f"AI 生成失敗: {e_leg}")
-
-        raise RuntimeError("無法成功調用 AI 服務")
+            return generate_content(
+                prompt,
+                primary_model=self.model_name,
+                temperature=0.3,
+                max_output_tokens=8192,
+            )
+        except Exception as exc:
+            logger.warning("TextbookGenerator LLM call failed: %s", exc)
+            raise RuntimeError(f"AI 生成失敗: {exc}") from exc

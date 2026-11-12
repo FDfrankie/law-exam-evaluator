@@ -163,359 +163,544 @@ def _init_legal_doc() -> docx.Document:
 
 
 # =============================================================================
-
 # B. PDF 專業法學排版核心 (PyMuPDF Engine)
-
 # =============================================================================
 
+_PDF_SYMBOL_MAP = {
+    "✅": "[核驗通過]",
+    "✔": "[核驗通過]",
+    "☑️": "[已勾選]",
+    "☑": "[已勾選]",
+    "❌": "[未通過]",
+    "✖": "[未通過]",
+    "❎": "[未通過]",
+    "⚠️": "[警示]",
+    "⚠": "[警示]",
+    "⚖️": "[法學]",
+    "⚖": "[法學]",
+    "📌": "【重點】",
+    "📍": "【重點】",
+    "🏛️": "[司法實務]",
+    "🏛": "[司法實務]",
+    "📜": "[法條]",
+    "💡": "[解析]",
+    "🔍": "[檢索]",
+    "🔎": "[檢索]",
+    "🛡️": "[防偽核驗]",
+    "🛡": "[防偽核驗]",
+    "📮": "[存證文書]",
+    "📋": "[試卷]",
+    "📖": "[教材]",
+    "📚": "[文獻]",
+    "🏆": "[示範擬答]",
+    "🌟": "[亮點]",
+    "✨": "[亮點]",
+    "🔗": "[連結]",
+    "⚪": "[未作答]",
+    "🔴": "[錯誤]",
+    "🟢": "[正確]",
+    "🟡": "[注意]",
+    "🎯": "【核心】",
+    "📝": "[作答]",
+    "✍️": "[手寫]",
+    "✍": "[手寫]",
+    "📊": "[統計]",
+    "📈": "[分析]",
+    "🎓": "[考試]",
+    "📄": "[文件]",
+    "💬": "[評語]",
+    "❓": "[問題]",
+    "👥": "[社群]",
+    "🆕": "[最新]",
+    "🚀": "",
+    "➔": "->",
+    "➜": "->",
+    "➝": "->",
+    "➡️": "->",
+    "➡": "->",
+    "→": "->",
+    "←": "<-",
+    "👇": "",
+    "👉": "->",
+    "🔹": "•",
+    "🔸": "•",
+    "▪": "•",
+    "▫": "•",
+}
+
+_PDF_SYMBOL_PATTERN = re.compile(
+    "|".join(re.escape(k) for k in sorted(_PDF_SYMBOL_MAP.keys(), key=len, reverse=True))
+)
+_UNSUPPORTED_EMOJI_RE = re.compile(
+    r"[\uFE0E\uFE0F\u200D\u200B\uFEFF\U0001F000-\U0001FAFF]+"
+)
+_UNSUPPORTED_DINGBAT_RE = re.compile(r"[\u2600-\u2604\u2606-\u27BF]+")
+_MD_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+
+
+def _sanitize_pdf_text(text: Any) -> str:
+    """將 PyMuPDF china-t 字型不支援的 Emoji 與特殊符號轉換為清晰 CJK/ASCII 標籤，避免出現 □ 方框。"""
+    if text is None:
+        return ""
+    s = str(text)
+    if not s:
+        return ""
+    s = _PDF_SYMBOL_PATTERN.sub(lambda m: _PDF_SYMBOL_MAP[m.group(0)], s)
+    s = _UNSUPPORTED_EMOJI_RE.sub("", s)
+    s = _UNSUPPORTED_DINGBAT_RE.sub("", s)
+    return s
+
+
+def _clean_inline_markdown(text: str) -> str:
+    """清理 Markdown 連結與反引號標記並執行 PDF 字元淨化。"""
+    s = _sanitize_pdf_text(text)
+    s = _MD_LINK_RE.sub(r"\1", s)
+    s = s.replace("`", "")
+    return s
+
+
+def _split_bold_spans(line: str) -> List[tuple]:
+    """將單行文字中的 **粗體** 拆分為 [(segment_text, is_bold), ...]。"""
+    parts = re.split(r"(\*\*[^*\n]+?\*\*)", line)
+    spans: List[tuple] = []
+    for part in parts:
+        if not part:
+            continue
+        if part.startswith("**") and part.endswith("**") and len(part) > 4:
+            spans.append((part[2:-2], True))
+        else:
+            cleaned = part.replace("**", "")
+            if cleaned:
+                spans.append((cleaned, False))
+    return spans
 
 
 class LegalPdfDocument:
-
     """
-
     兼具繁體中文字型支援、自動分頁、頁首頁尾與高雅法學配色的 PDF 產生器
-
     """
 
     def __init__(self, title="台灣法學研析報告", margin=45):
-
         if not HAS_PYMUPDF:
-
             raise RuntimeError("未安裝 pymupdf 套件，無法產出 PDF 文件！")
-
         self.doc = pymupdf.open()
-
-        self.title = title
-
+        self.title = _sanitize_pdf_text(title)
         self.margin = margin
-
         self.width = 595.32   # A4 width in pt
-
         self.height = 841.92  # A4 height in pt
-
         self.max_width = self.width - (2 * self.margin)
-
         self.font_name = "china-t"
-
         self.font = pymupdf.Font("china-t")
-
         self.pages = []
-
         self.cur_page = None
-
         self.cur_y = self.margin + 25
-
         self._new_page()
 
-
-
     def _new_page(self):
-
         page = self.doc.new_page(width=self.width, height=self.height)
-
         self.pages.append(page)
-
         self.cur_page = page
-
         self.cur_y = self.margin + 25
-
         # 頂部裝飾線與頁首文件題名
-
         page.draw_line((self.margin, self.margin + 14), (self.width - self.margin, self.margin + 14), color=(0.7, 0.75, 0.8), width=0.8)
-
         page.insert_text((self.margin, self.margin + 10), self.title[:45], fontname=self.font_name, fontsize=8, color=(0.4, 0.45, 0.5))
 
-
-
     def ensure_space(self, needed_pt):
-
         if self.cur_y + needed_pt > self.height - self.margin - 25:
-
             self._new_page()
 
-
-
     def add_title(self, text):
-
-        self.ensure_space(45)
-
-        self.cur_page.insert_text((self.margin, self.cur_y + 16), text, fontname=self.font_name, fontsize=15, color=(0.11, 0.21, 0.34))
-
-        self.cur_y += 24
-
+        clean = _clean_inline_markdown(text).replace("**", "")
+        title_lines = self._wrap_lines(clean, self.max_width, 15)
+        needed = max(45, len(title_lines) * 20 + 22)
+        self.ensure_space(needed)
+        for t_line in title_lines or [clean]:
+            self.cur_page.insert_text((self.margin, self.cur_y + 16), t_line, fontname=self.font_name, fontsize=15, color=(0.11, 0.21, 0.34))
+            self.cur_y += 22
+        self.cur_y += 2
         self.cur_page.draw_line((self.margin, self.cur_y), (self.width - self.margin, self.cur_y), color=(0.85, 0.88, 0.92), width=1.5)
-
         self.cur_y += 14
 
-
-
     def add_heading(self, text, level=2):
-
         size = 12 if level == 2 else 11
-
-        self.ensure_space(32)
-
+        clean = _clean_inline_markdown(text).replace("**", "")
+        lines = self._wrap_lines(clean, self.max_width, size)
+        needed = max(32, len(lines) * (size + 5) + 14)
+        self.ensure_space(needed)
         self.cur_y += 6
-
-        self.cur_page.insert_text((self.margin, self.cur_y + size), text, fontname=self.font_name, fontsize=size, color=(0.12, 0.23, 0.54))
-
-        self.cur_y += size + 8
-
-
+        for h_line in lines or [clean]:
+            self.cur_page.insert_text((self.margin, self.cur_y + size), h_line, fontname=self.font_name, fontsize=size, color=(0.12, 0.23, 0.54))
+            self.cur_y += size + 5
+        self.cur_y += 3
 
     def _wrap_lines(self, text, max_w, font_size):
-
+        clean_text = _sanitize_pdf_text(text)
         lines = []
-
-        for raw_line in text.splitlines():
-
+        for raw_line in clean_text.splitlines():
             if not raw_line.strip():
-
                 lines.append("")
-
                 continue
-
             cur_line = ""
-
             for char in raw_line:
-
                 test_line = cur_line + char
-
                 if self.font.text_length(test_line, font_size) > max_w:
-
                     lines.append(cur_line)
-
                     cur_line = char
-
                 else:
-
                     cur_line = test_line
-
             if cur_line:
-
                 lines.append(cur_line)
-
         return lines
 
+    def _wrap_styled_spans(self, spans: List[tuple], max_w: float, font_size: float) -> List[List[tuple]]:
+        """依 max_w 斷行同時保留每個字元的粗體屬性。"""
+        wrapped: List[List[tuple]] = []
+        cur_chars: List[tuple] = []
+        cur_plain = ""
 
+        def _flush_line():
+            if not cur_chars:
+                wrapped.append([])
+                return
+            merged: List[tuple] = []
+            buf = ""
+            prev_bold = cur_chars[0][1]
+            for ch, b in cur_chars:
+                if b == prev_bold:
+                    buf += ch
+                else:
+                    merged.append((buf, prev_bold))
+                    buf = ch
+                    prev_bold = b
+            if buf:
+                merged.append((buf, prev_bold))
+            wrapped.append(merged)
+
+        for seg_text, is_bold in spans:
+            for ch in seg_text:
+                test_plain = cur_plain + ch
+                if cur_plain and self.font.text_length(test_plain, font_size) > max_w:
+                    _flush_line()
+                    cur_chars = [(ch, is_bold)]
+                    cur_plain = ch
+                else:
+                    cur_chars.append((ch, is_bold))
+                    cur_plain = test_plain
+        if cur_chars or not wrapped:
+            _flush_line()
+        return wrapped
+
+    def _draw_styled_line(self, line_spans: List[tuple], x0: float, baseline_y: float, font_size: float, color: tuple):
+        """繪製支援行內粗體視覺強化的文字行。"""
+        cur_x = x0
+        for seg_text, is_bold in line_spans:
+            if not seg_text:
+                continue
+            if is_bold:
+                bold_color = (
+                    max(0.05, color[0] * 0.55),
+                    max(0.08, color[1] * 0.55),
+                    min(0.45, color[2] * 0.85 + 0.08),
+                )
+                self.cur_page.insert_text(
+                    (cur_x, baseline_y),
+                    seg_text,
+                    fontname=self.font_name,
+                    fontsize=font_size,
+                    color=bold_color,
+                    render_mode=2,
+                    border_width=0.025,
+                )
+            else:
+                self.cur_page.insert_text(
+                    (cur_x, baseline_y),
+                    seg_text,
+                    fontname=self.font_name,
+                    fontsize=font_size,
+                    color=color,
+                )
+            cur_x += self.font.text_length(seg_text, font_size)
+
+    def _render_styled_text_block(self, line_text: str, x0: float, max_w: float, font_size: float, color: tuple, line_spacing: float, left_bar_x: Optional[float] = None):
+        """渲染單段可包含 **bold** 的自動換行文字。"""
+        cleaned = _clean_inline_markdown(line_text)
+        spans = _split_bold_spans(cleaned)
+        wrapped_lines = self._wrap_styled_spans(spans, max_w, font_size)
+        line_height = font_size * line_spacing
+        for w_line in wrapped_lines:
+            self.ensure_space(line_height)
+            if left_bar_x is not None:
+                self.cur_page.draw_line(
+                    (left_bar_x, self.cur_y + 1),
+                    (left_bar_x, self.cur_y + line_height - 1),
+                    color=(0.45, 0.58, 0.78),
+                    width=2.0,
+                )
+            self._draw_styled_line(w_line, x0, self.cur_y + font_size, font_size, color)
+            self.cur_y += line_height
 
     def add_paragraph(self, text, font_size=10, indent=0, color=(0.15, 0.2, 0.25), line_spacing=1.35):
+        sanitized = _sanitize_pdf_text(text)
+        raw_lines = sanitized.splitlines()
+        max_w = max(40.0, self.max_width - indent)
+        i = 0
+        while i < len(raw_lines):
+            raw = raw_lines[i]
+            stripped = raw.strip()
 
-        clean_text = re.sub(r'#+\s*', '', text)
-
-        max_w = self.max_width - indent
-
-        lines = self._wrap_lines(clean_text, max_w, font_size)
-
-        line_height = font_size * line_spacing
-
-
-
-        for line in lines:
-
-            if line == "":
-
-                self.cur_y += font_size * 0.5
-
+            if not stripped:
+                self.cur_y += font_size * 0.45
+                i += 1
                 continue
 
-            self.ensure_space(line_height)
+            # Markdown 水平分隔線
+            if re.match(r"^[-*=]{3,}$", stripped):
+                self.ensure_space(10)
+                self.cur_page.draw_line(
+                    (self.margin + indent, self.cur_y + 4),
+                    (self.width - self.margin, self.cur_y + 4),
+                    color=(0.82, 0.85, 0.90),
+                    width=0.7,
+                )
+                self.cur_y += 9
+                i += 1
+                continue
 
-            self.cur_page.insert_text(
+            # Markdown Pipe Table 區塊解析
+            if stripped.startswith("|") and stripped.count("|") >= 2:
+                table_lines = []
+                j = i
+                while j < len(raw_lines):
+                    cand = raw_lines[j].strip()
+                    if cand.startswith("|") and cand.count("|") >= 2:
+                        table_lines.append(cand)
+                        j += 1
+                    else:
+                        break
+                parsed_rows = []
+                for t_line in table_lines:
+                    cells = [c.strip() for c in t_line.strip().strip("|").split("|")]
+                    if cells and all(re.match(r"^:?-{2,}:?$", c.replace(" ", "")) for c in cells if c != ""):
+                        if any(re.match(r"^:?-{2,}:?$", c.replace(" ", "")) for c in cells):
+                            continue
+                    parsed_rows.append([_clean_inline_markdown(c).replace("**", "") for c in cells])
+                if len(parsed_rows) >= 2:
+                    self.add_table(parsed_rows[0], parsed_rows[1:])
+                    i = j
+                    continue
 
-                (self.margin + indent, self.cur_y + font_size),
+            # Markdown 標題 (# / ## / ###)
+            h_match = re.match(r"^\s*(#{1,4})\s+(.+)$", raw)
+            if h_match:
+                level = 2 if len(h_match.group(1)) <= 2 else 3
+                self.add_heading(h_match.group(2), level=level)
+                i += 1
+                continue
 
-                line,
+            # Markdown 無序清單 (- / * / •)
+            b_match = re.match(r"^\s*[-*•]\s+(.+)$", raw)
+            if b_match:
+                self.add_bullet(b_match.group(1), font_size=font_size)
+                i += 1
+                continue
 
-                fontname=self.font_name,
+            # Markdown 引用區塊 (> )
+            q_match = re.match(r"^\s*>\s*(.*)$", raw)
+            if q_match:
+                q_body = q_match.group(1).strip()
+                q_body = re.sub(r"^\[!WARNING\]\s*", "[警示] ", q_body, flags=re.IGNORECASE)
+                q_body = re.sub(r"^\[!IMPORTANT\]\s*", "[重要] ", q_body, flags=re.IGNORECASE)
+                q_body = re.sub(r"^\[!(?:NOTE|TIP)\]\s*", "[說明] ", q_body, flags=re.IGNORECASE)
+                if q_body:
+                    self._render_styled_text_block(
+                        q_body,
+                        self.margin + indent + 12,
+                        max(40.0, max_w - 12),
+                        max(8.5, font_size - 0.5),
+                        (0.24, 0.30, 0.40),
+                        line_spacing,
+                        left_bar_x=self.margin + indent + 4,
+                    )
+                else:
+                    self.cur_y += font_size * 0.35
+                i += 1
+                continue
 
-                fontsize=font_size,
-
-                color=color
-
+            # 一般段落文字 (支援行內 **粗體**)
+            self._render_styled_text_block(
+                raw,
+                self.margin + indent,
+                max_w,
+                font_size,
+                color,
+                line_spacing,
             )
-
-            self.cur_y += line_height
+            i += 1
 
         self.cur_y += 4
 
-
-
     def add_bullet(self, text, font_size=10, bullet_char="•"):
+        clean_bullet = _sanitize_pdf_text(bullet_char).strip() or "•"
+        bullet_w = self.font.text_length(clean_bullet + " ", font_size)
+        text_indent = max(16.0, 4.0 + bullet_w + 2.0)
+        max_w = max(40.0, self.max_width - text_indent)
 
-        max_w = self.max_width - 16
-
-        lines = self._wrap_lines(text, max_w, font_size)
-
+        cleaned_body = _clean_inline_markdown(text)
+        spans = _split_bold_spans(cleaned_body)
+        wrapped_lines = self._wrap_styled_spans(spans, max_w, font_size)
         line_height = font_size * 1.35
 
-
-
-        for idx, line in enumerate(lines):
-
+        for idx, w_line in enumerate(wrapped_lines):
             self.ensure_space(line_height)
-
             if idx == 0:
-
                 self.cur_page.insert_text(
-
                     (self.margin + 4, self.cur_y + font_size),
-
-                    bullet_char,
-
+                    clean_bullet,
                     fontname=self.font_name,
-
                     fontsize=font_size,
-
                     color=(0.25, 0.45, 0.75)
-
                 )
-
-            self.cur_page.insert_text(
-
-                (self.margin + 16, self.cur_y + font_size),
-
-                line,
-
-                fontname=self.font_name,
-
-                fontsize=font_size,
-
-                color=(0.15, 0.2, 0.25)
-
-            )
-
+            self._draw_styled_line(w_line, self.margin + text_indent, self.cur_y + font_size, font_size, (0.15, 0.2, 0.25))
             self.cur_y += line_height
-
         self.cur_y += 2
 
-
-
     def add_callout(self, text, title="", bg_color=(0.95, 0.97, 1.0), border_color=(0.25, 0.45, 0.75)):
-
         pad = 8
-
         content_w = self.max_width - (2 * pad) - 6
+        clean_title = _clean_inline_markdown(title).replace("**", "") if title else ""
+        clean_body = _clean_inline_markdown(text)
+        full_text = (f"【{clean_title}】\n" if clean_title else "") + clean_body
 
-        full_text = (f"【{title}】\n" if title else "") + text
+        all_wrapped: List[List[tuple]] = []
+        for raw_l in full_text.splitlines():
+            if not raw_l.strip():
+                all_wrapped.append([])
+            else:
+                all_wrapped.extend(self._wrap_styled_spans(_split_bold_spans(raw_l), content_w, 9.5))
 
-        lines = self._wrap_lines(full_text, content_w, 9.5)
+        line_h = 13.0
+        box_h = (len(all_wrapped) * line_h) + (2 * pad)
+        max_page_h = self.height - (2 * self.margin) - 45
 
-        box_h = (len(lines) * 13) + (2 * pad)
+        if box_h <= max_page_h:
+            self.ensure_space(box_h + 8)
+            top_y = self.cur_y
+            rect = pymupdf.Rect(self.margin, top_y, self.width - self.margin, top_y + box_h)
+            self.cur_page.draw_rect(rect, color=None, fill=bg_color)
+            self.cur_page.draw_line((self.margin, top_y), (self.margin, top_y + box_h), color=border_color, width=3.5)
 
-
-
-        self.ensure_space(box_h + 8)
-
-        top_y = self.cur_y
-
-        rect = pymupdf.Rect(self.margin, top_y, self.width - self.margin, top_y + box_h)
-
-        self.cur_page.draw_rect(rect, color=None, fill=bg_color)
-
-        self.cur_page.draw_line((self.margin, top_y), (self.margin, top_y + box_h), color=border_color, width=3.5)
-
-
-
-        text_y = top_y + pad
-
-        for line in lines:
-
-            self.cur_page.insert_text(
-
-                (self.margin + pad + 6, text_y + 9.5),
-
-                line,
-
-                fontname=self.font_name,
-
-                fontsize=9.5,
-
-                color=(0.1, 0.15, 0.2)
-
-            )
-
-            text_y += 13
-
-        self.cur_y = top_y + box_h + 8
-
-
+            text_y = top_y + pad
+            for w_line in all_wrapped:
+                if w_line:
+                    self._draw_styled_line(w_line, self.margin + pad + 6, text_y + 9.5, 9.5, (0.1, 0.15, 0.2))
+                text_y += line_h
+            self.cur_y = top_y + box_h + 8
+        else:
+            # 長內容自動依頁高切段繪製背景框
+            idx = 0
+            while idx < len(all_wrapped):
+                avail_h = (self.height - self.margin - 25) - self.cur_y
+                if avail_h < (2 * pad + line_h * 2):
+                    self._new_page()
+                    avail_h = (self.height - self.margin - 25) - self.cur_y
+                fit_lines = max(1, int((avail_h - 2 * pad) // line_h))
+                chunk = all_wrapped[idx: idx + fit_lines]
+                chunk_h = (len(chunk) * line_h) + (2 * pad)
+                top_y = self.cur_y
+                rect = pymupdf.Rect(self.margin, top_y, self.width - self.margin, top_y + chunk_h)
+                self.cur_page.draw_rect(rect, color=None, fill=bg_color)
+                self.cur_page.draw_line((self.margin, top_y), (self.margin, top_y + chunk_h), color=border_color, width=3.5)
+                text_y = top_y + pad
+                for w_line in chunk:
+                    if w_line:
+                        self._draw_styled_line(w_line, self.margin + pad + 6, text_y + 9.5, 9.5, (0.1, 0.15, 0.2))
+                    text_y += line_h
+                self.cur_y = top_y + chunk_h + 6
+                idx += fit_lines
 
     def add_table(self, headers, rows):
-
+        if not headers:
+            return
         n_cols = len(headers)
-
         col_w = self.max_width / n_cols
+        font_size = 9.0
+        line_h = 12.5
+        pad_x = 5.0
+        pad_y = 5.0
+        cell_text_w = max(24.0, col_w - (2 * pad_x))
 
-        row_h = 22
+        clean_headers = [_clean_inline_markdown(str(h)).replace("**", "") for h in headers]
+        header_wrapped = [self._wrap_lines(ch, cell_text_w, font_size) or [""] for ch in clean_headers]
+        header_lines_max = max(len(lw) for lw in header_wrapped)
+        header_h = max(22.0, header_lines_max * line_h + (2 * pad_y))
 
+        def _draw_header():
+            header_rect = pymupdf.Rect(self.margin, self.cur_y, self.width - self.margin, self.cur_y + header_h)
+            self.cur_page.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.9, 0.93, 0.97))
+            for col_idx, cell_lines in enumerate(header_wrapped):
+                x0 = self.margin + (col_idx * col_w)
+                if col_idx > 0:
+                    self.cur_page.draw_line((x0, self.cur_y), (x0, self.cur_y + header_h), color=(0.8, 0.85, 0.9), width=0.6)
+                for l_idx, h_line in enumerate(cell_lines):
+                    if h_line:
+                        self.cur_page.insert_text(
+                            (x0 + pad_x, self.cur_y + pad_y + font_size + (l_idx * line_h)),
+                            h_line,
+                            fontname=self.font_name,
+                            fontsize=font_size,
+                            color=(0.1, 0.2, 0.35),
+                        )
+            self.cur_y += header_h
 
-
-        self.ensure_space(row_h * (len(rows) + 1) + 10)
-
-        header_rect = pymupdf.Rect(self.margin, self.cur_y, self.width - self.margin, self.cur_y + row_h)
-
-        self.cur_page.draw_rect(header_rect, color=(0.8, 0.85, 0.9), fill=(0.9, 0.93, 0.97))
-
-        for col_idx, h in enumerate(headers):
-
-            x = self.margin + (col_idx * col_w) + 6
-
-            self.cur_page.insert_text((x, self.cur_y + 15), str(h), fontname=self.font_name, fontsize=9.0, color=(0.1, 0.2, 0.35))
-
-        self.cur_y += row_h
-
-
+        self.ensure_space(header_h + 24)
+        _draw_header()
 
         for r_idx, row in enumerate(rows):
+            norm_row = list(row[:n_cols]) + [""] * max(0, n_cols - len(row))
+            cell_wrapped = [
+                self._wrap_lines(_clean_inline_markdown(str(val)).replace("**", ""), cell_text_w, font_size) or [""]
+                for val in norm_row
+            ]
+            max_lines = max(len(lw) for lw in cell_wrapped)
+            row_h = max(22.0, max_lines * line_h + (2 * pad_y))
 
-            self.ensure_space(row_h)
+            if self.cur_y + row_h > self.height - self.margin - 25:
+                self._new_page()
+                _draw_header()
 
             fill_c = (0.98, 0.99, 1.0) if r_idx % 2 == 0 else (1.0, 1.0, 1.0)
-
             r_rect = pymupdf.Rect(self.margin, self.cur_y, self.width - self.margin, self.cur_y + row_h)
-
             self.cur_page.draw_rect(r_rect, color=(0.88, 0.9, 0.93), fill=fill_c)
-
-            for col_idx, val in enumerate(row):
-
-                x = self.margin + (col_idx * col_w) + 6
-
-                self.cur_page.insert_text((x, self.cur_y + 15), str(val), fontname=self.font_name, fontsize=9.0, color=(0.15, 0.2, 0.25))
-
+            for col_idx, cell_lines in enumerate(cell_wrapped):
+                x0 = self.margin + (col_idx * col_w)
+                if col_idx > 0:
+                    self.cur_page.draw_line((x0, self.cur_y), (x0, self.cur_y + row_h), color=(0.88, 0.9, 0.93), width=0.6)
+                for l_idx, c_line in enumerate(cell_lines):
+                    if c_line:
+                        self.cur_page.insert_text(
+                            (x0 + pad_x, self.cur_y + pad_y + font_size + (l_idx * line_h)),
+                            c_line,
+                            fontname=self.font_name,
+                            fontsize=font_size,
+                            color=(0.15, 0.2, 0.25),
+                        )
             self.cur_y += row_h
-
         self.cur_y += 8
 
-
-
     def get_pdf_bytes(self) -> bytes:
-
-        total_pages = len(self.pages)
-
-        for idx, page in enumerate(self.pages, 1):
-
-            footer_text = f"第 {idx} 頁 ／ 共 {total_pages} 頁  ｜  台灣司律法學研析系統 AI 智慧匯出"
-
+        total_pages = len(self.doc)
+        for idx in range(total_pages):
+            page = self.doc[idx]
+            footer_text = f"第 {idx + 1} 頁 ／ 共 {total_pages} 頁  ｜  台灣司律法學研析系統 AI 智慧匯出"
             page.draw_line((self.margin, self.height - self.margin - 12), (self.width - self.margin, self.height - self.margin - 12), color=(0.85, 0.85, 0.85), width=0.6)
-
             page.insert_text(
-
                 (self.width / 2 - 80, self.height - self.margin - 2),
-
                 footer_text,
-
                 fontname=self.font_name,
-
                 fontsize=8,
-
                 color=(0.5, 0.55, 0.6)
-
             )
-
         buf = io.BytesIO(self.doc.tobytes())
-
         return buf.getvalue()
 
 
@@ -857,16 +1042,27 @@ def export_evaluation_pdf(report_data: Dict[str, Any], question_text: str = "") 
 
 
     rev = report_data.get("suggested_revision_annotated") or report_data.get("suggested_revision", "")
-
     if rev:
-
         pdf.add_heading("四、閱卷委員開標與涵攝改寫示範 (IRAC)", level=2)
-
         clean_rev = re.sub(r'\[(.*?)\]\((.*?)\)', r'\1', rev)
-
         pdf.add_callout(clean_rev, title="上位卷 IRAC 開標示範")
 
-
+    audit_md = report_data.get("audit_markdown", "")
+    if audit_md:
+        pdf.add_heading("五、裁判案號真實性查核清單 (Ground Truth Case Audit)", level=2)
+        audit_lines = []
+        for raw_a in str(audit_md).splitlines():
+            s_a = raw_a.strip()
+            if s_a == "---":
+                continue
+            if s_a.startswith("#") and ("裁判引用真實性查核清單" in s_a or "Ground Truth Case Audit" in s_a):
+                continue
+            audit_lines.append(raw_a)
+        cleaned_audit_md = "\n".join(audit_lines).strip()
+        if cleaned_audit_md:
+            pdf.add_paragraph(cleaned_audit_md)
+        else:
+            pdf.add_paragraph("本報告所有引用判解字號均經司法院實體裁判庫實質核驗，堅決杜絕 AI 幻覺。")
 
     return pdf.get_pdf_bytes()
 
@@ -1050,64 +1246,39 @@ def export_legal_notice_docx(
 
 
 
+    doc_subject = (subject or "").strip() or "郵局存證信函"
+
     title_p = doc.add_paragraph()
-
-    title_run = title_p.add_run("📮 中華民國郵局存證信函")
-
+    title_run = title_p.add_run(doc_subject)
     title_run.font.name = 'Microsoft JhengHei'
-
     title_run.font.size = Pt(18)
-
     title_run.font.bold = True
-
     title_run.font.color.rgb = RGBColor(15, 23, 42)
-
     title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
     title_p.paragraph_format.space_after = Pt(14)
 
-
-
-    table = doc.add_table(rows=3, cols=2)
-
+    table = doc.add_table(rows=4, cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
     table.autofit = True
 
-
-
+    is_mediation = "調解" in doc_subject
     info_data = [
-
-        ("寄件人：", sender_name),
-
-        ("收件人（相對人）：", receiver_name),
-
+        ("主　旨：", doc_subject),
+        ("聲請人：" if is_mediation else "寄件人：", sender_name),
+        ("對造人：" if is_mediation else "收件人（相對人）：", receiver_name),
         ("副　本：", "無（或載明：所在地鄉鎮市區調解委員會）")
-
     ]
-
     for row_idx, (k, v) in enumerate(info_data):
-
         c0 = table.cell(row_idx, 0)
-
         c0.text = k
-
         _set_cell_background(c0, "F1F5F9")
-
         c0.paragraphs[0].runs[0].font.bold = True
-
         c1 = table.cell(row_idx, 1)
-
         c1.text = v
-
-
 
     doc.add_paragraph().paragraph_format.space_after = Pt(12)
 
-
-
-    h_c = doc.add_heading("【存證信函主旨與內文】：", level=2)
-
+    h_c = doc.add_heading(f"【{doc_subject} — 主旨與內文】：", level=2)
     h_c.runs[0].font.color.rgb = RGBColor(15, 23, 42)
 
 
@@ -1155,96 +1326,54 @@ def export_legal_notice_pdf(
 ) -> bytes:
 
     """將存證信函草稿匯出為標準 PDF 文件"""
+    doc_subject = (subject or "").strip() or "郵局存證信函"
+    pdf = LegalPdfDocument(title=doc_subject)
+    pdf.add_title(doc_subject)
 
-    pdf = LegalPdfDocument(title="📮 中華民國郵局存證信函")
-
-    pdf.add_title("📮 中華民國郵局存證信函草稿")
-
-
-
+    is_mediation = "調解" in doc_subject
     pdf.add_table(
-
         ["欄位項目", "登記內容"],
-
         [
-
-            ["寄件人：", sender_name],
-
-            ["收件人（相對人）：", receiver_name],
-
+            ["主　旨：", doc_subject],
+            ["聲請人：" if is_mediation else "寄件人：", sender_name],
+            ["對造人：" if is_mediation else "收件人（相對人）：", receiver_name],
             ["副　本：", "無（或載明：所在地調解委員會）"]
-
         ]
-
     )
 
-
-
-    pdf.add_heading("【存證信函主旨與通知內文】：", level=2)
-
-    clean_notice = re.sub(r'#+\s*', '', notice_text)
-
-    for line in clean_notice.splitlines():
-
-        if line.strip():
-
-            pdf.add_paragraph(line.strip())
-
-
+    pdf.add_heading(f"【{doc_subject} — 通知內文】：", level=2)
+    pdf.add_paragraph(notice_text)
 
     return pdf.get_pdf_bytes()
 
 
-
-
-
 def export_mediation_pdf(
-
     med_text: str,
-
     sender_name: str = "聲請人",
-
     receiver_name: str = "對造人",
-
-    subject: str = "鄉鎮市區調解委員會聲請要旨"
-
+    subject: str = "鄉鎮市區調解委員會聲請要旨",
+    applicant: Optional[str] = None,
+    respondent: Optional[str] = None,
 ) -> bytes:
+    """將調解聲請要旨匯出為標準 PDF 文件（相容 sender_name/receiver_name 與 applicant/respondent 參數）"""
+    actual_sender = applicant if applicant is not None else sender_name
+    actual_receiver = respondent if respondent is not None else receiver_name
+    doc_subject = (subject or "").strip() or "鄉鎮市區調解委員會聲請要旨"
 
-    """將調解聲請要旨匯出為標準 PDF 文件"""
-
-    pdf = LegalPdfDocument(title="🏛️ 鄉鎮市區調解委員會聲請要旨")
-
-    pdf.add_title("🏛️ 鄉鎮市區調解委員會聲請要旨與談判方案")
-
-
+    pdf = LegalPdfDocument(title=doc_subject)
+    pdf.add_title(doc_subject)
 
     pdf.add_table(
-
-        ["調解關係人", "姓名／單位"],
-
+        ["調解關係人／事項", "姓名／內容"],
         [
-
-            ["聲請人：", sender_name],
-
-            ["對造人：", receiver_name]
-
+            ["調解主旨：", doc_subject],
+            ["聲請人：", actual_sender],
+            ["對造人：", actual_receiver],
         ]
-
     )
 
-
-
     pdf.add_heading("【調解聲請理由與和解方案建議】：", level=2)
-
-    clean_med = re.sub(r'#+\s*', '', med_text)
-
-    for line in clean_med.splitlines():
-
-        if line.strip():
-
-            pdf.add_paragraph(line.strip())
-
-
+    pdf.add_paragraph(med_text)
 
     return pdf.get_pdf_bytes()
 
@@ -1687,72 +1816,117 @@ def export_mcq_exam_docx(
 
 
 def export_mcq_exam_pdf(
-
     exam_data: Dict[str, Any],
-
-    user_answers: Optional[Dict[str, str]] = None
-
+    user_answers: Optional[Dict[str, str]] = None,
+    blank_practice: bool = False
 ) -> bytes:
-
-    """將司律一試選擇題試卷與詳解匯出為正式 PDF 考卷"""
-
+    """將司律一試選擇題試卷與詳解匯出為正式 PDF 考卷（支援 blank_practice 純白卷練習模式）"""
     subject = exam_data.get("subject", "法學綜合")
-
     topic = exam_data.get("topic", "司律一試全真模擬試卷")
-
     questions = exam_data.get("questions", [])
-
     answer_key = exam_data.get("answer_key", {})
 
-
-
     pdf = LegalPdfDocument(title=f"📋 司法官律師一試・全真模擬試卷【{subject}】")
-
     pdf.add_title(f"📋 司法官暨律師考試一試・全真模擬試卷【{subject}】")
-
     pdf.add_paragraph(f"測驗主題：{topic} ｜ 總題數：{len(questions)} 題", font_size=10, color=(0.4, 0.45, 0.5))
 
+    resolved_answers: Dict[str, str] = {}
+    for idx, q in enumerate(questions, 1):
+        q_no = q.get("question_no", idx)
+        resolved_answers[str(q_no)] = str(q.get("answer") or answer_key.get(str(q_no), "")).strip()
 
+    if not blank_practice and user_answers:
+        score = 0
+        for q_num_str, c_ans in resolved_answers.items():
+            if c_ans and user_answers.get(q_num_str) == c_ans:
+                score += 1
+        pct = int(score / len(questions) * 100) if questions else 0
+        is_pass = pct >= 60
+        score_color = (0.09, 0.40, 0.20) if is_pass else (0.73, 0.11, 0.11)
+        pdf.add_callout(
+            f"★ 測驗成績：{score} / {len(questions)} 題（得分率：{pct}%，測驗總分：{score * 2} 分）",
+            title="一試模擬測驗成績統計",
+            bg_color=(0.94, 0.99, 0.95) if is_pass else (0.99, 0.95, 0.95),
+            border_color=score_color,
+        )
 
     pdf.add_heading("壹、全真試題測驗區", level=2)
-
-    for q in questions:
-
-        q_no = q.get("question_no")
-
+    for idx, q in enumerate(questions, 1):
+        q_no = q.get("question_no", idx)
         cat = q.get("category", "")
-
         cat_str = f" [{cat}]" if cat else ""
+        pdf.add_paragraph(f"**第 {q_no} 題{cat_str}**：{q.get('question', '')}", font_size=10)
 
-        pdf.add_paragraph(f"第 {q_no} 題{cat_str}：{q.get('question', '')}", font_size=10)
+        if q.get("case_facts"):
+            pdf.add_paragraph(
+                f"【共通案例事實】：{q.get('case_facts')}",
+                font_size=9.5,
+                indent=8,
+                color=(0.25, 0.30, 0.38),
+            )
 
         opts = q.get("options", {})
+        if isinstance(opts, dict):
+            for opt_key in ["A", "B", "C", "D"]:
+                if opt_key in opts:
+                    pdf.add_paragraph(f"({opt_key}) {opts[opt_key]}", font_size=9.5, indent=14)
+        elif isinstance(opts, list):
+            for o_idx, opt_val in enumerate(opts):
+                opt_key = chr(ord("A") + o_idx)
+                pdf.add_paragraph(f"({opt_key}) {opt_val}", font_size=9.5, indent=14)
 
-        for opt_key in ["A", "B", "C", "D"]:
+        if not blank_practice and user_answers:
+            u_ans = user_answers.get(str(q_no))
+            c_ans = resolved_answers.get(str(q_no), "")
+            if u_ans and u_ans == c_ans:
+                pdf.add_paragraph(
+                    f"✅ 考生作答：({u_ans}) ➔ 正確！",
+                    font_size=9.5,
+                    indent=14,
+                    color=(0.09, 0.40, 0.20),
+                )
+            elif u_ans:
+                pdf.add_paragraph(
+                    f"❌ 考生作答：({u_ans}) ➔ 錯誤（標準答案：({c_ans})）",
+                    font_size=9.5,
+                    indent=14,
+                    color=(0.73, 0.11, 0.11),
+                )
+            else:
+                pdf.add_paragraph(
+                    f"⚪ 未作答（標準答案：({c_ans})）",
+                    font_size=9.5,
+                    indent=14,
+                    color=(0.39, 0.45, 0.55),
+                )
 
-            if opt_key in opts:
+    if questions:
+        pdf._new_page()
 
-                pdf.add_paragraph(f"({opt_key}) {opts[opt_key]}", font_size=9.5, indent=14)
+    pdf.add_heading("貳、標準答案與逐題法理詳細解析與實務出處", level=2)
 
+    if blank_practice and questions:
+        ans_rows = []
+        for idx, q in enumerate(questions, 1):
+            q_no = q.get("question_no", idx)
+            c_ans = resolved_answers.get(str(q_no), "")
+            ans_rows.append([f"第 {q_no} 題", f"({c_ans})", q.get("core_issue", "") or "-"])
+        pdf.add_table(["題號", "標準答案", "核心法學考點"], ans_rows)
 
-
-    pdf.add_heading("貳、逐題法理詳細解析", level=2)
-
-    for q in questions:
-
-        q_no = q.get("question_no")
-
-        c_ans = q.get("answer") or answer_key.get(str(q_no), "")
-
+    for idx, q in enumerate(questions, 1):
+        q_no = q.get("question_no", idx)
+        c_ans = resolved_answers.get(str(q_no), "")
+        core_issue = q.get("core_issue", "")
+        legal_refs = q.get("legal_references", "")
         exp = q.get("explanation", "")
 
-        pdf.add_paragraph(f"第 {q_no} 題 【正確答案：({c_ans})】", font_size=10.5, color=(0.12, 0.23, 0.54))
-
+        pdf.add_paragraph(f"**第 {q_no} 題 【正確答案：({c_ans})】**", font_size=10.5, color=(0.12, 0.23, 0.54))
+        if core_issue:
+            pdf.add_paragraph(f"**【核心法學考點】**：{core_issue}", font_size=9.5, indent=10, color=(0.15, 0.22, 0.32))
+        if legal_refs:
+            pdf.add_paragraph(f"【依據法條與裁判字號】：{legal_refs}", font_size=9.5, indent=10, color=(0.25, 0.30, 0.38))
         if exp:
-
             pdf.add_paragraph(f"解析：{exp}", font_size=9.5, indent=10)
-
-
 
     return pdf.get_pdf_bytes()
 

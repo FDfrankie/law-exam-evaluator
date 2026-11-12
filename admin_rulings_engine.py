@@ -8,27 +8,20 @@
 5. 勞動部勞動字函釋（勞動基準法、勞工退休金、職業災害）
 6. 財政部台財稅字令函（納稅者權利保護法、稅捐稽徵法、所得稅法）
 7. ChOrder.json 10,452 部法規命令與施行細則全文檢索與在線點閱
-8. Gemini 多模態智慧爬取與補強中央主管機關最新函釋
+8. Gemini AI 輔助彙整與補充中央主管機關行政實務見解（標註非官方公報原文）
 """
 import os
 import sys
 import json
 import re
+import logging
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except Exception:
-    try:
-        import google.generativeai as legacy_genai
-    except Exception:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+from config import DATA_DIR, DEFAULT_GEMINI_MODEL
+from llm_client import generate_json, LlmCallError
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+logger = logging.getLogger(__name__)
 
 # 核心法規與法規命令對照表
 LAW_TO_KEY_REGULATIONS_MAP: Dict[str, List[Dict[str, str]]] = {
@@ -744,24 +737,60 @@ def save_crawled_admin_rulings(new_rulings: List[Dict[str, Any]]) -> None:
         CRAWLED_RULINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         with open(CRAWLED_RULINGS_PATH, "w", encoding="utf-8") as f:
             json.dump(existing, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to save crawled admin rulings to %s: %s", CRAWLED_RULINGS_PATH, exc)
+
+
+def _normalize_synthesized_rulings(
+    parsed: Any,
+    law_name: str,
+    article_no: str,
+    clean_art_no: str,
+) -> List[Dict[str, Any]]:
+    """將 LLM 回傳之 list 或 dict（單筆或 {"items": [...]}）正規化並標記為 AI 輔助整理。"""
+    candidates: List[Any] = []
+    if isinstance(parsed, list):
+        candidates = parsed
+    elif isinstance(parsed, dict):
+        for wrapper_key in ("items", "rulings", "data", "results"):
+            if isinstance(parsed.get(wrapper_key), list):
+                candidates = parsed[wrapper_key]
+                break
+        if not candidates and any(
+            k in parsed for k in ("title", "holding", "doc_number", "agency", "content_analysis", "id")
+        ):
+            candidates = [parsed]
+
+    normalized: List[Dict[str, Any]] = []
+    for idx, item in enumerate(candidates, start=1):
+        if not isinstance(item, dict):
+            continue
+        entry = dict(item)
+        entry.setdefault("id", f"ai_synth_{clean_art_no}_{idx}")
+        entry.setdefault("law_name", law_name)
+        entry.setdefault("article_target", article_no)
+        entry.setdefault("article_no_clean", clean_art_no)
+        entry["is_ai_synthesized"] = True
+        entry["source"] = "AI輔助綜合整理（非官方公報原文）"
+        entry.setdefault(
+            "verification_note",
+            "⚠️ 本則函釋摘要由 AI 輔助彙整，引用前請至主管機關公報系統查證原文與公文字號。",
+        )
+        normalized.append(entry)
+    return normalized
+
 
 def crawl_and_synthesize_admin_rulings(law_name: str, article_no: str, content: str = "") -> List[Dict[str, Any]]:
-    """調用現代化 Gemini 3.x Flash 智慧爬取並整理中央主管機關（經濟部/智財局/金管會/法務部）對該條文之權威函釋"""
-    api_key = get_gemini_api_key()
-    if not api_key:
-        raise ValueError("未檢測到 GEMINI_API_KEY！")
-
+    """調用 Gemini AI 輔助檢索與整理中央主管機關對該條文之相關行政函釋摘要（非官方公報原文）"""
     clean_art_no = re.sub(r'[第條\s]', '', str(article_no)).replace('之', '-')
     prompt = f"""
 你是一位台灣中央主管機關（經濟部商業司、經濟部智慧財產局、金管會證期局、法務部、勞動部）之法規委員會首席法制研究員。
-請針對【{law_name}】{article_no}，檢索、爬取並彙編成 1~3 筆最代表性、具法律拘束力與司律考試權威價值的「主管機關重要行政函釋（含解釋令、行政指導字號）」：
+請針對【{law_name}】{article_no}，整理彙編成 1~3 筆最具代表性與司律考試參考價值的「主管機關重要行政函釋（含解釋令、行政指導字號）」：
 
 【條文內容】：
 {content}
 
-請輸出合法的 JSON Array，每個項目包含以下精準結構（不要包含額外的 Markdown 或解釋，直接輸出 JSON）：
+請輸出合法的 JSON Array（或包含 items 陣列之 JSON 物件），每個項目包含以下精準結構（不要包含額外的 Markdown 或解釋，直接輸出 JSON）：
 [
   {{
     "id": "agency_topic_year",
@@ -778,45 +807,19 @@ def crawl_and_synthesize_admin_rulings(law_name: str, article_no: str, content: 
   }}
 ]
 """
-    models = get_gemini_models_to_try(DEFAULT_GEMINI_MODEL)
-    last_err = None
+    try:
+        parsed = generate_json(
+            prompt,
+            primary_model=DEFAULT_GEMINI_MODEL,
+            temperature=0.2,
+        )
+    except LlmCallError as exc:
+        logger.warning("crawl_and_synthesize_admin_rulings failed for %s %s: %s", law_name, article_no, exc)
+        raise RuntimeError(f"智慧整理主管函釋失敗: {exc}") from exc
 
-    if USE_MODERN_GENAI:
-        client = genai.Client(api_key=api_key)
-        for m in models:
-            try:
-                resp = client.models.generate_content(
-                    model=m,
-                    contents=prompt,
-                    config=genai_types.GenerateContentConfig(temperature=0.2)
-                )
-                text = resp.text.strip()
-                if "```" in text:
-                    text = re.sub(r"^```(?:json)?", "", text, flags=re.MULTILINE)
-                    text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
-                parsed = json.loads(text)
-                if isinstance(parsed, list) and parsed:
-                    save_crawled_admin_rulings(parsed)
-                    return parsed
-            except Exception as e:
-                last_err = e
-                continue
-    else:
-        legacy_genai.configure(api_key=api_key)
-        for m in models:
-            try:
-                mod = legacy_genai.GenerativeModel(model_name=m)
-                resp = mod.generate_content(prompt, generation_config=legacy_genai.types.GenerationConfig(temperature=0.2))
-                text = resp.text.strip()
-                if "```" in text:
-                    text = re.sub(r"^```(?:json)?", "", text, flags=re.MULTILINE)
-                    text = re.sub(r"```$", "", text, flags=re.MULTILINE).strip()
-                parsed = json.loads(text)
-                if isinstance(parsed, list) and parsed:
-                    save_crawled_admin_rulings(parsed)
-                    return parsed
-            except Exception as e:
-                last_err = e
-                continue
+    normalized = _normalize_synthesized_rulings(parsed, law_name, article_no, clean_art_no)
+    if not normalized:
+        raise RuntimeError("智慧整理主管函釋失敗: Gemini 未返回有效的函釋結構資料")
 
-    raise RuntimeError(f"智慧爬取主管函釋失敗: {last_err}")
+    save_crawled_admin_rulings(normalized)
+    return normalized

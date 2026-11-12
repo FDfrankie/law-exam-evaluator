@@ -1,34 +1,86 @@
-_ARTICLE_ANNOTATIONS_CACHE = {}
-import time
 """
 智慧六法全書與條文爭點判解註記引擎 (Annotated Six Codes & Judicial Interpretations Engine)
-收錄全台 61 部核心司律考科法規、10,183 條法定條文，全面打通：
+收錄全台核心司律考科法規與數千條法定條文，全面打通：
 1. 條文項款目結構與法條全文
 2. 立法修法理由與歷次修正沿革
 3. 權威司法裁判（憲判字/釋字、最高法院大法庭裁定、精選裁判）
 4. 核心法律爭點與學說見解（通說 vs. 有力說）
 5. 相關法規命令、行政函釋與施行細則
 6. 考生個人手寫筆記與考科講義檔案連結
-7. Gemini 2.0 Flash 即時深度條文解析與主管機關函釋剖析
+7. Gemini AI 即時深度條文解析與主管機關函釋剖析
 """
 import os
 import sys
 import json
 import re
+import time
+import logging
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
 import urllib.parse
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except ImportError:
-    try:
-        import google.generativeai as legacy_genai
-    except ImportError:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+from llm_client import generate_content, generate_json, LlmCallError
+
+logger = logging.getLogger(__name__)
+
+_MAX_ANNOTATION_CACHE_SIZE = 256
+_MAX_CHORDER_CACHE_SIZE = 128
+_ARTICLE_ANNOTATIONS_CACHE: "OrderedDict[Tuple[Any, ...], Dict[str, Any]]" = OrderedDict()
+
+COMMON_LAW_ALIASES: Dict[str, str] = {
+    "刑法": "中華民國刑法",
+    "憲法": "中華民國憲法",
+    "憲法增修條文": "中華民國憲法增修條文",
+    "刑法施行法": "中華民國刑法施行法",
+    "民訴": "民事訴訟法",
+    "刑訴": "刑事訴訟法",
+    "行訴": "行政訴訟法",
+    "行程法": "行政程序法",
+    "強執": "強制執行法",
+    "國賠法": "國家賠償法",
+    "消保法": "消費者保護法",
+    "智財法": "智慧財產案件審理法",
+    "家事法": "家事事件法",
+    "勞基法": "勞動基準法",
+    "證交法": "證券交易法",
+    "個資法": "個人資料保護法",
+    "公平法": "公平交易法",
+    "健保法": "全民健康保險法",
+    "保險法": "保險法",
+    "公司法": "公司法",
+    "票據法": "票據法",
+    "海商法": "海商法",
+}
+
+
+def normalize_law_name(law_name: str) -> str:
+    """將常見法規簡稱（如『刑法』、『憲法』、『民訴』）正規化為官方正式法典名稱。"""
+    clean = re.sub(r'[《》「」『』\s]', '', str(law_name or '')).strip()
+    if not clean:
+        return ""
+    return COMMON_LAW_ALIASES.get(clean, clean)
+
+
+def are_equivalent_law_names(law_a: str, law_b: str) -> bool:
+    """比對兩法規名稱是否指向同一部法律（如『刑法』與『中華民國刑法』）。"""
+    norm_a = normalize_law_name(law_a)
+    norm_b = normalize_law_name(law_b)
+    return bool(norm_a and norm_b and norm_a == norm_b)
+
+
+def _lru_cache_get(cache: OrderedDict, key: Any) -> Any:
+    if key in cache:
+        cache.move_to_end(key)
+        return cache[key]
+    return None
+
+
+def _lru_cache_set(cache: OrderedDict, key: Any, value: Any, max_size: int) -> None:
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > max_size:
+        cache.popitem(last=False)
 
 __all__ = [
     "SIX_CODES_TAXONOMY",
@@ -46,6 +98,9 @@ __all__ = [
     "get_judicial_article_url",
     "get_constitutional_article_url",
     "clear_six_codes_cache",
+    "normalize_law_name",
+    "are_equivalent_law_names",
+    "COMMON_LAW_ALIASES",
     "load_six_codes_data",
     "format_legal_article_text",
     "render_formatted_article_quote",
@@ -71,7 +126,7 @@ except Exception:
     def get_admin_rulings_for_article(*args, **kwargs): return []
     def get_all_administrative_rulings(*args, **kwargs): return []
 
-from config import DATA_DIR, get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+from config import DATA_DIR, DEFAULT_GEMINI_MODEL
 
 # 八大法學門類體系分類
 SIX_CODES_TAXONOMY: Dict[str, List[str]] = {
@@ -231,9 +286,10 @@ def load_six_codes_data() -> tuple:
 
 def clear_six_codes_cache():
     """清除六法條文與標註快取，強制重新載入最新資料庫"""
-    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS, _ARTICLE_ANNOTATIONS_CACHE, _CACHED_STATUTE_ISSUES_MASSIVE
+    global _CACHED_ARTICLES, _CACHED_META, _CACHED_LAW_MAP, _CACHED_HISTORIES, _CACHED_LEGISLATIVE, _CACHED_STATUTE_REASONS, _ARTICLE_ANNOTATIONS_CACHE, _CHORDER_ARTICLES_CACHE, _CACHED_STATUTE_ISSUES_MASSIVE
     _CACHED_STATUTE_ISSUES_MASSIVE = None
     _ARTICLE_ANNOTATIONS_CACHE.clear()
+    _CHORDER_ARTICLES_CACHE.clear()
     _CACHED_ARTICLES = None
     _CACHED_META = None
     _CACHED_LAW_MAP = None
@@ -313,7 +369,7 @@ def get_laws_in_branch(branch_name: str) -> List[str]:
 
     return available or list(law_map.keys())[:10]
 
-_CHORDER_ARTICLES_CACHE: Dict[str, List[Dict[str, Any]]] = {}
+_CHORDER_ARTICLES_CACHE: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
 
 def get_articles_from_national_orders(law_name: str) -> List[Dict[str, Any]]:
     """從全國行政法規命令庫 (ChOrder.json / ChLaw.json: 10,452 部法規) 極速調閱法定條文全文"""
@@ -321,8 +377,9 @@ def get_articles_from_national_orders(law_name: str) -> List[Dict[str, Any]]:
     if not law_name:
         return []
     clean = law_name.strip()
-    if clean in _CHORDER_ARTICLES_CACHE:
-        return _CHORDER_ARTICLES_CACHE[clean]
+    cached = _lru_cache_get(_CHORDER_ARTICLES_CACHE, clean)
+    if cached is not None:
+        return cached
     
     cand_paths = [
         Path(DATA_DIR) / "national_laws" / "ChOrder.json",
@@ -350,10 +407,10 @@ def get_articles_from_national_orders(law_name: str) -> List[Dict[str, Any]]:
                             for a in item.get("LawArticles", [])
                         ]
                         if res:
-                            _CHORDER_ARTICLES_CACHE[clean] = res
+                            _lru_cache_set(_CHORDER_ARTICLES_CACHE, clean, res, _MAX_CHORDER_CACHE_SIZE)
                             return res
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to load national order %s from %s: %s", clean, cp, exc)
     return []
 
 def get_law_articles(law_name: str) -> List[Dict[str, Any]]:
@@ -1320,8 +1377,9 @@ def get_article_annotations(
     global _ARTICLE_ANNOTATIONS_CACHE
     clean_no = str(article_no).replace(" ", "").replace("第", "").replace("條", "")
     cache_key = (law_name, clean_no, court_filter or "ALL", order_by, search_kw)
-    if cache_key in _ARTICLE_ANNOTATIONS_CACHE:
-        return _ARTICLE_ANNOTATIONS_CACHE[cache_key]
+    cached_anno = _lru_cache_get(_ARTICLE_ANNOTATIONS_CACHE, cache_key)
+    if cached_anno is not None:
+        return cached_anno
     articles, meta, law_map = load_six_codes_data()
     
     # 標準化條號鍵
@@ -1414,7 +1472,7 @@ def get_article_annotations(
         "all_materials": anno_materials,
         "legislative_details": legislative_details
     }
-    _ARTICLE_ANNOTATIONS_CACHE[cache_key] = res
+    _lru_cache_set(_ARTICLE_ANNOTATIONS_CACHE, cache_key, res, _MAX_ANNOTATION_CACHE_SIZE)
     return res
 
 
@@ -1528,28 +1586,8 @@ def is_article_in_history_entry(art_no: str, entry_text: str) -> bool:
 
     return False
 
-# 設置別名以支援多模組呼叫
+# 設置別名以支援多模組呼叫 (COMMON_LAW_ALIASES 已統一於模組頂部定義)
 is_article_targeted_in_decree = is_article_in_history_entry
-
-COMMON_LAW_ALIASES: Dict[str, str] = {
-    "刑法": "中華民國刑法",
-    "憲法": "中華民國憲法",
-    "民訴": "民事訴訟法",
-    "刑訴": "刑事訴訟法",
-    "行訴": "行政訴訟法",
-    "行程法": "行政程序法",
-    "強執": "強制執行法",
-    "國賠法": "國家賠償法",
-    "消保法": "消費者保護法",
-    "智財法": "智慧財產案件審理法",
-    "家事法": "家事事件法",
-    "勞基法": "勞動基準法",
-    "證交法": "證券交易法",
-    "保險法": "保險法",
-    "公司法": "公司法",
-    "票據法": "票據法",
-    "海商法": "海商法"
-}
 
 def get_law_legislative_history(law_name: str) -> Dict[str, Any]:
     """獲取指定法規（法律、法規命令、施行細則）之完整官方立法沿革與歷次修正公報"""
@@ -1836,13 +1874,10 @@ def save_article_legislative_details(law_name: str, article_no: str, data: Dict[
 
 def synthesize_article_legislative_details(law_name: str, article_no: str, content: str = "") -> Dict[str, Any]:
     """
-    呼叫 Gemini 3.8 / 2.0 Flash 即時提煉深度立法理由、新舊條文對照與修法沿革，
+    呼叫 Gemini AI 即時提煉深度立法理由、新舊條文對照與修法沿革，
     並自動存入本地持久化 catalog 供日後秒級調閱。
     """
     clean_no = normalize_article_no(article_no)
-    api_key = get_gemini_api_key()
-    if not api_key:
-        raise ValueError("未檢測到 GEMINI_API_KEY！無法啟動線上擷取。")
 
     # 檢索全法沿革中對應本條文之真實官方公布令資訊，作為 Prompt 依據，杜絕幻覺
     law_hist = get_law_legislative_history(law_name)
@@ -1904,38 +1939,15 @@ def synthesize_article_legislative_details(law_name: str, article_no: str, conte
 *說明：若本條文曾經修正，請在 amendments 填寫真實歷次修正理由（依年份由新至舊排列）；若本條自初次制定迄今從未修正，amendments 請留空陣列 []，並務必填寫完整的 enactment_card。
 請僅輸出標準 JSON，不得包含 Markdown 程式碼區塊外多餘說明。
 """
-    models_to_try = get_gemini_models_to_try(DEFAULT_GEMINI_MODEL)
-    last_err = None
-    raw_json_str = ""
+    try:
+        parsed = generate_json(prompt, primary_model=DEFAULT_GEMINI_MODEL, temperature=0.2)
+    except LlmCallError as exc:
+        logger.warning("synthesize_article_legislative_details failed for %s %s: %s", law_name, clean_no, exc)
+        raise RuntimeError(f"立法理由提煉失敗: {exc}") from exc
 
-    for m_name in models_to_try:
-        try:
-            if USE_MODERN_GENAI:
-                client = genai.Client(api_key=api_key)
-                cfg = genai_types.GenerateContentConfig(temperature=0.2)
-                resp = client.models.generate_content(model=m_name, contents=prompt, config=cfg)
-                raw_json_str = resp.text
-            else:
-                legacy_genai.configure(api_key=api_key)
-                cur_model = legacy_genai.GenerativeModel(model_name=m_name)
-                resp = cur_model.generate_content(
-                    prompt, generation_config=legacy_genai.types.GenerationConfig(temperature=0.2)
-                )
-                raw_json_str = resp.text
-            if raw_json_str:
-                break
-        except Exception as e:
-            last_err = e
-            continue
+    if not isinstance(parsed, dict):
+        raise ValueError("Gemini 未返回合規 JSON 物件格式")
 
-    if not raw_json_str:
-        raise RuntimeError(f"立法理由提煉失敗: {last_err}")
-
-    m = re.search(r'\{.*\}', raw_json_str, re.DOTALL)
-    if not m:
-        raise ValueError("Gemini 未返回合規 JSON 格式")
-    
-    parsed = json.loads(m.group(0))
     record = {
         "law_name": law_name,
         "article_no": clean_no,
@@ -1981,21 +1993,14 @@ def fetch_and_cache_article_legislative_details(
         details = get_article_legislative_details(law_name, clean_no, content)
         return True, details, moj_url
     except Exception as e:
+        logger.warning("fetch_and_cache_article_legislative_details failed for %s %s: %s", law_name, clean_no, e)
         return False, str(e), moj_url
 
 
 class SixCodesDeepAnnotator:
-    """呼叫 Gemini 2.0 Flash 針對特定法條進行深度立法理由、函釋與爭點實戰釋析"""
+    """呼叫 Gemini AI 針對特定法條進行深度立法理由、函釋與爭點實戰釋析"""
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
-        self.api_key = get_gemini_api_key()
-        if not self.api_key:
-            raise ValueError("未檢測到 GEMINI_API_KEY！")
         self.model_name = model_name
-        if USE_MODERN_GENAI:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
-            legacy_genai.configure(api_key=self.api_key)
-            self.model = legacy_genai.GenerativeModel(model_name=model_name)
 
     def annotate_article(self, law_name: str, article_no: str, content: str) -> str:
         prompt = f"""
@@ -2032,26 +2037,15 @@ class SixCodesDeepAnnotator:
 - 列出與本條文最常**「共同連動援用」**之高頻實體法與程序法關聯條文（例如：請求權基礎競合、抗辯權、代位、時效或特別法條號）
 - 說明各關聯條文在實例題中如何相互牽動、開標組裝
 """
-        models_to_try = get_gemini_models_to_try(self.model_name)
-        last_err = None
-        for m_name in models_to_try:
-            try:
-                if USE_MODERN_GENAI:
-                    cfg = genai_types.GenerateContentConfig(temperature=0.2)
-                    resp = self.client.models.generate_content(
-                        model=m_name, contents=prompt, config=cfg
-                    )
-                    return resp.text
-                else:
-                    cur_model = legacy_genai.GenerativeModel(model_name=m_name)
-                    resp = cur_model.generate_content(
-                        prompt, generation_config=legacy_genai.types.GenerationConfig(temperature=0.2)
-                    )
-                    return resp.text
-            except Exception as e:
-                last_err = e
-                continue
-        raise RuntimeError(f"條文深度註釋生成失敗: {last_err}")
+        try:
+            return generate_content(
+                prompt,
+                primary_model=self.model_name,
+                temperature=0.2,
+            )
+        except Exception as e:
+            logger.warning("SixCodesDeepAnnotator failed for %s %s: %s", law_name, article_no, e)
+            raise RuntimeError(f"條文深度註釋生成失敗: {e}") from e
 
 
 def format_legal_article_text(text: str) -> str:

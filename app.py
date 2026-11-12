@@ -56,348 +56,79 @@ st.set_page_config(
 
 
 
-# 注入現代專業法學主題 CSS 樣式
-
-st.markdown("""
-
-<style>
-
-/* Modern Judicial / Scholarly Theme */
-
-html, body, [class*="css"] {
-
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", "PingFang SC", "Microsoft JhengHei", Roboto, sans-serif;
-
-    color: #1e293b;
-
-}
-
-
-
-/* Page container breathing room */
-
-.block-container {
-
-    padding-top: 2rem !important;
-
-    padding-bottom: 3.5rem !important;
-
-    max-width: 1400px;
-
-}
-
-
-
-/* Metrics & Stat Cards */
-
-div[data-testid="stMetric"] {
-
-    background: #ffffff;
-
-    border: 1px solid #e2e8f0;
-
-    border-radius: 12px;
-
-    padding: 14px 18px;
-
-    box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
-
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
-
-}
-
-div[data-testid="stMetric"]:hover {
-
-    transform: translateY(-2px);
-
-    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-
-    border-color: #cbd5e1;
-
-}
-
-div[data-testid="stMetricLabel"] {
-
-    font-size: 0.90rem !important;
-
-    color: #475569 !important;
-
-    font-weight: 600 !important;
-
-}
-
-div[data-testid="stMetricValue"] {
-
-    font-size: 1.6rem !important;
-
-    color: #1e3a8a !important;
-
-    font-weight: 700 !important;
-
-}
-
-
-
-/* Modern Tabs */
-
-.stTabs [data-baseweb="tab-list"] {
-
-    gap: 10px;
-
-    border-bottom: 2px solid #e2e8f0;
-
-    padding-bottom: 4px;
-
-}
-
-.stTabs [data-baseweb="tab"] {
-
-    border-radius: 8px 8px 0 0;
-
-    padding: 10px 20px;
-
-    font-size: 1.0rem;
-
-    font-weight: 600;
-
-    color: #64748b;
-
-    background-color: transparent;
-
-    transition: all 0.2s ease;
-
-}
-
-.stTabs [aria-selected="true"] {
-
-    color: #1d4ed8 !important;
-
-    border-bottom: 3px solid #1d4ed8 !important;
-
-    background-color: rgba(29, 78, 216, 0.05) !important;
-
-}
-
-
-
-/* Expanders */
-
-.streamlit-expanderHeader {
-
-    font-weight: 600 !important;
-
-    font-size: 0.98rem !important;
-
-    border-radius: 8px !important;
-
-}
-
-div[data-testid="stExpander"] {
-
-    border: 1px solid #e2e8f0 !important;
-
-    border-radius: 10px !important;
-
-    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
-
-    margin-bottom: 12px;
-
-}
-
-
-
-/* Buttons */
-
-.stButton > button {
-
-    border-radius: 8px;
-
-    font-weight: 600;
-
-    padding: 0.5rem 1.2rem;
-
-    transition: all 0.15s ease-in-out;
-
-}
-
-.stButton > button[kind="primary"] {
-
-    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%) !important;
-
-    border: none !important;
-
-    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
-
-}
-
-.stButton > button[kind="primary"]:hover {
-
-    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-
-    transform: translateY(-1px);
-}
-
-/* Sidebar Nav Slots / Fields (一個欄位一個欄位設計，徹底杜絕 ● 圓點) */
-div[data-testid="stSidebar"] div.stButton > button {
-    text-align: left !important;
-    justify-content: flex-start !important;
-    border-radius: 9px !important;
-    padding: 8px 13px !important;
-    font-size: 0.94rem !important;
-    font-weight: 550 !important;
-    transition: all 0.16s ease-in-out !important;
-    margin-bottom: 4px !important;
-    width: 100% !important;
-}
-div[data-testid="stSidebar"] div.stButton > button:hover {
-    transform: translateX(3px) !important;
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
-}
-div[data-testid="stSidebar"] div.stButton > button[kind="primary"],
-div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-primary"] {
-    background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #2563eb 100%) !important;
-    color: #ffffff !important;
-    border: 1px solid #3b82f6 !important;
-    font-weight: 700 !important;
-    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.28) !important;
-}
-div[data-testid="stSidebar"] div.stButton > button[kind="secondary"],
-div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-secondary"] {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
-    color: #334155 !important;
-}
-div[data-testid="stSidebar"] div.stButton > button[kind="secondary"]:hover,
-div[data-testid="stSidebar"] div.stButton > button[data-testid="baseButton-secondary"]:hover {
-    background: #f1f5f9 !important;
-    border-color: #cbd5e1 !important;
-    color: #0f172a !important;
-}
-
-/* Horizontal Radio Button Pills (去圓點膠囊化) */
-div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label > div:first-child {
-    display: none !important;
-}
-div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label {
-    background: #f1f5f9;
-    padding: 4px 12px !important;
-    border-radius: 9999px !important;
-    border: 1px solid #cbd5e1 !important;
-    margin-right: 6px !important;
-    cursor: pointer;
-    transition: all 0.15s ease;
-}
-div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:hover {
-    background: #e2e8f0;
-}
-div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) {
-    background: #2563eb !important;
-    color: white !important;
-    border-color: #1d4ed8 !important;
-}
-div[data-testid="stRadio"] > div[role="radiogroup"][aria-orientation="horizontal"] > label:has(input:checked) p {
-    color: white !important;
-    font-weight: 600;
-}
-
-/* Alerts */
-div[data-testid="stAlert"] {
-
-    border-radius: 10px !important;
-
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-
-}
-
-/* Reading Ergonomics & Line Spacing (LawyerMan / LawBank) */
-
-p, div[data-testid="stMarkdownContainer"] p, div[data-testid="stMarkdownContainer"] li, textarea, .stTextArea textarea {
-
-    line-height: 1.68 !important;
-
-}
-
-</style>
-
-""", unsafe_allow_html=True)
-
-
-
-# 效法法律人與法源法律網：動態字體大小舒適排版注入
-
-_cur_reading_fs = st.session_state.get("reading_font_size", "16px")
-
-if _cur_reading_fs != "16px":
-
-    st.markdown(f"""
-
-<style>
-
-p, div[data-testid="stMarkdownContainer"] p, div[data-testid="stMarkdownContainer"] li, textarea, .stTextArea textarea {{
-
-    font-size: {_cur_reading_fs} !important;
-
-}}
-
-</style>
-
-""", unsafe_allow_html=True)
+# 全域主題 CSS 與閱讀字級樣式已模組化至 code/ui/styles.py（於下方載入套件後立即注入）
 
 
 
 
 
 import json
-
+import logging
 import re
-
 import io
-
 import time
-
 import urllib.parse
-
 import base64
-
 import sqlite3
-
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
-
 from PIL import Image
 
+try:
+    import pymupdf  # PyMuPDF
+except Exception:
+    try:
+        import fitz as pymupdf  # type: ignore
+    except Exception:
+        pymupdf = None  # type: ignore
 
+logger = logging.getLogger(__name__)
 
-# 全域導航模式常數（精簡俐落・完全消除側邊欄折行，杜絕 Streamlit Cloud 載入之 NameError）
+from config import (
+    init_directories,
+    GOOGLE_DRIVE_DATA_DIR,
+    get_gemini_api_key,
+    get_gemini_api_key_source,
+    verify_developer_password,
+    RAW_DATA_DIR,
+    DATA_DIR,
+    DEFAULT_GEMINI_MODEL,
+    GEMINI_FALLBACK_MODELS,
+    MODE_HOME,
+    MODE_TEXTBOOK,
+    MODE_EVAL,
+    MODE_GEN,
+    MODE_BANK,
+    MODE_ANS,
+    MODE_SEARCH,
+    MODE_QA,
+    MODE_SUMMARIZER,
+    MODE_SIX_CODES,
+    MODE_SFT,
+    MODE_INGEST,
+    MODE_DEV_MANAGER,
+)
+from ui import (
+    inject_global_styles,
+    inject_reading_font_size,
+    M5_SUB_ADVANCED_SEARCH,
+    M5_SUB_UNIFIED_CORPUS,
+    M5_SUB_HOT_SEARCH,
+    M5_SUB_APPEAL_CHAIN,
+    M5_SUB_ADMIN_ORDERS,
+    M5_SUB_ISSUES,
+    M5_SUB_DISTINGUISHING,
+    M5_SUB_MODES,
+    resolve_m5_sub_mode,
+    sync_pending_widget_keys,
+    set_pending_widget_value,
+    navigate_to,
+    render_study_timer_widget,
+    render_exam_pacing_timer,
+    render_wrong_mcq_notebook_panel,
+)
 
-MODE_HOME = "🏠 系統首頁"
-
-MODE_TEXTBOOK = "📖 體系教科書"
-
-MODE_EVAL = "📝 試卷批改"
-
-MODE_GEN = "🎯 模擬命題"
-
-MODE_BANK = "📚 歷年真題"
-
-MODE_ANS = "✍️ 擬答生成"
-
-MODE_SEARCH = "🔍 法學檢索"
-
-MODE_QA = "💬 法律問答"
-
-MODE_SUMMARIZER = "📑 裁判精鍊"
-
-MODE_SIX_CODES = "⚖️ 智慧六法"
-
-MODE_SFT = "📥 法學筆記"
-
-MODE_INGEST = "📦 裁判入庫"
-
-MODE_DEV_MANAGER = "🛠️ 檔案總管"
-
-
-
-from config import init_directories, GOOGLE_DRIVE_DATA_DIR, get_gemini_api_key, RAW_DATA_DIR, DATA_DIR, DEFAULT_GEMINI_MODEL, GEMINI_FALLBACK_MODELS
+inject_global_styles()
+inject_reading_font_size()
 
 from doc_parser import parse_document, ocr_handwritten_images
 
@@ -611,66 +342,47 @@ except Exception as _err:
 
 
 try:
-
     from question_bank_engine import (
-
         save_questions_to_pool, render_shared_question_pool_ui,
-
         save_community_question, save_community_questions_batch,
-
         get_community_questions, get_question_pool_stats,
-
         save_user_exam_submission, get_user_exam_submissions,
-
         save_author_feedback, render_developer_submission_viewer_ui,
-
-        infer_subject_from_text
-
+        infer_subject_from_text,
+        record_wrong_mcq, mark_wrong_mcq_mastered,
+        get_wrong_mcqs, get_subject_accuracy_stats,
+        export_wrong_mcqs_csv,
     )
-
 except ImportError:
-
     try:
-
         from code.question_bank_engine import (
-
             save_questions_to_pool, render_shared_question_pool_ui,
-
             save_community_question, save_community_questions_batch,
-
             get_community_questions, get_question_pool_stats,
-
             save_user_exam_submission, get_user_exam_submissions,
-
             save_author_feedback, render_developer_submission_viewer_ui,
-
-            infer_subject_from_text
-
+            infer_subject_from_text,
+            record_wrong_mcq, mark_wrong_mcq_mastered,
+            get_wrong_mcqs, get_subject_accuracy_stats,
+            export_wrong_mcqs_csv,
         )
-
     except Exception:
-
         def save_questions_to_pool(*a, **k): return 0
-
         def render_shared_question_pool_ui(): pass
-
         def save_community_question(*a, **k): return ""
-
         def save_community_questions_batch(*a, **k): return 0
-
         def get_community_questions(*a, **k): return []
-
         def get_question_pool_stats(*a, **k): return {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
-
         def save_user_exam_submission(*a, **k): return ""
-
         def get_user_exam_submissions(*a, **k): return []
-
         def save_author_feedback(*a, **k): return 0
-
         def render_developer_submission_viewer_ui(): pass
-
         def infer_subject_from_text(*a, **k): return "法學綜合"
+        def record_wrong_mcq(*a, **k): return False
+        def mark_wrong_mcq_mastered(*a, **k): return False
+        def get_wrong_mcqs(*a, **k): return []
+        def get_subject_accuracy_stats(*a, **k): return {"total": 0, "total_records": 0, "total_unmastered": 0, "total_mastered": 0, "total_wrong_attempts": 0, "subjects": {}}
+        def export_wrong_mcqs_csv(*a, **k): return ""
 
 
 
@@ -1083,43 +795,25 @@ def render_citation_quick_cards(citations: list, key_prefix: str = "cit_cards"):
             act_c1, act_c2, act_c3 = st.columns([1.2, 1.2, 1.6])
 
             with act_c1:
-
                 if st.button("📑 秒級精鍊此案", key=f"btn_card_sum_{key_prefix}_{idx}", use_container_width=True):
-
                     st.session_state["sum_citation_search"] = std_ref
-
                     st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-
                     st.session_state["sum_input_title"] = std_ref
-
                     st.session_state["sum_input_text"] = ""
-
                     st.session_state.pop("last_ai_sum_res", None)
-
-                    st.session_state["app_mode"] = MODE_SUMMARIZER
-
-                    st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
-
-                    st.rerun()
-
+                    navigate_to(MODE_SUMMARIZER)
             with act_c2:
-
                 if st.button("🌿 歷審脈絡溯源", key=f"btn_card_hist_{key_prefix}_{idx}", use_container_width=True):
-
-                    st.session_state["target_history_case_id"] = std_ref
-
-                    st.session_state["history_auto_exec"] = True
-
-                    st.session_state["m5_sub_mode_idx"] = 3
-
-                    st.session_state["app_mode"] = MODE_SEARCH
-
-                    st.session_state["nav_sidebar_radio_mode"] = MODE_SEARCH
-
-                    st.rerun()
-
+                    navigate_to(
+                        MODE_SEARCH,
+                        sub_mode=M5_SUB_APPEAL_CHAIN,
+                        pending_widgets={"inp_history_case_id": std_ref},
+                        extra_state={
+                            "target_history_case_id": std_ref,
+                            "history_auto_exec": True,
+                        },
+                    )
             with act_c3:
-
                 st.code(std_ref, language="text")
 
 
@@ -1365,51 +1059,25 @@ from import_judicial_opendata import (
 
 
 
-# 全局 SQLite 百萬大庫單例
-
-_global_million_db_engine = None
-
+# 全局 SQLite 百萬大庫單例（嚴格由 @st.cache_resource 管理，清除快取後即重新初始化）
 @st.cache_resource
-
 def get_million_db_engine():
-
-    global _global_million_db_engine
-
-    if _global_million_db_engine is None:
-
-        try:
-
-            _global_million_db_engine = MillionJudgmentsSQLiteEngine()
-
-        except Exception:
-
-            class DummyEngine:
-
-                def get_total_count(self) -> int: return 0
-
-                def batch_upsert_records(self, records, *args, **kwargs) -> int: return 0
-
-                def search_fts_and_meta(self, **kwargs): return []
-
-                def find_by_citation(self, citation): return None
-
-                def get_full_text(self, case_id: str, shard_key: str = "") -> str: return ""
-
-                def get_official_url(self, case_id: str = "", jid: str = "") -> str:
-
-                    import urllib.parse
-
-                    clean_cid = re.sub(r'\(.*?\)|（.*?）', '', str(case_id or "")).strip()
-
-                    return f"https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?q={urllib.parse.quote(clean_cid)}"
-
-                def get_db_info(self) -> dict:
-
-                    return {"mode": "none", "title": "📂 裁判資料庫 (尚未建立或空庫)", "count": 0, "path": "", "has_shards": False}
-
-            _global_million_db_engine = DummyEngine()
-
-    return _global_million_db_engine
+    try:
+        return MillionJudgmentsSQLiteEngine()
+    except Exception as _eng_err:
+        logger.warning("MillionJudgmentsSQLiteEngine init fallback: %s", _eng_err)
+        class DummyEngine:
+            def get_total_count(self) -> int: return 0
+            def batch_upsert_records(self, records, *args, **kwargs) -> int: return 0
+            def search_fts_and_meta(self, **kwargs): return []
+            def find_by_citation(self, citation): return None
+            def get_full_text(self, case_id: str, shard_key: str = "") -> str: return ""
+            def get_official_url(self, case_id: str = "", jid: str = "") -> str:
+                clean_cid = re.sub(r'\(.*?\)|（.*?）', '', str(case_id or "")).strip()
+                return f"https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?q={urllib.parse.quote(clean_cid)}"
+            def get_db_info(self) -> dict:
+                return {"mode": "none", "title": "📂 裁判資料庫 (尚未建立或空庫)", "count": 0, "path": "", "has_shards": False}
+        return DummyEngine()
 
 
 
@@ -1736,116 +1404,104 @@ class JudicialBatchMonthCrawler:
                 try:
 
                     td_obj.cleanup()
-
                 except Exception:
-
                     pass
-
-                except Exception:
-
-                    pass
-
-
-
-
 
 # 頁面配置已於檔案開頭最優先初始化完成 (st.set_page_config)
-
 init_directories()
 
-
-
 # 若六法全書或底層模組在 Streamlit Cloud 遭遇載入異常，於此主動向使用者呈現未遮蔽診斷訊息
-
 if _six_codes_load_error:
-
     st.error("⚠️ **【六法引擎自動安全防護已啟動】**：`six_codes_engine` 模組載入遭遇異常，系統已自動啟用安全模式以維持全部核心功能運作。")
-
     with st.expander("🔍 查看詳細系統診斷日誌"):
-
         st.code(_six_codes_load_error)
 
-
-
 try:
-
     from ingest_user_notes_to_sft import (
-
         get_google_drive_notes_list,
-
         read_note_text,
-
         sync_all_drive_notes_to_samsung_notes,
-
         distill_single_note_file
-
     )
-
 except ImportError:
-
     try:
-
         import ingest_user_notes_to_sft as _iun
-
         get_google_drive_notes_list = getattr(_iun, "get_google_drive_notes_list", lambda: [])
-
         read_note_text = getattr(_iun, "read_note_text", lambda p, **kw: "")
-
         sync_all_drive_notes_to_samsung_notes = getattr(_iun, "sync_all_drive_notes_to_samsung_notes", lambda: 0)
-
         distill_single_note_file = getattr(_iun, "distill_single_note_file", lambda p, **kw: [])
-
     except Exception:
-
         get_google_drive_notes_list = lambda: []
-
         read_note_text = lambda p, **kw: ""
-
         sync_all_drive_notes_to_samsung_notes = lambda: 0
-
         distill_single_note_file = lambda p, **kw: []
 
-
-
 @st.cache_data(ttl=600)
-
 def load_all_drive_notes():
-
     try:
-
         return get_google_drive_notes_list()
-
     except Exception:
-
         return []
-
-
 
 @st.cache_data(ttl=600)
-
 def get_cached_stage1_mcqs():
-
     try:
-
         return load_all_existing_stage1_mcqs()
-
     except Exception:
-
         return []
-
-
 
 @st.cache_data(ttl=300)
-
 def get_cached_question_pool_stats():
-
     try:
-
         return get_question_pool_stats()
-
     except Exception:
-
         return {"total": 0, "stages": {}, "subjects": {}, "community_total": 0}
+
+@st.cache_resource
+def get_exam_bank_crawler():
+    return LawExamBankCrawler()
+
+@st.cache_data(ttl=600)
+def get_cached_coursework_index(path_str: str):
+    try:
+        p = Path(path_str)
+        if not p.exists():
+            return []
+        with open(p, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+@st.cache_data(ttl=300)
+def get_cached_community_questions():
+    try:
+        return load_community_questions()
+    except Exception:
+        return []
+
+@st.cache_data(ttl=300)
+def get_cached_community_notes():
+    try:
+        return load_community_notes()
+    except Exception:
+        return []
+
+@st.cache_data(ttl=600)
+def get_cached_user_sft_samples(path_str: str):
+    samples = []
+    try:
+        p = Path(path_str)
+        if not p.exists():
+            return []
+        with open(p, "r", encoding="utf-8") as f_us:
+            for line in f_us:
+                l = line.strip()
+                if l:
+                    samples.append(json.loads(l))
+    except Exception as _sft_err:
+        logger.warning("讀取個人筆記 SFT JSONL 失敗: %s", _sft_err)
+    return samples
 
 
 
@@ -2538,30 +2194,18 @@ def get_subject_topics_taxonomy(subject_name: str) -> dict:
 
 
 def is_developer() -> bool:
-
     """
-
     嚴格判定當前獨立 Session 使用者是否已通過開發者金鑰驗證。
-
     - 杜絕跨用戶、跨 Session 洩漏：Streamlit 各連線 Session 完全獨立隔離。
-
     - 雙重鎖定驗證機制：
-
       1. 當前 Session 內標記 is_developer_authenticated 為 True
-
-      2. 當前 Session 內輸入框金鑰必須存在且完全比對 'brrfdccee'
-
+      2. 當前 Session 內輸入框金鑰必須通過 config.verify_developer_password 雜湊驗證
     - 若任一條件不滿足（其他使用者瀏覽器訪問、未填金鑰、金鑰錯誤或主動登出），100% 回傳 False。
-
     """
-
     if not st.session_state.get("is_developer_authenticated", False):
-
         return False
-
-    current_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip().lower()
-
-    return current_pwd == "brrfdccee"
+    current_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip()
+    return verify_developer_password(current_pwd)
 
 
 
@@ -2662,74 +2306,42 @@ def render_developer_pdf_action_bar(file_item_or_path: Any, unique_key: str = "p
 
 
     st.markdown(f"**🔗 Google Drive 實體路徑**：`{resolved_path}`")
-
     col_d1, col_d2 = st.columns([1.5, 1.5])
-
     with col_d1:
-
-        try:
-
-            with open(resolved_path, "rb") as fp:
-
-                f_bytes = fp.read()
-
-            mime = "application/pdf" if resolved_path.suffix.lower() == ".pdf" else "application/octet-stream"
-
-            st.download_button(
-
-                label=f"📥 下載原始 {resolved_path.suffix.upper()} ({resolved_path.stat().st_size / (1024*1024):.2f} MB)",
-
-                data=f_bytes,
-
-                file_name=resolved_path.name,
-
-                mime=mime,
-
-                key=f"dl_btn_{unique_key}"
-
-            )
-
-        except Exception as e_dl:
-
-            st.caption(f"下載讀取提示: {e_dl}")
-
-
+        if st.toggle(f"📥 準備原始 {resolved_path.suffix.upper()} 下載", value=False, key=f"tgl_dev_dl_{unique_key}"):
+            try:
+                with open(resolved_path, "rb") as fp:
+                    f_bytes = fp.read()
+                mime = "application/pdf" if resolved_path.suffix.lower() == ".pdf" else "application/octet-stream"
+                st.download_button(
+                    label=f"📥 下載原始 {resolved_path.suffix.upper()} ({resolved_path.stat().st_size / (1024*1024):.2f} MB)",
+                    data=f_bytes,
+                    file_name=resolved_path.name,
+                    mime=mime,
+                    key=f"dl_btn_{unique_key}"
+                )
+            except Exception as e_dl:
+                st.caption(f"下載讀取提示: {e_dl}")
 
     with col_d2:
-
         if st.button("📂 開啟 Google Drive 本地資料夾", key=f"open_folder_{unique_key}"):
-
             try:
-
                 import subprocess
-
                 subprocess.Popen(f'explorer /select,"{resolved_path}"')
-
             except Exception:
-
                 pass
 
-
-
     if resolved_path.suffix.lower() == ".pdf":
-
         with st.expander(f"👁️ 在線檢視《{resolved_path.name}》PDF 講義全文", expanded=False):
-
-            try:
-
-                with open(resolved_path, "rb") as f_pdf:
-
-                    pdf_bytes = f_pdf.read()
-
-                b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-
-                pdf_html = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="650px" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
-
-                st.markdown(pdf_html, unsafe_allow_html=True)
-
-            except Exception as pe:
-
-                st.warning(f"在線 PDF 檢視提示: {pe}")
+            if st.toggle("👁️ 載入並渲染 PDF 預覽 (大型檔案按需載入)", value=False, key=f"tgl_dev_pdf_{unique_key}"):
+                try:
+                    with open(resolved_path, "rb") as f_pdf:
+                        pdf_bytes = f_pdf.read()
+                    b64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                    pdf_html = f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1" width="100%" height="650px" type="application/pdf" style="border: 1px solid #ddd; border-radius: 8px;"></iframe>'
+                    st.markdown(pdf_html, unsafe_allow_html=True)
+                except Exception as pe:
+                    st.warning(f"在線 PDF 檢視提示: {pe}")
 
 
 
@@ -3191,80 +2803,41 @@ def render_lawsource_judgment_card(case_info: dict, key_prefix: str = "ljc"):
 
 
 
-# ==============================================================================
-
-# 系統導航模式常數（精簡俐落・完全消除側邊欄折行）
-
-# ==============================================================================
-
-MODE_HOME = "🏠 系統首頁"
-
-MODE_EVAL = "📝 試卷批改"
-
-MODE_GEN = "🎯 模擬命題"
-
-MODE_BANK = "📚 歷年真題"
-
-MODE_ANS = "✍️ 擬答生成"
-
-MODE_SEARCH = "🔍 法學檢索"
-
-MODE_QA = "💬 法律問答"
-
-MODE_SUMMARIZER = "📑 裁判精鍊"
-
-MODE_SIX_CODES = "⚖️ 智慧六法"
-
-MODE_SFT = "📥 法學筆記"
-
-MODE_INGEST = "📦 裁判入庫"
-
-MODE_DEV_MANAGER = "🛠️ 檔案總管"
-
-
+# (全域導航模式常數已統一自 config.py 匯入)
 
 mode_options = [
-
     MODE_HOME,
-
     MODE_TEXTBOOK,
-
     MODE_EVAL,
-
     MODE_GEN,
-
     MODE_BANK,
-
     MODE_ANS,
-
     MODE_SEARCH,
-
     MODE_QA,
-
     MODE_SUMMARIZER,
-
     MODE_SIX_CODES,
-
-    MODE_SFT
-
+    MODE_SFT,
 ]
-
 if is_developer():
-
     mode_options.append(MODE_INGEST)
-
     mode_options.append(MODE_DEV_MANAGER)
 
-
-
 # 側邊欄
-
 with st.sidebar:
-
     st.title("⚖️ 司律 AI 助手")
-
-    st.caption("☁️ 雲端法學大庫已連線")
-
+    try:
+        _db_info = get_million_db_engine().get_db_info()
+        _db_mode = str(_db_info.get("mode", "none"))
+        _db_cnt = int(_db_info.get("count", 0) or 0)
+        _db_label_map = {
+            "master": f"⚡ 本機全量索引大庫 ({_db_cnt:,} 筆)",
+            "core": f"⚖️ 精萃核心子庫 ({_db_cnt:,} 筆)",
+            "remote": f"🌐 遠端橋接大庫 ({_db_cnt:,} 筆)",
+            "authority": f"🏛️ 權威判例憲判庫 ({_db_cnt:,} 筆)",
+        }
+        st.caption(_db_label_map.get(_db_mode, str(_db_info.get("title", "⚖️ 法學資料庫已連線"))))
+    except Exception:
+        st.caption("⚖️ 法學資料庫已連線")
     st.divider()
 
 
@@ -3376,147 +2949,106 @@ with st.sidebar:
     st.session_state["nav_sidebar_radio_mode"] = app_mode
 
     api_key = get_gemini_api_key()
-
-    if not api_key:
-
-        st.warning("⚠️ 請輸入 Gemini API Key")
-
-        user_key = st.text_input("API Key：", type="password")
-
-        if user_key.strip():
-
-            import os
-
-            os.environ["GEMINI_API_KEY"] = user_key.strip()
-
-            st.success("API Key 已套用！")
-
+    key_source = get_gemini_api_key_source()
+    _source_labels = {
+        "byok": "🟢 AI 引擎已連線（來源：使用者自訂 BYOK 金鑰）",
+        "secrets": "🟢 AI 引擎已連線（來源：Secrets 系統金鑰）",
+        "env": "🟢 AI 引擎已連線（來源：環境變數金鑰）",
+        "none": "⚠️ 尚未設定 Gemini API Key（請展開下方填入）",
+    }
+    if key_source == "none" or not api_key:
+        st.warning(_source_labels["none"])
     else:
+        st.caption(_source_labels.get(key_source, "🟢 AI 核心引擎已連線"))
 
-        st.caption("🟢 AI 核心引擎已連線")
+    with st.expander("🔑 Gemini API Key 設定 (BYOK)", expanded=(not bool(api_key))):
+        sync_pending_widget_keys(["user_gemini_api_key_input"])
+        _src_badge = {"byok": "BYOK", "secrets": "Secrets", "env": "Env", "none": "None"}.get(key_source, "None")
+        st.caption(f"目前金鑰來源：`{_src_badge}`（僅存於當前瀏覽器 Session，絕不寫入系統環境變數；即使已有預設金鑰亦可隨時覆寫以克服配額上限）")
+        byok_input = st.text_input(
+            "輸入自訂 Gemini API Key：",
+            type="password",
+            placeholder="AIza...",
+            key="user_gemini_api_key_input",
+        )
+        col_k1, col_k2 = st.columns(2)
+        with col_k1:
+            if st.button("✅ 套用金鑰", key="btn_apply_byok_key", use_container_width=True):
+                cleaned_k = byok_input.strip()
+                if cleaned_k:
+                    st.session_state["user_gemini_api_key"] = cleaned_k
+                    st.success("已套用 BYOK 金鑰！")
+                    st.rerun()
+                else:
+                    st.warning("請先輸入有效的 API Key。")
+        with col_k2:
+            if st.button("🗑️ 清除/重設", key="btn_clear_byok_key", use_container_width=True):
+                st.session_state.pop("user_gemini_api_key", None)
+                set_pending_widget_value("user_gemini_api_key_input", "")
+                st.rerun()
+
+    with st.expander("⏱️ 司律倒數 & 番茄鐘", expanded=True):
+        render_study_timer_widget()
 
     st.divider()
 
     with st.expander("🔠 閱讀字體大小偏好", expanded=False):
-
         font_opt = st.selectbox(
-
             "選擇閱讀字級（比照法律人/法源排版）：",
-
             ["標準字體 (16px)", "舒適大字 (18px)", "高齡護眼 (20px)"],
-
             index=1 if st.session_state.get("reading_font_size") == "18px" else (2 if st.session_state.get("reading_font_size") == "20px" else 0),
-
             key="sb_reading_font_selector"
-
         )
-
         target_size = "18px" if "舒適" in font_opt else ("20px" if "護眼" in font_opt else "16px")
-
         if st.session_state.get("reading_font_size") != target_size:
-
             st.session_state["reading_font_size"] = target_size
-
             st.rerun()
 
-
-
     if st.button("🔒 隱私權與法律聲明", use_container_width=True, key="btn_sidebar_privacy_home"):
-
-        st.session_state["app_mode"] = MODE_HOME
-
-        st.session_state["nav_sidebar_radio_mode"] = MODE_HOME
-
-        st.session_state["home_default_tab_privacy"] = True
-
-        st.rerun()
-
-
+        navigate_to(
+            MODE_HOME,
+            pending_widgets={"home_section_radio": "🔒 隱私權保護政策"},
+            extra_state={"home_default_tab_privacy": True},
+        )
 
     with st.expander("🔒 開發者專區", expanded=False):
-
+        sync_pending_widget_keys(["inp_developer_pwd"])
         dev_pwd = st.text_input("開發者金鑰：", type="password", key="inp_developer_pwd")
 
-        st.caption("提示：boshiamy name")
-
-        
-
-        # 嚴格按當前獨立 Session 比對
-
-        if dev_pwd and dev_pwd.strip().lower() == "brrfdccee":
-
+        # 嚴格按當前獨立 Session 雜湊驗證
+        if dev_pwd and verify_developer_password(dev_pwd):
             st.session_state["is_developer_authenticated"] = True
-
             st.success("🟢 已驗證開發者身分")
-
             if st.button("🛠️ 開啟檔案總管", key="btn_open_dev_hub_sidebar", type="primary", use_container_width=True):
-
-                st.session_state["app_mode"] = MODE_DEV_MANAGER
-
-                st.session_state["nav_sidebar_radio_mode"] = MODE_DEV_MANAGER
-
-                st.rerun()
-
+                navigate_to(MODE_DEV_MANAGER)
             if st.button("📦 裁判大庫串流入庫", key="btn_open_ingest_sidebar", use_container_width=True):
-
-                st.session_state["app_mode"] = MODE_INGEST
-
-                st.session_state["nav_sidebar_radio_mode"] = MODE_INGEST
-
-                st.rerun()
-
+                navigate_to(MODE_INGEST)
             if st.button("🔄 整合 DriveFS", key="btn_sync_laf", use_container_width=True):
-
                 with st.spinner("正在掃描 Google DriveFS..."):
-
                     try:
-
                         from ingest_lost_and_found import run_lost_and_found_ingest
-
                         laf_report = run_lost_and_found_ingest()
-
                         load_all_drive_notes.clear()
-
                         st.success(f"✅ 整合完成！共掃描 {laf_report.get('total_files_scanned', 0)} 份檔案，整合 {laf_report.get('pdf_notes_unique_count', 0)} 份專案法學教材。")
-
                     except Exception as le:
-
                         st.error(f"DriveFS 整合失敗: {le}")
-
             if st.button("🌐 雲端實體下載", key="btn_sync_net_all", use_container_width=True):
-
                 with st.spinner("正在發送雲端下載指令..."):
-
                     try:
-
                         from sync_gdrive_from_net import run_sync
-
                         run_sync()
-
                         load_all_drive_notes.clear()
-
                         st.success("✅ 已成功向雲端發送下載指令，背景處理中。")
-
                     except Exception as se:
-
                         st.error(f"同步失敗: {se}")
-
             if st.button("🚪 登出鎖定", key="btn_logout_developer", use_container_width=True):
-
                 st.session_state["is_developer_authenticated"] = False
-
-                st.session_state["inp_developer_pwd"] = ""
-
+                set_pending_widget_value("inp_developer_pwd", "")
                 st.rerun()
-
         else:
-
             st.session_state["is_developer_authenticated"] = False
-
             if dev_pwd:
-
                 st.error("金鑰不正確，未獲授權")
-
             st.caption("🔒 訪客模式（受著作權保護，未解鎖教材與筆記）")
 
 
@@ -5282,75 +4814,42 @@ def get_realtime_database_stats() -> dict:
         pass
 
     try:
-
         db_path = get_db_path()
-
         if os.path.exists(db_path) and os.path.getsize(db_path) > 4096:
-
             uri = f"file:///{Path(db_path).resolve().as_posix()}?mode=ro"
-
             conn = sqlite3.connect(uri, uri=True, timeout=5.0)
-
-            cur = conn.cursor()
-
-            # 1. 查詢判例真實筆數
-
-            p_cnt = 0
-
             try:
-
-                cur.execute("SELECT COUNT(*) FROM precedents")
-
-                p_cnt = cur.fetchone()[0] or 0
-
-            except Exception:
-
-                pass
-
-            if p_cnt > 0:
-
-                stats["total_precedents"] = p_cnt
-
-
-
-            # 2. 查詢憲法裁決與解釋筆數
-
-            auth_cnt = 0
-
-            try:
-
-                cur.execute("SELECT COUNT(*) FROM authority_records")
-
-                auth_cnt = cur.fetchone()[0] or 0
-
-            except Exception:
-
-                pass
-
-            if auth_cnt == 0:
-
+                cur = conn.cursor()
+                # 1. 查詢判例真實筆數
+                p_cnt = 0
                 try:
-
-                    cur.execute("SELECT COUNT(*) FROM constitutional_orders")
-
-                    auth_cnt = cur.fetchone()[0] or 0
-
+                    cur.execute("SELECT COUNT(*) FROM precedents")
+                    p_cnt = cur.fetchone()[0] or 0
                 except Exception:
-
                     pass
+                if p_cnt > 0:
+                    stats["total_precedents"] = p_cnt
 
-            if auth_cnt > 0:
-
-                stats["total_constitutional"] = auth_cnt
-
-            stats["is_fallback"] = False
-
-            stats["is_cloud_fallback"] = False
-
-            conn.close()
-
+                # 2. 查詢憲法裁決與解釋筆數
+                auth_cnt = 0
+                try:
+                    cur.execute("SELECT COUNT(*) FROM authority_records")
+                    auth_cnt = cur.fetchone()[0] or 0
+                except Exception:
+                    pass
+                if auth_cnt == 0:
+                    try:
+                        cur.execute("SELECT COUNT(*) FROM constitutional_orders")
+                        auth_cnt = cur.fetchone()[0] or 0
+                    except Exception:
+                        pass
+                if auth_cnt > 0:
+                    stats["total_constitutional"] = auth_cnt
+                stats["is_fallback"] = False
+                stats["is_cloud_fallback"] = False
+            finally:
+                conn.close()
     except Exception:
-
         pass
 
 
@@ -5371,6 +4870,24 @@ def get_realtime_database_stats() -> dict:
 
 
 
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_cached_home_corpus_stats() -> Dict[str, int]:
+    """動態彙整首頁儀表板法規、條文與中央部會行政函釋即時筆數。"""
+    stats = {"laws": 0, "articles": 0, "admin_rulings": 0}
+    try:
+        articles, _meta, law_map = load_six_codes_data()
+        stats["laws"] = len(law_map) if isinstance(law_map, dict) else 0
+        stats["articles"] = len(articles) if isinstance(articles, list) else 0
+    except Exception:
+        pass
+    try:
+        rulings = get_all_administrative_rulings()
+        stats["admin_rulings"] = len(rulings) if isinstance(rulings, (list, dict)) else 0
+    except Exception:
+        pass
+    return stats
 
 
 # ----------------- 模式 0: 首頁與系統導覽 (含隱私權政策與法律聲明) -----------------
@@ -5401,14 +4918,14 @@ if app_mode == MODE_HOME:
         <span style="color: #6ee7b7;">{_hero_status_badge}</span>
     </div>
     <h1 style="color: #ffffff; margin: 0 0 10px 0; font-size: 2.15rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.25;">
-        司律考試 AI 評分、命題、判解檢索與六法研析平台
+        司律考試 AI 批改、命題、判解檢索與六法研析平台
     </h1>
     <p style="color: #cbd5e1; font-size: 1.02rem; line-height: 1.65; margin: 0 0 16px 0; max-width: 980px;">
         整合多模態手寫試卷批改、司律一二試客製命題、歷屆法研與國考真題庫、原判例／最高院決議／高院法律座談會／大法庭／憲判字統一檢索、智慧六法與 AI 筆記煉金工坊之一站式法學實戰平台。
     </p>
     <div style="display: flex; flex-wrap: wrap; gap: 8px;">
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">{_hero_db_chip}</span>
-        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📜 61 部考科六法 & 10,452 部行政命令</span>
+        <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📜 全國六法法規 & 中央行政命令</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">📝 二試手寫試卷雙模態 OCR 批閱</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">✍️ IRAC 高分示範擬答</span>
         <span style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 3px 10px; border-radius: 6px; font-size: 0.82rem; color: #e2e8f0;">🛡️ 案號防偽 0 幻覺穿透驗證</span>
@@ -5416,36 +4933,39 @@ if app_mode == MODE_HOME:
 </div>"""
     st.markdown(hero_html, unsafe_allow_html=True)
 
-    # 平台資源即時統計儀表板（動態穿透快取，即時統計資料庫實體筆數）
-
+    # 平台資源即時統計儀表板（動態快取統計資料庫實體筆數）
     total_mcq_cnt = len(get_cached_stage1_mcqs())
-
     qpool_stats = get_cached_question_pool_stats()
+    home_corpus_stats = get_cached_home_corpus_stats()
+    _law_cnt = home_corpus_stats.get("laws", 0)
+    _art_cnt = home_corpus_stats.get("articles", 0)
+    _ruling_cnt = home_corpus_stats.get("admin_rulings", 0)
 
     m_c1, m_c2, m_c3, m_c4 = st.columns(4)
-
-    m_c1.metric("📜 全國法規與命令條文", "2,141 部 / 64,162 條", "另含 10,452 部中央行政命令")
-
+    m_c1.metric(
+        "📜 全國法規與核心條文",
+        f"{_law_cnt:,} 部 / {_art_cnt:,} 條" if _art_cnt > 0 else "核心六法典藏",
+        "含全國法規與中央部會行政命令",
+    )
     m_c2.metric(
-
         "🏛️ 實務裁判與權威見解",
-
         f"{_jud_cnt:,} 筆" if _jud_cnt > 0 else f"{db_stats['total_authority']:,} 筆",
-
-        f"判例 {db_stats['total_precedents']:,} ｜ 憲判釋字大庭 {db_stats['total_constitutional']:,}"
-
+        f"判例 {db_stats['total_precedents']:,} ｜ 憲判釋字大庭 {db_stats['total_constitutional']:,}",
+    )
+    m_c3.metric(
+        "🏢 中央部會權威行政函釋",
+        f"{_ruling_cnt:,} 則" if _ruling_cnt > 0 else "實時擴充函釋庫",
+        "經濟部/金管會/法務部/勞動部",
+    )
+    m_c4.metric(
+        "🎯 題庫大系與社群共享",
+        f"{qpool_stats.get('community_total', 0):,} 題",
+        f"一試選擇 {total_mcq_cnt:,} ｜ 模擬命題 {qpool_stats.get('total', 0)}",
     )
 
-    m_c3.metric("🏢 中央部會權威行政函釋", "600+ 則", "經濟部/金管會/法務部/勞動部")
-
-    m_c4.metric("🎯 題庫大系與社群共享", f"{qpool_stats.get('community_total', 0):,} 題", f"一試選擇 {total_mcq_cnt:,} ｜ 模擬命題 {qpool_stats.get('total', 0)}")
-
     if db_stats.get("is_cloud_fallback") or db_stats.get("is_fallback"):
-
         st.caption(f"☁️ 雲端基準統計：⚖️ 權威判例：**{db_stats['total_precedents']:,}** 筆 ｜ 🏛️ 憲判與釋字：**{db_stats['total_constitutional']:,}** 筆 ｜ 總權威裁判庫存：**{db_stats['total_authority']:,}** 筆 (雲端唯讀快取模式)")
-
     else:
-
         st.caption(f"⚡ 即時資料庫連線統計：⚖️ 權威判例：**{db_stats['total_precedents']:,}** 筆 ｜ 🏛️ 憲判與釋字：**{db_stats['total_constitutional']:,}** 筆 ｜ 總權威裁判庫存：**{db_stats['total_authority']:,}** 筆 ｜ 社群共享題庫：**{qpool_stats.get('community_total', 0):,}** 題")
 
     # 🛡️ 使用者權益保障與題目共享說明 (優雅折疊提示，不干擾主畫面)
@@ -5456,93 +4976,58 @@ if app_mode == MODE_HOME:
 3. **權利人優先下架保障**：若您上傳之試題內容涉及補習班獨家改編著作、期中考私人考卷，或有任何著作權、隱私疑慮，請隨時於下方【權益回報】標籤頁提出，作者將於核實後即刻優先移除！
         """)
 
-
-
-    home_tab_nav, home_tab_privacy, home_tab_copyright, home_tab_disclaimer, home_tab_feedback = st.tabs([
-
+    _home_sections = [
         "🧭 十大核心模組快速導覽",
-
         "🔒 隱私權保護政策",
-
         "📜 著作權與合理使用",
-
         "⚖️ 法律聲明與條款",
+        "📩 權益回報與移除申請",
+    ]
+    if st.session_state.pop("home_default_tab_privacy", False):
+        set_pending_widget_value("home_section_radio", "🔒 隱私權保護政策")
+    sync_pending_widget_keys(["home_section_radio"])
+    home_section = st.radio(
+        "首頁導覽分頁：",
+        _home_sections,
+        horizontal=True,
+        key="home_section_radio",
+        label_visibility="collapsed",
+    )
 
-        "📩 權益回報與移除申請"
-
-    ])
-
-
-
-    with home_tab_nav:
-
+    if home_section == "🧭 十大核心模組快速導覽":
         st.subheader("🧭 平台法學核心模組一覽（點擊即可直接進入）")
-
         nav_cards = [
-
+            (MODE_TEXTBOOK, "📖 體系教科書", "自動彙整最新實務判解、憲判字與學說爭點，為任何主題編撰具備司律考用深度的章節體系教科書與可匯出教材。"),
             (MODE_EVAL, "📝 試卷批改", "支援手機拍照、手寫掃描 PDF 與 Word 試卷上傳，自動執行智慧辨識、爭點命中分析與四大維度閱卷評分。"),
-
-            (MODE_GEN, "🎯 模擬命題", "支援互動式考點列表增刪、AI 一試/二試客製命題，並整合行政法 300 題與全科既有選擇題庫隨機抽考。"),
-
-            (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與最新 113～115 試卷，一鍵刷新與在線實戰。"),
-
+            (MODE_GEN, "🎯 模擬命題", "支援互動式考點列表增刪、AI 一試/二試客製命題、全真選擇題隨機抽考、空白練習卷匯出與錯題本弱點複習。"),
+            (MODE_BANK, "📚 歷年真題", "收錄考選部司律、司法特考、臺大政大法研所轉學考歷屆真題與最新試卷，一鍵刷新與在線實戰。"),
             (MODE_ANS, "✍️ 擬答生成", "針對二試申論實例題，自動撰寫具備榜首水準之開標、請求權基礎、實務學說對比與事實涵攝示範擬答。"),
-
-            (MODE_SEARCH, "🔍 法學檢索", "支援專業布林語法檢索、原判例／最高院決議／高院座談會篩選、審級歷審脈絡鏈，以及基準判決相同/相反見解比對。"),
-
-            (MODE_QA, "💬 法律問答", "單一搜尋欄支援條文定位、實務爭點剖析、五大法定金額零誤差精算（車損折舊/資遣費/剩餘財產/應繼特留分）與存證信函草擬。"),
-
-            (MODE_SUMMARIZER, "📑 裁判精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並支援司法院月度開放資料包批次擴充入庫。"),
-
-            (MODE_SIX_CODES, "⚖️ 智慧六法", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋與大法庭判解。"),
-
-            (MODE_SFT, "📥 法學筆記", "個人法學筆記工坊：三步工作流支援讀書筆記整理、Anki 爭點閃卡、重點速查表與考前大抄！")
-
+            (MODE_SEARCH, "🔍 法學檢索", "支援專業布林語法檢索、原判例／最高院決議／高院法律座談會篩選、審級歷審脈絡鏈，以及相同/相反見解比對。"),
+            (MODE_QA, "💬 法律問答", "單一搜尋欄支援條文定位、實務爭點剖析、法定金額精算（車損折舊/資遣費/剩餘財產/應繼特留分等）與存證信函草擬。"),
+            (MODE_SUMMARIZER, "📑 裁判精鍊", "輸入案號縮寫或貼上全文，秒級提煉六大標準化核心要旨，並搭配實體裁判案號防偽核驗與卡片快速檢視。"),
+            (MODE_SIX_CODES, "⚖️ 智慧六法", "串接法條全文、立法院修法理由與新舊條文對照、關聯法規命令細則、部會函釋、大法庭判解與一鍵出題/脈絡追蹤。"),
+            (MODE_SFT, "📥 法學筆記", "個人法學筆記工坊：三步工作流支援讀書筆記整理、Anki 爭點閃卡、重點速查表與考前大抄！"),
         ]
-
         for row_i in range(0, len(nav_cards), 3):
-
             cols = st.columns(3)
-
             for col_i in range(3):
-
                 if row_i + col_i < len(nav_cards):
-
                     target_m, card_title, card_desc = nav_cards[row_i + col_i]
-
                     with cols[col_i]:
-
                         with st.container(border=True):
-
                             st.markdown(f"#### {card_title}")
-
                             st.caption(card_desc)
-
                             if st.button(f"🚀 前往【{card_title[2:]}】", key=f"btn_home_nav_{row_i}_{col_i}", use_container_width=True):
+                                navigate_to(target_m)
 
-                                st.session_state["app_mode"] = target_m
-
-                                st.session_state["nav_sidebar_radio_mode"] = target_m
-
-                                st.rerun()
-
-
-
-    with home_tab_privacy:
-
+    elif home_section == "🔒 隱私權保護政策":
         st.subheader("🔒 隱私權保護與個人資料防護聲明")
-
         st.caption("最後更新日期：2026 年 10 月 ｜ 遵循中華民國《個人資料保護法》與最新資訊安全規範")
-
         st.markdown("""
-
 #### 一、學習資料雙軌分流處理架構（試題公開演練 vs 個人作答絕對隔離）
-
 本平台依據《個人資料保護法》及誠信原則，對使用者上傳之學習資料實施嚴格的**雙軌技術安全隔離**：
-
 1. **客觀試卷題目（社群公開演練庫）**：
-
-   - 當您使用「試卷評分」、「擬答生成」或「模擬命題」功能時，客觀試題文字經去識別化與雜湊重複性比對後，將收錄於**社群公開演練題庫**。
+   - 當您使用「試卷批改」、「擬答生成」或「模擬命題」功能時，客觀試題文字經去識別化與雜湊重複性比對後，將收錄於**社群公開演練題庫**。
 
    - 題庫內容僅包含純粹法學案例情境與題目本體，絕不包含任何考生個人身分特徵或私密資訊，專供全體考生精進法理分析與無償研習之用。
 
@@ -5570,7 +5055,7 @@ if app_mode == MODE_HOME:
 
 
 
-    with home_tab_copyright:
+    elif home_section == "📜 著作權與合理使用":
 
         st.subheader("📜 著作權與學術合理使用政策")
 
@@ -5598,7 +5083,7 @@ if app_mode == MODE_HOME:
 
 
 
-    with home_tab_disclaimer:
+    elif home_section == "⚖️ 法律聲明與條款":
 
         st.subheader("⚖️ 法律免責聲明與服務條款")
 
@@ -5628,7 +5113,7 @@ if app_mode == MODE_HOME:
 
 
 
-    with home_tab_feedback:
+    elif home_section == "📩 權益回報與移除申請":
 
         st.subheader("📩 使用者權益回報與資料移除申請")
 
@@ -6448,26 +5933,18 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                 ]
 
+            sync_pending_widget_keys(["sel_exam_domain_filter"])
             domain_choice = st.selectbox(
-
                 "考科學門體系分類（七大學門）：",
-
                 avail_domains,
-
                 key="sel_exam_domain_filter"
-
             )
 
-
-
             statutes_in_domain = get_statutes_by_domain(domain_choice)
-
             if not statutes_in_domain:
-
                 statutes_in_domain = ["民法", "刑法", "行政法", "民事訴訟法", "刑事訴訟法", "公司法", "智慧財產權法"]
-
             statute_options = statutes_in_domain + ["其他自訂科目"]
-
+            sync_pending_widget_keys([f"sel_statute_{domain_choice}"])
             subject_choice = st.selectbox("核心法典/考科：", statute_options, key=f"sel_statute_{domain_choice}")
 
             if subject_choice == "其他自訂科目":
@@ -6804,49 +6281,28 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
 
 
-        # 預先讀取雲端筆記清單，確保標籤與計數精確
-
+        # 預先讀取雲端筆記清單，確保標籤與計數精確（經 @st.cache_data 快取）
         try:
-
-            from ingest_user_notes_to_sft import get_google_drive_notes_list, read_note_text, sync_all_drive_notes_to_samsung_notes
-
-            drive_notes = get_google_drive_notes_list()
-
+            from ingest_user_notes_to_sft import read_note_text, sync_all_drive_notes_to_samsung_notes
+            drive_notes = load_all_drive_notes()
         except Exception:
-
             drive_notes = []
 
-
-
         drive_tab_label = "📂 Google Drive 個人筆記庫 (🔒 開發者專用)" if not is_developer() else (
-
             f"📂 從 Google Drive 個人筆記庫挑選 (免上傳，全庫收錄 {len(drive_notes)} 份筆記)" if drive_notes else "📂 從 Google Drive 個人筆記庫挑選 (免上傳)"
-
         )
 
-
-
         note_tab_drive, note_tab_upload, note_tab_text, note_tab_cw = st.tabs([
-
             drive_tab_label,
-
             "📄 手動上傳新筆記 (支援 PDF/Word/TXT/圖片)",
-
             "✍️ 直接貼上/編輯筆記文字",
-
-            "🎓 從名師課輔講義庫挑選 (115+ 份講義與題解)"
-
+            "🎓 從名師課輔講義庫挑選"
         ])
 
-
-
         notes_from_drive = ""
-
         with note_tab_drive:
-
             if not is_developer():
-
-                st.warning("🔒 【個人雲端筆記庫已受保護】基於著作權與個人隱私保護，全庫 550+ 份個人法學手寫筆記與體系教材僅限開發者本人授權調閱與命題。一般訪客請切換至【📄 手動上傳新筆記】或【✍️ 直接貼上/編輯筆記文字】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
+                st.warning("🔒 【個人雲端筆記庫已受保護】基於著作權與個人隱私保護，個人法學手寫筆記與體系教材僅限開發者本人授權調閱與命題。一般訪客請切換至【📄 手動上傳新筆記】或【✍️ 直接貼上/編輯筆記文字】進行體驗，或於左側邊欄輸入開發者金鑰解鎖。")
 
             else:
 
@@ -7319,11 +6775,7 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
             if cw_index_path.exists():
 
                 try:
-
-                    with open(cw_index_path, "r", encoding="utf-8") as f_cw:
-
-                        cw_list = json.load(f_cw)
-
+                    cw_list = get_cached_coursework_index(str(cw_index_path))
                     cw_sub_list = [c for c in cw_list if subject in c.get("subject", "") or c.get("subject", "") in subject]
 
                     if not cw_sub_list:
@@ -7379,31 +6831,20 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
 
         def _clear_stage1_exam_answers():
-
             st.session_state.pop("stage1_graded", None)
-
             st.session_state.pop("stage1_user_answers", None)
-
+            st.session_state.pop("stage1_wrong_recorded_sig", None)
             for k in list(st.session_state.keys()):
-
                 if k.startswith("user_choice_") or k.startswith("rep_res_") or k.startswith("rep_input_"):
-
                     del st.session_state[k]
 
-
-
         if stage == "一試 (選擇題 / 單選題)":
-
-            stage1_tab_ai, stage1_tab_bank, stage1_tab_upload, stage1_tab_reports = st.tabs([
-
+            stage1_tab_ai, stage1_tab_bank, stage1_tab_upload, stage1_tab_reports, stage1_tab_wrong = st.tabs([
                 "🎲 AI 智慧命題模式（任意題數 & 自動入庫共享）",
-
-                "📖 司律一試全科全真模擬題庫實戰（含行政法 300 題・跨考科・動態考點）",
-
+                "📖 司律一試全科全真模擬題庫實戰（跨考科・動態考點）",
                 "📥 匯入考題 PDF / 試卷解析入庫",
-
-                "📋 試題疑義報錯審查日誌與修正清單"
-
+                "📋 試題疑義報錯審查日誌與修正清單",
+                "📌 錯題複習特訓 & 弱點分析"
             ])
 
 
@@ -7940,49 +7381,40 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
 
 
+            with stage1_tab_wrong:
+                render_wrong_mcq_notebook_panel(
+                    mode_gen_name=MODE_GEN,
+                    key_prefix="m2_wnb",
+                    get_stats_fn=get_subject_accuracy_stats,
+                    get_wrongs_fn=get_wrong_mcqs,
+                    mark_mastered_fn=mark_wrong_mcq_mastered,
+                    export_csv_fn=export_wrong_mcqs_csv,
+                )
+
             # 若 session 中有一試試題，展示作答、速查表與詳解
-
-            if "stage1_exam_data" in st.session_state:
-
+            if st.session_state.get("stage1_exam_data"):
                 exam_data = st.session_state["stage1_exam_data"]
-
                 questions = exam_data.get("questions", [])
-
                 answer_key = exam_data.get("answer_key", {})
 
-
-
                 # 統計本卷所有試題考點分類
-
                 raw_cats = [q.get("category", "").strip() for q in questions if q.get("category")]
-
                 clean_cats = sorted(list(set(raw_cats)))
 
-
-
                 st.divider()
-
-                # 模考計時與作答狀態列
-
+                # 模考計時與作答狀態列（純前端 JS 配速計時器，不觸發伺服器重跑）
                 col_timer1, col_timer2 = st.columns([2, 1])
-
                 with col_timer1:
-
                     ans_count = len([str(q.get('question_no')) for q in questions if st.session_state.get(f"user_choice_{q.get('question_no')}")])
-
                     prog_pct = int(ans_count / len(questions) * 100) if questions else 0
-
                     st.info(f"⏱️ **全真司律模考場** ｜ 已作答：**{ans_count} / {len(questions)} 題**（作答進度：{prog_pct}%）")
-
                 with col_timer2:
-
                     if st.session_state.get("stage1_graded"):
-
                         st.success("✅ 本卷已完成批改")
-
                     else:
-
                         st.caption("提示：選項點選後即自動記錄心證，完成後點擊下方「交卷立即線上批改評分」。")
+                if not st.session_state.get("stage1_graded") and questions:
+                    render_exam_pacing_timer(len(questions))
 
 
 
@@ -8084,165 +7516,117 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
 
 
-                col_submit, col_export_md, col_export_doc, col_export_pdf, col_reset = st.columns([1.2, 1, 1.1, 1.1, 0.8])
-
+                col_submit, col_export_md, col_export_doc, col_export_pdf, col_export_blank_pdf, col_reset = st.columns([1.2, 0.9, 1.0, 1.0, 1.0, 0.8])
                 with col_submit:
-
                     if st.button("🏁 交卷立即線上批改評分", type="primary", use_container_width=True):
-
                         st.session_state["stage1_graded"] = True
-
                         st.session_state["stage1_user_answers"] = user_answers
-
                         st.rerun()
 
-
-
-                exam_fn_base = f"司律一試_{exam_data.get('subject')}_{exam_data.get('topic')[:10]}_{len(questions)}題"
-
+                exam_fn_base = f"司律一試_{exam_data.get('subject') or ''}_{(exam_data.get('topic') or '')[:10]}_{len(questions)}題"
                 with col_export_md:
-
                     md_content = LawExamGenerator.format_stage1_exam_markdown(exam_data)
-
                     st.download_button(
-
                         label="💾 下載試卷 (.md)",
-
                         data=md_content,
-
                         file_name=f"{exam_fn_base}.md",
-
                         mime="text/markdown",
-
                         use_container_width=True
-
                     )
 
-
-
                 u_ans_for_doc = st.session_state.get("stage1_user_answers", user_answers) if st.session_state.get("stage1_graded") else None
-
                 with col_export_doc:
-
                     try:
-
                         docx_content = export_mcq_exam_docx(exam_data, u_ans_for_doc)
-
                         st.download_button(
-
                             label="📄 匯出全真試卷 (.docx)",
-
                             data=docx_content,
-
                             file_name=f"{exam_fn_base}.docx",
-
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-
                             use_container_width=True,
-
                             key="btn_dl_mcq_docx"
-
                         )
-
                     except Exception as e_mcqd:
-
                         st.caption(f"Word 匯出待命：{e_mcqd}")
 
-
-
                 with col_export_pdf:
-
                     try:
-
                         pdf_content = export_mcq_exam_pdf(exam_data, u_ans_for_doc)
-
                         st.download_button(
-
                             label="📕 匯出全真試卷 (.pdf)",
-
                             data=pdf_content,
-
                             file_name=f"{exam_fn_base}.pdf",
-
                             mime="application/pdf",
-
                             use_container_width=True,
-
                             key="btn_dl_mcq_pdf"
-
                         )
-
                     except Exception as e_mcqp:
-
                         st.caption(f"PDF 匯出待命：{e_mcqp}")
 
-
+                with col_export_blank_pdf:
+                    try:
+                        blank_pdf_content = export_mcq_exam_pdf(exam_data, user_answers=None, blank_practice=True)
+                        st.download_button(
+                            label="📄 空白練習卷 (.pdf)",
+                            data=blank_pdf_content,
+                            file_name=f"{exam_fn_base}_空白練習卷.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                            key="btn_dl_mcq_blank_pdf",
+                        )
+                    except Exception as e_mcqb:
+                        st.caption(f"空白卷待命：{e_mcqb}")
 
                 with col_reset:
-
                     if st.button("🔄 重新測驗", use_container_width=True, key="btn_reset_stage1"):
-
                         _clear_stage1_exam_answers()
-
                         st.rerun()
 
-
-
                 # 批改結果與考點分類實力診斷
-
                 is_graded = st.session_state.get("stage1_graded", False)
-
                 if is_graded:
-
                     u_answers = st.session_state.get("stage1_user_answers", user_answers)
-
                     score = 0
-
                     for q_num_str, correct_ans in answer_key.items():
-
                         if u_answers.get(q_num_str) == correct_ans:
-
                             score += 1
-
                     total_q = len(questions)
-
                     pct = int(score / total_q * 100) if total_q > 0 else 0
-
                     st.balloons()
-
                     st.success(f"🎉 測驗批改完成！總成績：{score} / {total_q} 題（得分率：{pct}%）")
 
-
+                    exam_sig = f"{exam_data.get('subject', '')}|{exam_data.get('topic', '')}|{len(questions)}|{sorted((u_answers or {}).items())}"
+                    should_record_wrongs = st.session_state.get("stage1_wrong_recorded_sig") != exam_sig
 
                     # 考點分類實力診斷與弱點分析報告
-
                     st.markdown("#### 🎯 考點分類實力診斷與弱點分析報告")
-
                     cat_stats = {}
-
                     for q in questions:
-
                         c = q.get("category", "綜合實務考點").strip()
-
                         if not c:
-
                             c = "綜合實務考點"
-
                         if c not in cat_stats:
-
                             cat_stats[c] = {"total": 0, "correct": 0, "missed": []}
-
                         cat_stats[c]["total"] += 1
-
                         q_no_str = str(q.get("question_no"))
-
-                        if u_answers.get(q_no_str) == answer_key.get(q_no_str):
-
+                        u_ch = u_answers.get(q_no_str)
+                        c_ch = answer_key.get(q_no_str)
+                        if u_ch == c_ch:
                             cat_stats[c]["correct"] += 1
-
                         else:
-
                             cat_stats[c]["missed"].append(q.get("question_no"))
+                            if should_record_wrongs and c_ch:
+                                try:
+                                    record_wrong_mcq(
+                                        q,
+                                        str(u_ch or ""),
+                                        str(c_ch),
+                                        subject=str(q.get("category") or exam_data.get("subject") or "法學綜合"),
+                                    )
+                                except Exception as e_rec:
+                                    logger.warning("Failed to record wrong MCQ: %s", e_rec)
+                    if should_record_wrongs:
+                        st.session_state["stage1_wrong_recorded_sig"] = exam_sig
 
 
 
@@ -8624,92 +8008,55 @@ elif app_mode == MODE_GEN or any(k in app_mode for k in ["模擬", "命題", "�
 
                 with cq_col2:
 
-                    if st.button("📝 一鍵將此題直接帶入【試卷評分】批改"):
-
+                    if st.button("📝 一鍵將此題直接帶入【試卷批改】"):
                         st.session_state["question_text_content"] = full_q_text
-
                         st.session_state["imported_from_bank_label"] = f"【AI 客製模擬考題 - {subject}】"
-
-                        st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                        st.rerun()
+                        navigate_to(MODE_EVAL)
 
 
 
 # ----------------- 模式 3: 歷年真題 -----------------
 
 elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
-
     st.header("📚 全台法學歷年真題庫與名師講義精華檢索")
 
-
-
-    comm_q_all = load_community_questions()
-
+    comm_q_all = get_cached_community_questions()
     drive_questions = [x for x in drive_notes if x.get("doc_nature") == "question"]
-
-    m3_tab1, m3_tab2, m3_tab3, m3_tab4 = st.tabs([
-
+    m3_tab1, m3_tab2, m3_tab3, m3_tab4, m3_tab5 = st.tabs([
         "🏛️ 考選部與臺大法研/轉學考歷年真題庫",
-
-        "🎓 大學名師講義與課輔爭點知識庫 (190+ 份各科講義與簡報)",
-
+        "🎓 大學名師講義與課輔爭點知識庫",
         f"🎯 雲端實戰試題大庫與百題爭點 ({len(drive_questions)} 份・含民法百題/期中考/考古題)",
-
-        f"👥 社群考生共享真題庫與自創模擬試卷 ({len(comm_q_all)} 題)"
-
+        f"👥 社群考生共享真題庫與自創模擬試卷 ({len(comm_q_all)} 題)",
+        "📌 錯題複習特訓 & 弱點分析"
     ])
 
-
-
     with m3_tab1:
-
         col_b_top1, col_b_top2 = st.columns([3, 1])
-
         with col_b_top1:
-
             st.write("已收錄國立臺灣大學法研所碩士班、臺大轉學考、考選部司法官律師、司法特考、專利師及公證人等歷年真實試題，支援在線研讀、一鍵帶入批改與 AI 擬答！")
-
         with col_b_top2:
-
             if st.button("🔄 一鍵刷新最新司律與專技考題", type="primary", use_container_width=True, key="btn_refresh_latest_exams"):
-
-                with st.spinner("正在探測並刷新 113～115 司律與專技真題入庫..."):
-
+                with st.spinner("正在探測並刷新最新司律與專技真題入庫..."):
                     try:
-
                         from exam_bank_crawler import refresh_latest_law_exams
-
                         res_ref = refresh_latest_law_exams()
-
+                        get_exam_bank_crawler.clear()
+                        get_cached_community_questions.clear()
                         st.success(f"✅ 刷新完畢！新增真題入庫 {res_ref.get('added_curated', 0)} 筆，批次同步社群題庫 {res_ref.get('synced_community', 0)} 筆！全庫總計 {res_ref.get('total_catalog', 0):,} 份試卷。")
-
                         time.sleep(1)
-
                         st.rerun()
-
                     except Exception as e_ref:
-
                         st.error(f"刷新失敗: {e_ref}")
 
-
-
-        crawler = LawExamBankCrawler()
-
+        crawler = get_exam_bank_crawler()
         catalog = crawler.catalog
 
-
-
         if not catalog:
-
             st.warning("題庫中目前尚無試卷，點擊下方按鈕即可立即從臺大與考選部爬取試題！")
-
             if st.button("🚀 立即爬取國立大學法研所與公職真題"):
-
                 with st.spinner("正在爬取並下載試卷中..."):
-
                     crawler.run_all(max_pages=2)
-
+                    get_exam_bank_crawler.clear()
                     st.rerun()
 
         else:
@@ -8830,35 +8177,20 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
 
 
 
-                    # 操作按鈕列：一鍵帶入試卷評分、生成擬答、變形出題
-
+                    # 操作按鈕列：一鍵帶入試卷批改、生成擬答、變形出題
                     bcol1, bcol2, bcol3 = st.columns([1.5, 1.3, 1.2])
-
                     with bcol1:
-
-                        if st.button(f"📝 一鍵將此題直接帶入【試卷評分】批改", type="primary", key=f"send_eval_btn_{e_id}"):
-
+                        if st.button(f"📝 一鍵將此題直接帶入【試卷批改】", type="primary", key=f"send_eval_btn_{e_id}"):
                             final_q = text
-
                             if "[試題掃描檔" in final_q or len(final_q.strip()) < 100:
-
                                 with st.spinner("正在自動轉錄試卷完整題目文字..."):
-
                                     ocr_text = crawler.ocr_exam_by_id(e_id)
-
                                     if ocr_text:
-
                                         final_q = ocr_text
 
-
-
                             st.session_state["question_text_content"] = final_q.strip()
-
                             st.session_state["imported_from_bank_label"] = f"[{yr}年] {sch} - {dept} ｜ 【{subj}】"
-
-                            st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                            st.rerun()
+                            navigate_to(MODE_EVAL)
 
 
 
@@ -8919,10 +8251,7 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
         else:
 
             try:
-
-                with open(cw_file, "r", encoding="utf-8") as f_cw_idx:
-
-                    cw_items = json.load(f_cw_idx)
+                cw_items = get_cached_coursework_index(str(cw_file))
 
 
 
@@ -8986,85 +8315,45 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
 
                             st.divider()
 
-                            render_developer_pdf_action_bar(chosen_item if "chosen_item" in locals() else fname, unique_key=f"m3_cw_{c_idx}")
-
+                            render_developer_pdf_action_bar(cw, unique_key=f"m3_cw_{c_idx}")
                             st.markdown("#### 講義核心重點與爭點摘要：")
-
                             st.write(fprev)
 
-
-
                             cwb1, cwb2, cwb3 = st.columns([1.5, 1.2, 1.2])
-
                             with cwb1:
-
-                                if st.button(f"📝 一鍵將此講義案例帶入【試卷評分】批改", type="primary", key=f"cw_btn_eval_{c_idx}"):
-
+                                if st.button(f"📝 一鍵將此講義案例帶入【試卷批改】", type="primary", key=f"cw_btn_eval_{c_idx}"):
                                     st.session_state["question_text_content"] = fprev.strip()
-
                                     st.session_state["imported_from_bank_label"] = f"名師講義爭點案例：【{fsub}】{fname}"
-
-                                    st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                                    st.rerun()
-
+                                    navigate_to(MODE_EVAL)
                             with cwb2:
-
                                 if st.button(f"🎲 依此爭點生成一試測驗 (3 題)", key=f"cw_btn_mcq_{c_idx}"):
-
                                     with st.spinner("正在基於名師講義核心爭點出題中..."):
-
                                         gen = LawExamGenerator()
-
                                         from ingest_user_notes_to_sft import get_full_drive_note_content
-
-                                        cw_info = get_full_drive_note_content(chosen_item if "chosen_item" in locals() else fname)
-
+                                        cw_info = get_full_drive_note_content(cw)
                                         real_cw_text = cw_info.get("text") or fprev
-
                                         mcq_res = gen.generate_stage1_exam(
-
                                             subject=fsub,
-
                                             topic=f"名師講義演練：{fname[:30]}",
-
                                             count=3,
-
                                             notes_content=real_cw_text
-
                                         )
-
                                         st.session_state["stage1_exam_data"] = mcq_res
-
-                                        st.success("一試測驗題生成成功！可至「🎯 司律模擬出題」模式開始作答。")
-
+                                        st.success("一試測驗題生成成功！可至「🎯 模擬命題」模式開始作答。")
                             with cwb3:
-
                                 if st.button(f"✍️ 命題二試申論題", key=f"cw_btn_essay_{c_idx}"):
-
                                     with st.spinner("正在基於名師講義爭點設計實例題..."):
-
                                         gen = LawExamGenerator()
-
                                         from ingest_user_notes_to_sft import get_full_drive_note_content
-
-                                        cw_info = get_full_drive_note_content(chosen_item if "chosen_item" in locals() else fname)
-
+                                        cw_info = get_full_drive_note_content(cw)
                                         real_cw_text = cw_info.get("text") or fprev
-
                                         essay_res = gen.generate_stage2_exam(
-
                                             subject=fsub,
-
                                             topic=f"名師講義案例：{fname[:30]}",
-
                                             notes_content=real_cw_text
-
                                         )
-
                                         st.session_state["stage2_exam_data"] = essay_res
-
-                                        st.success("二試實例題生成成功！可至「🎯 司律模擬出題」模式查看或生成擬答。")
+                                        st.success("二試實例題生成成功！可至「🎯 模擬命題」模式查看或生成擬答。")
 
             except Exception as cwe:
 
@@ -9119,54 +8408,35 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
                     c_m3_b1, c_m3_b2, c_m3_b3 = st.columns(3)
 
                     with c_m3_b1:
-
-                        if st.button(f"📝 帶入【試卷評分】作答", key=f"btn_m3_eval_{m3_q_idx}", use_container_width=True):
-
+                        if st.button(f"📝 帶入【試卷批改】作答", key=f"btn_m3_eval_{m3_q_idx}", use_container_width=True):
                             with st.spinner("正在提取試題文字..."):
-
                                 q_txt = read_note_text(m3_q["path"], max_pages=10, auto_ocr=True)
-
                                 st.session_state["question_text_content"] = q_txt if q_txt else f"【實戰試題】：{m3_q_fn}"
-
                                 st.session_state["imported_from_bank_label"] = f"{m3_q_tag}《{m3_q_fn}》"
-
-                                st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                                st.rerun()
+                                navigate_to(MODE_EVAL)
 
                     with c_m3_b2:
-
                         if st.button(f"🏆 一鍵生成高分示範擬答", key=f"btn_m3_ans_{m3_q_idx}", use_container_width=True):
-
                             with st.spinner("正在讀取試題並生成二試上位卷 IRAC 示範擬答..."):
-
                                 q_txt = read_note_text(m3_q["path"], max_pages=10, auto_ocr=True)
-
                                 gen = LawExamGenerator()
-
                                 model_ans = gen.generate_model_answer(question=q_txt or m3_q_fn, subject=m3_q["subject"])
-
                                 st.markdown("##### 🏆 閱卷高分示範擬答：")
-
                                 st.markdown(model_ans)
 
                     with c_m3_b3:
-
                         if st.button(f"🔍 帶入法學檢索樞紐剖析爭點", key=f"btn_m3_query_{m3_q_idx}", use_container_width=True):
-
                             target_query = f"{m3_q['subject']} {m3_q_fn} 實戰考點與實務見解"
-
-                            st.session_state["lp_search_query"] = target_query
-
-                            st.session_state["lp_exec_search"] = True
-
-                            st.session_state["ai_query_input_text"] = target_query
-
-                            st.session_state["m5_sub_mode_idx"] = 1
-
-                            st.session_state["app_mode"] = MODE_SEARCH; st.session_state["nav_sidebar_radio_mode"] = MODE_SEARCH
-
-                            st.rerun()
+                            navigate_to(
+                                MODE_SEARCH,
+                                sub_mode=M5_SUB_UNIFIED_CORPUS,
+                                pending_widgets={"ai_query_text_area": target_query},
+                                extra_state={
+                                    "lp_search_query": target_query,
+                                    "lp_exec_search": True,
+                                    "ai_query_input_text": target_query,
+                                },
+                            )
 
 
 
@@ -9174,67 +8444,38 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
 
         st.markdown(f"#### 👥 全民社群考生共享真題與自創模擬題庫（共收錄 {len(comm_q_all)} 份獨立檔案）")
 
-        st.caption("所有考生在【試卷評分】或【出題系統】中上傳、產出之實戰題目，均即時獨立存檔並自動匯聚於此，供所有考生共同切磋與演練！")
-
-
+        st.caption("所有考生在【試卷批改】或【模擬命題】中上傳、產出之實戰題目，均即時獨立存檔並自動匯聚於此，供所有考生共同切磋與演練！")
 
         cq_top1, cq_top2 = st.columns([3, 1])
-
         with cq_top1:
-
             cq_kw = st.text_input("搜尋社群題目關鍵字、考科或爭點：", placeholder="例如：侵權行為、抵押權、原因自由行為、董事責任...", key="cq_search_kw")
-
         with cq_top2:
-
             st.write("")
-
             st.write("")
-
             add_new_q_exp = st.checkbox("➕ 手動新增共享題目", key="chk_add_comm_q")
 
-
-
         if add_new_q_exp:
-
             with st.container():
-
                 st.markdown("##### ➕ 貢獻一道新題目至社群共享庫")
-
                 n_title = st.text_input("試卷標題 / 考點摘要：", placeholder="例如：112年司律二試民法第一題改編")
-
                 n_subj = st.selectbox("所屬科目：", ["民法", "民事訴訟法", "刑法", "刑事訴訟法", "行政法", "憲法", "公司法", "證券交易法", "保險法", "智慧財產權法", "勞動與社會法", "跨領域綜合"], key="n_subj_select")
-
                 n_content = st.text_area("題目事實與子題內容：", height=120, placeholder="案例事實與問題...")
-
                 n_rubric = st.text_area("參考答案 / 評分標準（選填）：", height=70)
-
                 if st.button("📤 立即上傳並建立獨立題庫檔案", key="btn_save_new_comm_q"):
-
                     if n_content.strip():
-
                         new_q_rec = archive_uploaded_question(title=n_title, content=n_content, subject=n_subj, rubric=n_rubric, uploader="熱心考生")
-
+                        get_cached_community_questions.clear()
                         st.success(f"🎉 成功存檔並建立試題：`{new_q_rec.get('question_id')}.json`！已同步匯入社群題庫！")
-
                         st.rerun()
-
                     else:
-
                         st.error("請填寫題目內容！")
 
-
-
         comm_filtered = comm_q_all
-
         if cq_kw:
-
             comm_filtered = search_community_questions(cq_kw)
 
-
-
         if not comm_filtered:
-
-            st.info("💡 目前社群題庫暫無符合條件之試卷。在【試卷評分】模式評分題目後，系統將實時為您獨立存檔入庫！")
+            st.info("💡 目前社群題庫暫無符合條件之試卷。在【試卷批改】模式評分題目後，系統將實時為您獨立存檔入庫！")
 
         else:
 
@@ -9277,34 +8518,28 @@ elif app_mode == MODE_BANK or any(k in app_mode for k in ["真題", "題庫"]):
                     c_act1, c_act2 = st.columns(2)
 
                     with c_act1:
-
-                        if st.button(f"📝 帶入【試卷評分】進行批改", key=f"btn_import_eval_{q_id}"):
-
+                        if st.button(f"📝 帶入【試卷批改】", key=f"btn_import_eval_{q_id}"):
                             st.session_state["question_text_content"] = q_text
-
                             st.session_state["rubric_text_content"] = q_rubric
-
                             st.session_state["imported_from_bank_label"] = f"【社群共享題庫】{q_title}"
-
-                            st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                            st.rerun()
-
+                            navigate_to(MODE_EVAL)
                     with c_act2:
-
                         if st.button(f"🏆 生成榜首級示範擬答 (IRAC)", key=f"btn_model_ans_{q_id}"):
-
                             with st.spinner("榜首名師正在撰寫嚴謹三段論法擬答..."):
-
                                 gen = LawExamGenerator()
-
                                 m_ans = gen.generate_model_answer(question=q_text, subject=q_subj)
-
                                 st.markdown("##### 🏆 閱卷高分示範擬答：")
-
                                 st.markdown(m_ans)
 
-
+    with m3_tab5:
+        render_wrong_mcq_notebook_panel(
+            mode_gen_name=MODE_GEN,
+            key_prefix="m3_wnb",
+            get_stats_fn=get_subject_accuracy_stats,
+            get_wrongs_fn=get_wrong_mcqs,
+            mark_mastered_fn=mark_wrong_mcq_mastered,
+            export_csv_fn=export_wrong_mcqs_csv,
+        )
 
 # ----------------- 模式 4: 擬答生成 -----------------
 
@@ -9337,18 +8572,12 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
 
 
     # 若由真題庫帶入，優先使用
-
     if "question_text_content" in st.session_state and st.session_state["question_text_content"]:
-
         if not st.session_state["m4_target_question"]:
-
             st.session_state["m4_target_question"] = st.session_state["question_text_content"]
-
-            st.session_state["m4_text_area_input"] = st.session_state["question_text_content"]
-
+            set_pending_widget_value("m4_text_area_input", st.session_state["question_text_content"])
     elif st.session_state.get("m4_target_question") and "m4_text_area_input" not in st.session_state:
-
-        st.session_state["m4_text_area_input"] = st.session_state["m4_target_question"]
+        set_pending_widget_value("m4_text_area_input", st.session_state["m4_target_question"])
 
 
 
@@ -9467,11 +8696,8 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
 
 
                         if transcribed:
-
                             st.session_state["m4_target_question"] = transcribed
-
-                            st.session_state["m4_text_area_input"] = transcribed
-
+                            set_pending_widget_value("m4_text_area_input", transcribed)
                             st.success("✅ 題目辨識並謄錄成功！已自動帶入下方編輯框：")
 
                         else:
@@ -9539,83 +8765,47 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
         )
 
     with col_m4_clear:
-
         if st.button("✖️ 清空題目", key="btn_m4_clear"):
-
             st.session_state["m4_target_question"] = ""
-
-            st.session_state["m4_text_area_input"] = ""
-
+            set_pending_widget_value("m4_text_area_input", "")
             st.rerun()
 
-
-
     # 🌟 人性化體驗升級：司律二試歷屆全真考題一鍵帶入
-
     st.markdown("**🏆 司律二試熱門真題示範（點擊一鍵帶入題目）**：")
-
     c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-
     sample_exam_qs = [
-
         (
-
             "甲將其所有之 A 地借名登記於乙名下，雙方約定乙僅得代為管理。詎乙未經甲之同意，擅自將 A 地出賣並移轉登記於惡意知情之丙。試問：甲得否向丙請求塗銷登記並返還 A 地？乙之處分行為效力如何？",
-
             "📜 112司法官民法"
-
         ),
-
         (
-
             "甲為具有辨識能力之成年人，為謀殺仇人乙，預先服下大量酒精以壯膽，隨後在辨識能力顯著降低之狀態下持刀砍殺乙致死。試問：甲之行為應如何論處？是否成立原因自由行為？",
-
             "⚔️ 111律師刑法"
-
         ),
-
         (
-
             "主管機關以甲公司違反環境保護法規為由，作成裁處新臺幣 100 萬元罰鍰並命停工之行政處分。嗣後主管機關發現該處分適用法規有誤，欲依行政程序法第 117 條予以撤銷。試問：甲公司得否主張信賴保護？撤銷之法定要件為何？",
-
             "🏢 110司法官行政法"
-
         ),
-
         (
-
             "A 上市公司董事長甲指示公司財務部門，以公司資金高價承接甲實質控制但業績嚴重虧損之 B 公司股權，造成 A 公司受有數千萬元之重大損害。試問：甲應負何種民刑事責任？公司法第 23 條與證交法第 171 條特別背信罪如何適用？",
-
             "💼 111律師商事法"
-
         )
-
     ]
-
     for m_col, (eq_text, eq_label) in zip([c_m1, c_m2, c_m3, c_m4], sample_exam_qs):
-
         with m_col:
-
             if st.button(eq_label, key=f"btn_sample_eq_{eq_label}", use_container_width=True):
-
                 st.session_state["m4_target_question"] = eq_text
-
-                st.session_state["m4_text_area_input"] = eq_text
-
+                set_pending_widget_value("m4_text_area_input", eq_text)
                 st.rerun()
 
+    sync_pending_widget_keys(["m4_text_area_input"])
+    if "m4_text_area_input" not in st.session_state:
+        st.session_state["m4_text_area_input"] = st.session_state.get("m4_target_question", "")
     target_q = st.text_area(
-
         "請確認申論題題目（可直接修改或補充）：",
-
-        value=st.session_state.get("m4_target_question", ""),
-
         height=200,
-
         placeholder="請貼入完整的二試題目，或由上方拍照/上傳自動辨識帶入...",
-
         key="m4_text_area_input"
-
     )
 
 
@@ -9787,117 +8977,34 @@ elif app_mode == MODE_ANS or any(k in app_mode for k in ["擬答", "示範擬答
 
                     st.divider()
 
-                    if st.button("📝 將此題與示範擬答帶入【試卷評分】批改 (自動帶入題目與評分標準)"):
-
+                    if st.button("📝 將此題與示範擬答帶入【試卷批改】 (自動帶入題目與評分標準)"):
                         st.session_state["question_text_content"] = target_q
-
                         st.session_state["rubric_text_content"] = ans
-
                         st.session_state["imported_from_bank_label"] = f"二試申論題【{m4_subject}】（含榜首示範擬答標準）"
-
-                        st.session_state["app_mode"] = MODE_EVAL; st.session_state["nav_sidebar_radio_mode"] = MODE_EVAL
-
-                        st.rerun()
-
+                        navigate_to(MODE_EVAL)
                 except Exception as e:
-
                     st.error(f"出題失敗: {e}")
 
-
-
 # ----------------- 模式 5: 法學檢索 -----------------
-
 elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統一法學", "檢索", "爭點"]):
-
     st.header("🔍 全國法學判解檢索與深度研析中心")
-
     st.caption("全面整合【專業布林邏輯精準檢索】、【全方位法學統一檢索】、【AI 判決精華深度摘要】與【案例橫向比對 (Case Distinguishing)】，直通審級脈絡、權威法學庫與司法院 30 年判決，支援一站式爭點與判解秒級研析。")
-
-
 
     st.divider()
 
-
-
-    M5_SUB_ADVANCED_SEARCH = "⚖️ 裁判書多維專業檢索 (支援布林語法)"
-
-    M5_SUB_UNIFIED_CORPUS = "🌐 全方位法學大典藏跨庫檢索 (裁判/判例/釋字/命令/法律)"
-
-    M5_SUB_HOT_SEARCH = "⚡ 權威實務裁判與先例即時檢索"
-
-    M5_SUB_APPEAL_CHAIN = "🌿 審級更迭與歷審脈絡鏈"
-
-    M5_SUB_ADMIN_ORDERS = "📜 全國行政法規命令與部會要點 (10,452部庫)"
-
-    M5_SUB_ISSUES = "🤖 司律二試核心爭點與 IRAC 實務法理"
-
-    M5_SUB_DISTINGUISHING = "🔄 裁判見解分歧與案例橫向比對"
-
-
-
-    m5_sub_modes = [
-
-        M5_SUB_ADVANCED_SEARCH,
-
-        M5_SUB_UNIFIED_CORPUS,
-
-        M5_SUB_HOT_SEARCH,
-
-        M5_SUB_APPEAL_CHAIN,
-
-        M5_SUB_ADMIN_ORDERS,
-
-        M5_SUB_ISSUES,
-
-        M5_SUB_DISTINGUISHING
-
-    ]
-
-
-
-    # 外部跳轉控制預設子功能索引（向下相容整數與字串）
-
-    raw_sub_idx = st.session_state.get("m5_sub_mode_idx", 0)
-
-    if isinstance(raw_sub_idx, str):
-
-        sub_default_idx = m5_sub_modes.index(raw_sub_idx) if raw_sub_idx in m5_sub_modes else 0
-
-    elif isinstance(raw_sub_idx, int):
-
-        idx_map = {0: 0, 1: 2, 2: 3, 3: 5, 4: 6}
-
-        sub_default_idx = idx_map.get(raw_sub_idx, 0)
-
-    else:
-
-        sub_default_idx = 0
-
-
-
-    if sub_default_idx >= len(m5_sub_modes):
-
-        sub_default_idx = 0
-
-
+    m5_sub_modes = M5_SUB_MODES
+    resolved_sub_label = resolve_m5_sub_mode(st.session_state.get("m5_sub_mode_idx", 0))
+    sync_pending_widget_keys(["m5_sub_module_radio"])
+    if st.session_state.get("m5_sub_module_radio") not in m5_sub_modes:
+        st.session_state["m5_sub_module_radio"] = resolved_sub_label
 
     m5_active_tab = st.radio(
-
         "選擇法學研析模組：",
-
         m5_sub_modes,
-
-        index=sub_default_idx,
-
         horizontal=True,
-
-        key="m5_sub_module_radio"
-
+        key="m5_sub_module_radio",
     )
-
     st.session_state["m5_sub_mode_idx"] = m5_sub_modes.index(m5_active_tab)
-
-
 
     st.write("")
 
@@ -10204,14 +9311,13 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                     st.markdown("**⚡ 一鍵轉入 AI 裁判要旨深度精鍊：**")
 
                     if st.button(f"🚀 將【{target_combo_id[:16]}...】帶入 AI 判解精鍊", type="primary", use_container_width=True, key="btn_pass_m5_to_m7"):
-
-                        st.session_state["sum_citation_search"] = target_combo_id
-
-                        st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-
-                        st.session_state["app_mode"] = MODE_SUMMARIZER; st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
-
-                        st.rerun()
+                        navigate_to(
+                            MODE_SUMMARIZER,
+                            extra_state={
+                                "sum_citation_search": target_combo_id,
+                                "citation_rev": st.session_state.get("citation_rev", 0) + 1,
+                            },
+                        )
 
             else:
 
@@ -10358,36 +9464,30 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         b_c1, b_c2, b_c3, b_c4, b_c5 = st.columns([1.5, 1.4, 1.4, 1.2, 1.0])
 
                         with b_c1:
-
                             if st.button("🌿 審級更迭脈絡", key=f"btn_lb_hist_{idx}", use_container_width=True):
-
-                                st.session_state["target_history_case_id"] = c_id
-
-                                st.session_state["m5_sub_mode_idx"] = 2
-
-                                st.rerun()
-
+                                navigate_to(
+                                    MODE_SEARCH,
+                                    sub_mode=M5_SUB_APPEAL_CHAIN,
+                                    pending_widgets={"inp_history_case_id": c_id},
+                                    extra_state={"target_history_case_id": c_id},
+                                )
                         with b_c2:
-
                             if st.button("⚡ AI 判解精鍊", key=f"btn_lb_sum_{idx}", use_container_width=True):
-
-                                st.session_state["sum_citation_search"] = c_id
-
-                                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-
-                                st.session_state["app_mode"] = MODE_SUMMARIZER; st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
-
-                                st.rerun()
-
+                                navigate_to(
+                                    MODE_SUMMARIZER,
+                                    extra_state={
+                                        "sum_citation_search": c_id,
+                                        "citation_rev": st.session_state.get("citation_rev", 0) + 1,
+                                    },
+                                )
                         with b_c3:
-
                             if st.button("🔄 案例橫向比對", key=f"btn_lb_cmp_{idx}", use_container_width=True):
-
-                                st.session_state["target_compare_case_a"] = c_id
-
-                                st.session_state["m5_sub_mode_idx"] = 4
-
-                                st.rerun()
+                                navigate_to(
+                                    MODE_SEARCH,
+                                    sub_mode=M5_SUB_DISTINGUISHING,
+                                    pending_widgets={"inp_cmp_case_a": c_id},
+                                    extra_state={"target_compare_case_a": c_id},
+                                )
 
                         with b_c4:
 
@@ -10412,10 +9512,7 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         try:
             _c_stats = get_unified_corpus_engine().get_corpus_statistics()
         except Exception:
-            _c_stats = {
-                "judgments": 0, "precedents": 10444, "constitution": 1181,
-                "orders": 10452, "statutes": 1351, "academic": 115, "total_assets": 23543
-            }
+            _c_stats = {}
 
         _j_cnt = int(_c_stats.get("master_judgments") or _c_stats.get("judgments") or 0)
         if _j_cnt <= 0:
@@ -10423,11 +9520,11 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                 _j_cnt = int(get_million_db_engine().get_total_count() or 0)
             except Exception:
                 pass
-        _p_cnt = int(_c_stats.get("precedents_and_resolutions") or _c_stats.get("precedents") or 10444)
-        _con_cnt = int(_c_stats.get("constitutional_and_interpretations") or _c_stats.get("constitution") or 1181)
-        _ord_cnt = int(_c_stats.get("administrative_orders") or _c_stats.get("orders") or 10452)
-        _stat_cnt = int(_c_stats.get("national_laws") or _c_stats.get("statutes") or 1351)
-        _acad_cnt = int(_c_stats.get("academic_coursework") or _c_stats.get("academic") or 115)
+        _p_cnt = int(_c_stats.get("precedents_and_resolutions") or _c_stats.get("precedents") or 0)
+        _con_cnt = int(_c_stats.get("constitutional_and_interpretations") or _c_stats.get("constitution") or 0)
+        _ord_cnt = int(_c_stats.get("administrative_orders") or _c_stats.get("orders") or 0)
+        _stat_cnt = int(_c_stats.get("national_laws") or _c_stats.get("statutes") or 0)
+        _acad_cnt = int(_c_stats.get("academic_coursework") or _c_stats.get("academic") or 0)
         _tot_cnt = int(_c_stats.get("total_items") or _c_stats.get("total_assets") or (_j_cnt + _p_cnt + _con_cnt + _ord_cnt + _stat_cnt + _acad_cnt))
 
         st.caption(f"完整比照「法源法律網」與「七法 Laws.club」旗艦檢索架構！一站式貫穿 **{_j_cnt:,} 筆實體裁判**、**{_p_cnt:,} 則最高法院判例與決議**、**{_con_cnt:,} 筆憲法判決與大法官釋字**、**{_ord_cnt:,} 部行政命令**與 **{_stat_cnt:,} 部全國法律**。")
@@ -10489,45 +9586,29 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         col_cq1, col_cq2 = st.columns([3.5, 1])
 
         with col_cq1:
-
+            sync_pending_widget_keys(["corpus_search_input_widget"])
+            if "corpus_search_input_widget" not in st.session_state:
+                st.session_state["corpus_search_input_widget"] = st.session_state.get("corpus_search_query_val", "")
             corpus_query = st.text_input(
-
                 "輸入法學關鍵字、爭點法理、條號或案號：",
-
-                value=st.session_state.get("corpus_search_query_val", ""),
-
                 placeholder="例如：借名登記、重大過失、108台上大1719、侵權行為、消保法、民法184、道路交通安全規則...",
-
                 key="corpus_search_input_widget"
-
             )
 
         with col_cq2:
-
             st.write("")
-
             st.write("")
-
             btn_corpus_search = st.button("🚀 跨庫統一檢索", type="primary", use_container_width=True, key="btn_exec_corpus_search")
 
-
-
         st.markdown("**🔥 高頻法學爭點快速檢索：**")
-
         chip_cols = st.columns(7)
-
         quick_chips = ["借名登記", "重大過失", "不當得利", "原因自由行為", "純粹經濟損失", "行政處分", "108台上大1719"]
-
         for c_idx, chip in enumerate(quick_chips):
-
             with chip_cols[c_idx]:
-
                 if st.button(chip, key=f"chip_corpus_{c_idx}", use_container_width=True):
-
                     st.session_state["corpus_search_query_val"] = chip
-
+                    set_pending_widget_value("corpus_search_input_widget", chip)
                     st.session_state["corpus_trigger_search"] = True
-
                     st.rerun()
 
 
@@ -10631,79 +9712,52 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
                         with btn_c1:
 
                             if st.button("🌿 追蹤審級脈絡", key=f"btn_cp_appeal_{h_idx}", use_container_width=True):
-
-                                st.session_state["target_history_case_id"] = h.get('title', '')
-
-                                st.session_state["m5_sub_mode_idx"] = M5_SUB_APPEAL_CHAIN
-
-                                st.rerun()
-
+                                h_title = h.get('title', '')
+                                navigate_to(
+                                    MODE_SEARCH,
+                                    sub_mode=M5_SUB_APPEAL_CHAIN,
+                                    pending_widgets={"inp_history_case_id": h_title},
+                                    extra_state={"target_history_case_id": h_title},
+                                )
                         with btn_c2:
-
                             if st.button("📑 AI IRAC 深度精鍊", key=f"btn_cp_sum_{h_idx}", use_container_width=True):
-
-                                st.session_state["sum_citation_search"] = h.get('title', '')
-
-                                st.session_state["citation_rev"] = st.session_state.get("citation_rev", 0) + 1
-
-                                st.session_state["sum_input_title"] = h.get('title', '')
-
-                                st.session_state["sum_input_text"] = ""
-
-                                st.session_state.pop("last_ai_sum_res", None)
-
-                                st.session_state["app_mode"] = MODE_SUMMARIZER
-
-                                st.session_state["nav_sidebar_radio_mode"] = MODE_SUMMARIZER
-
-                                st.rerun()
-
+                                h_title = h.get('title', '')
+                                navigate_to(
+                                    MODE_SUMMARIZER,
+                                    extra_state={
+                                        "sum_citation_search": h_title,
+                                        "citation_rev": st.session_state.get("citation_rev", 0) + 1,
+                                        "sum_input_title": h_title,
+                                        "sum_input_text": "",
+                                        "last_ai_sum_res": None,
+                                    },
+                                )
                         with btn_c3:
-
                             if st.button("⚖️ 帶入智慧六法", key=f"btn_cp_six_{h_idx}", use_container_width=True):
-
+                                target_six_law = None
                                 if "民" in h.get('title', ''):
-
-                                    st.session_state["six_codes_law"] = "民法"
-
+                                    target_six_law = "民法"
                                 elif "刑" in h.get('title', ''):
-
-                                    st.session_state["six_codes_law"] = "中華民國刑法"
-
+                                    target_six_law = "中華民國刑法"
                                 elif "行政" in h.get('title', ''):
-
-                                    st.session_state["six_codes_law"] = "行政程序法"
-
-                                st.session_state["app_mode"] = MODE_SIX_CODES
-
-                                st.session_state["nav_sidebar_radio_mode"] = MODE_SIX_CODES
-
-                                st.rerun()
+                                    target_six_law = "行政程序法"
+                                extra_six = {"six_codes_law": target_six_law} if target_six_law else None
+                                navigate_to(MODE_SIX_CODES, extra_state=extra_six)
 
 
 
     elif m5_active_tab == M5_SUB_HOT_SEARCH or m5_active_tab == m5_sub_modes[2]:
-
         st.subheader("⚡ 全國法學判解熱搜與關聯導航")
-
-        st.caption("支援高頻爭點晶片快選、雙向自然語言搜尋、案號縮寫智慧解析、本機 4,088+ 筆裁判與六法法條即時命中，並跨庫直通官方權威司法檢索系統！")
-
-
+        st.caption("支援高頻爭點晶片快選、雙向自然語言搜尋、案號縮寫智慧解析、本機權威實務裁判與六法法條即時命中，並跨庫直通官方權威司法檢索系統！")
 
         # 極速全域搜尋列
-
-        cur_lp_val = st.session_state.get("lp_search_query", "")
-
+        sync_pending_widget_keys(["lp_search_input"])
+        if "lp_search_input" not in st.session_state:
+            st.session_state["lp_search_input"] = st.session_state.get("lp_search_query", "")
         lp_query_input = st.text_input(
-
             "⚡ 極速全域搜尋框（支援法院簡稱如 最高行110上15、北高行109訴567、案號縮寫如 108台上908民、法條或自然語言案例事實）：",
-
-            value=cur_lp_val,
-
             placeholder="例如：最高行110上15、北高行109訴567、108台上908民、108台上大1719裁、院字2949、重上更一15、民法184、借名登記...",
-
             key="lp_search_input"
-
         )
 
 
@@ -10749,17 +9803,12 @@ elif app_mode == MODE_SEARCH or any(k in app_mode for k in ["法學檢索", "統
         with col_lp_btn2:
 
             if st.button("✖️ 清除搜尋", use_container_width=True, key="btn_clear_lp_search"):
-
                 st.session_state.pop("lp_search_query", None)
-
+                set_pending_widget_value("lp_search_input", "")
                 st.session_state.pop("lp_search_hits", None)
-
                 st.session_state.pop("lp_select_time_filter", None)
-
                 st.session_state.pop("lp_time_filter", None)
-
                 st.session_state.pop("lp_filter_no_issue", None)
-
                 st.rerun()
 
 

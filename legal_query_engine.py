@@ -1,7 +1,7 @@
 """
 司律高階 AI 爭點查詢與權威判解・學說速查引擎 (Legal Issue & Precedent Query Engine)
-整合本機 824+ 份權威判解庫 (最高法院大法庭裁定全集、憲法法庭判決與大法官解釋、最高法院精選裁判)
-與 Gemini 2.0 Flash 深度法學推論模型。
+整合本機權威判解庫 (最高法院大法庭裁定、憲法法庭判決與大法官解釋、最高法院精選裁判與判例)
+與 Gemini AI 深度法學推論模型。
 功能：
 1. 精準引出相關實體法與程序法法條（條號、構成要件與法律效果）
 2. 列出核心法律爭點（爭執核心與規範疑義）
@@ -12,21 +12,14 @@ import os
 import sys
 import json
 import re
+import logging
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except Exception:
-    try:
-        import google.generativeai as legacy_genai
-    except Exception:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+from config import DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR
+from llm_client import generate_content, LlmCallError
 
-from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, RAW_DATA_DIR, DATA_DIR, get_gemini_models_to_try
+logger = logging.getLogger(__name__)
 
 CATALOG_PATHS = [
     Path(__file__).resolve().parent / "data" / "precedents_catalog.json",
@@ -113,32 +106,32 @@ COMMON_CASE_WORDS = [
 EXTENDED_JUDICIAL_AUTHORITIES = [
     # --- 一、最高法院／最高行政法院 原判例（依法院組織法第57條之1具裁判全文者效力同最高院裁判） ---
     {
-        "case_id": "最高法院 40 年台上字第 86 號民事判例",
+        "case_id": "最高法院 40 年台上字第 86 號刑事判例",
         "court": "最高法院",
-        "level": "最高法院原判例（民事實體標竿）",
-        "subject": "民法與民事訴訟法",
-        "sub_category": "消滅時效與權利濫用",
-        "date": "1951/02/16",
-        "title": "不動產真正所有人之登記名義回復與權利行使誠信原則案（40年台上字第86號原判例）",
-        "laws_cited": ["民法第148條", "民法第767條", "民法第758條"],
-        "issue": "債務人或出賣人久未辦理移轉登記或遲延行使權利，應否受民法第148條誠實信用原則與權利濫用禁止之拘束？",
-        "holding": "權利之行使，不得違反公共利益，或以損害他人為主要目的。行使權利，履行義務，應依誠實及信用方法。若當事人行使物上請求權或債權請求權違反誠信原則者，法院得認其為權利濫用而不予保護。",
-        "scholarly_views": "【實務與通說】肯認民法第148條誠信原則為全體私法之帝王條款，並衍生『權利失效理論』。",
-        "exam_application_hint": "二試考題若出現權利人長期沉默不使權利致相對人產生正當信賴，務必引述民法第148條及最高法院40年台上字第86號等判例法理檢討權利失效。"
+        "level": "最高法院原判例（刑事證據法則標竿；依法院組織法第57條之1第2項效力同最高法院裁判）",
+        "subject": "刑法與刑事訴訟法",
+        "sub_category": "證據裁判原則與禁止推測擬制",
+        "date": "1951/03/26",
+        "title": "犯罪事實應憑證據認定禁止推測或擬制判決案（40年台上字第86號刑事判例）",
+        "laws_cited": ["刑事訴訟法第154條"],
+        "issue": "犯罪事實欠缺具體積極證據時，法院得否僅憑被告過往素行空泛供述、態度慌張或推測擬制為有罪裁判基礎？",
+        "holding": "事實之認定，應憑證據，如未能發現相當證據，或證據不足以證明，自不能以推測或擬制之方法，以為裁判基礎。",
+        "scholarly_views": "【實務與通說】確立我國刑事訴訟法『證據裁判主義』與嚴格證明核心界限；現依法院組織法第57條之1第2項效力與未經選編為判例之最高法院裁判相同，仍為實務與國考引用要旨。",
+        "exam_application_hint": "二試刑事訴訟法考無罪推定與證據不足禁止擬制推論時，可引述刑事訴訟法第154條第2項與最高法院40年台上字第86號刑事判例要旨。"
     },
     {
-        "case_id": "最高法院 30 年上字第 482 號民事判例",
+        "case_id": "最高法院 30 年上字第 482 號刑事判例",
         "court": "最高法院",
-        "level": "最高法院原判例（民事實體標竿）",
-        "subject": "民法與民事訴訟法",
-        "sub_category": "無權處分與善意受讓",
-        "date": "1941/03/12",
-        "title": "動產無權處分與民法第801條、第948條善意受讓之要件案（30年上字第482號原判例）",
-        "laws_cited": ["民法第118條", "民法第801條", "民法第948條"],
-        "issue": "動產善意受讓之成立，除受讓人為善意且無重大過失外，是否以實際受占有之移轉（交付）為必要？",
-        "holding": "民法第801條及第948條規定動產之善意受讓，係以動產占有之移轉為要件；倘無占有之移轉或僅依占有改定而未現實交付者，受讓人尚不得主張即時取得動產所有權。",
-        "scholarly_views": "【實務與王澤鑑教授通說】占有改定（民法第761條第2項）欠缺外部公示外觀，原則上須至受讓人受現實交付時始生善意受讓效力。",
-        "exam_application_hint": "考無權處分＋占有改定時，應引述民法第948條第2項與30年上字第482號判例意旨。"
+        "level": "最高法院原判例（刑事證據法則標竿；依法院組織法第57條之1第2項效力同最高法院裁判）",
+        "subject": "刑法與刑事訴訟法",
+        "sub_category": "積極證據與被告虛偽抗辯",
+        "date": "1941/02/13",
+        "title": "積極證據不足時被告虛偽抗辯或反證不得反推有罪案（30年上字第482號刑事判例）",
+        "laws_cited": ["刑事訴訟法第154條"],
+        "issue": "檢察官所舉積極證據不足證明犯罪事實時，法院得否因被告之抗辯或不在場證明等反證屬虛偽，即反推其犯罪成立？",
+        "holding": "事實審法院對於證據之取捨，依法雖有自由判斷之權，然積極證據不足證明犯罪事實時，被告之抗辯或反證縱屬虛偽，仍不能以此資為積極證據應予採信之理由。",
+        "scholarly_views": "【實務與通說】禁止將『消極抗辯或反證之破綻』轉化為證明構成要件之『積極有罪證據』，貫徹檢察官實質舉證責任（刑事訴訟法第161條、第154條）。",
+        "exam_application_hint": "考被告否認犯罪但辯詞矛盾／謊稱不在場時，應引用刑事訴訟法第154條與最高法院30年上字第482號判例指出『反證虛偽不得直接充作有罪之積極證據』。"
     },
     {
         "case_id": "最高法院 65 年台上字第 2440 號民事判例",
@@ -1097,7 +1090,7 @@ def search_local_precedents(
     filter_no_legal_issue: bool = True
 ) -> List[Dict[str, Any]]:
     """
-    從 1,256 筆權威判解庫中高速篩選最相關之判決/大法庭裁定
+    從本機權威判解庫中高速篩選最相關之判決/大法庭裁定
     支援專業多欄位檢索：審級分類、裁判案由、法院心證、案件爭點、相關法條與常用字別組合
     支援案號縮寫智慧匹配（如 108台上908民、108台上大1719裁、院字2949、重上更一15）
     支援時間軸過濾滑桿 (time_filter)
@@ -1465,42 +1458,36 @@ def get_all_precedent_options() -> List[str]:
 
 class LegalIssueQueryEngine:
     def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
-        self.api_key = get_gemini_api_key()
-        if not self.api_key:
-            raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Secrets 或 .env 中設定您的 API Key。")
         self.model_name = model_name
-        if USE_MODERN_GENAI:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
-            legacy_genai.configure(api_key=self.api_key)
-            self.model = legacy_genai.GenerativeModel(model_name=model_name)
 
     def _call_model(self, prompt: str) -> str:
-        models_to_try = get_gemini_models_to_try(self.model_name)
-        last_err = None
-        for m_name in models_to_try:
-            try:
-                if USE_MODERN_GENAI:
-                    cfg = genai_types.GenerateContentConfig(
-                        temperature=0.2
-                    )
-                    resp = self.client.models.generate_content(
-                        model=m_name,
-                        contents=prompt,
-                        config=cfg
-                    )
-                    return resp.text
-                else:
-                    cur_model = legacy_genai.GenerativeModel(model_name=m_name)
-                    resp = cur_model.generate_content(
-                        prompt,
-                        generation_config=legacy_genai.types.GenerationConfig(temperature=0.2)
-                    )
-                    return resp.text
-            except Exception as e:
-                last_err = e
-                continue
-        raise RuntimeError(f"Gemini API 查詢調用失敗: {last_err}")
+        """透過統一 llm_client 呼叫 Gemini（每次動態讀取最新 API Key）。"""
+        try:
+            return generate_content(
+                prompt,
+                primary_model=self.model_name,
+                temperature=0.2,
+            )
+        except Exception as exc:
+            logger.warning("LegalIssueQueryEngine LLM call failed: %s", exc)
+            raise RuntimeError(f"Gemini API 查詢調用失敗: {exc}") from exc
+
+    def _verify_citations(self, text: str, context_topic: str = "") -> Tuple[str, Dict[str, Any]]:
+        """執行案號防偽核驗並附加查核清單，禁止偽造引用與無根據有效度評級。"""
+        try:
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            ver_res = verifier.verify_and_decorate_response(
+                text, context_topic=context_topic, auto_badge=True
+            )
+            annotated = ver_res.get("annotated_text") or text
+            audit_md = ver_res.get("audit_markdown", "")
+            if audit_md:
+                annotated = annotated.rstrip() + "\n\n" + audit_md
+            return annotated, ver_res
+        except Exception as exc:
+            logger.warning("LegalIssueQueryEngine CaseCitationVerifier failed: %s", exc)
+            return text, {}
 
     def query_legal_issue(self, query: str, subject: str = "全部科目") -> Dict[str, Any]:
         """
@@ -1559,11 +1546,9 @@ class LegalIssueQueryEngine:
 - **大前提確立示範**：如何融合法條、大法庭裁定字號與學說見解
 - **事實涵攝與結論**：如何將具體事實嚴密代入構成要件
 
-### 六、⚠️ 裁判效力狀態與違憲警示（專業法學語意搜尋 特色功能）
-- 標註本爭點涉及裁判之有效性狀態，提醒考生與實務嚴格防禦：
-  - 🟢 **【現行有效主流】**：最高法院現行穩健見解或大法庭裁定
-  - 🟡 **【見解歧異/變更中】**：各庭間尚有爭議、大法庭提案中
-  - 🔴 **【已廢止/違憲停止適用】**：經大法庭裁定廢止、停止適用或經憲法法庭宣告違憲失效（絕對禁止在國考或訴訟中援用！）
+### 六、⚠️ 裁判效力狀態與查核指引
+- 若上開【本機權威判解庫即時檢索命中資料】中已明確記載裁判狀態（例如是否停止適用、法院組織法第57條之1或大法庭/憲法法庭變更見解），請如實引述。
+- 對於未附具本機資料庫效力註記之其他裁判字號，**嚴禁僅憑記憶自行標註為「現行有效」或虛構燈號分級**；應提醒使用者參閱文末「裁判案號真實性查核清單」並於司法院官方檢索系統複核現行效力！
 
 ### 七、📈 爭點實務見解演進時間軸（審級脈絡歷程脈絡樹）
 - 以清晰時間箭頭流程呈現本爭點之實務演進軌跡：
@@ -1572,12 +1557,14 @@ class LegalIssueQueryEngine:
 請直接以格式清晰之 Markdown 文本輸出，內容必須專業、精準、足堪作為司律榜首等級之法學寶典！
 """
         response_text = self._call_model(prompt)
+        verified_text, case_ver_res = self._verify_citations(response_text, context_topic=query)
 
         return {
             "query": query,
             "subject": subject,
             "matched_local_precedents": matched_precedents,
-            "markdown_result": response_text,
+            "markdown_result": verified_text,
+            "case_verification": case_ver_res,
             "external_search_urls": generate_judicial_search_urls(query, subject)
         }
 
@@ -1659,11 +1646,13 @@ class LegalIssueQueryEngine:
 請直接以標準、專業且結構完整的繁體中文 Markdown 輸出。
 """
         result_md = self._call_model(prompt)
+        verified_md, case_ver_res = self._verify_citations(result_md, context_topic=case_id)
         return {
             "case_id": case_id,
             "subject": subject,
             "local_record": local_rec,
-            "markdown_result": result_md,
+            "markdown_result": verified_md,
+            "case_verification": case_ver_res,
             "external_search_urls": generate_judicial_search_urls(case_id, subject)
         }
 
@@ -1743,13 +1732,17 @@ class LegalIssueQueryEngine:
 請以清晰、嚴謹之繁體中文 Markdown 輸出。
 """
         result_md = self._call_model(prompt)
+        verified_md, case_ver_res = self._verify_citations(
+            result_md, context_topic=f"{case_a} {case_b} {topic}".strip()
+        )
         return {
             "case_a": case_a,
             "case_b": case_b,
             "topic": topic,
             "rec_a": rec_a,
             "rec_b": rec_b,
-            "markdown_result": result_md,
+            "markdown_result": verified_md,
+            "case_verification": case_ver_res,
             "external_search_urls": {
                 f"⚖️ 裁判檢索【{case_a}】": generate_judicial_search_urls(case_a).get("🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)", ""),
                 f"⚖️ 裁判檢索【{case_b}】": generate_judicial_search_urls(case_b).get("🏛️ 司法院 30 年裁判書全文開放檢索 (全台法院)", "")
@@ -1765,7 +1758,7 @@ class LegalIssueQueryEngine:
     ) -> Dict[str, Any]:
         """
         爭點各說實務裁判歸納矩陣 (Issue Doctrine Clustering & Precedents Spectrum)：
-        輸入具體法律爭點，自本機 1,256+ 裁判庫、大法庭裁定、歷審更迭鏈與部會長篇函釋中，
+        輸入具體法律爭點，自本機權威裁判庫、大法庭裁定、歷審更迭鏈與部會長篇函釋中，
         自動歸納「甲說、乙說、折衷說」各說核心論理，並精確梳理【哪些判決採何說】與【現行終局定錨見解】！
         """
         # 1. 檢索本地相關裁判
@@ -1905,12 +1898,14 @@ class LegalIssueQueryEngine:
 - 王澤鑑、林山田、黃榮堅、姜世明、陳敏等權威法學名家之支持或批判見解。
 """
         result_md = self._call_model(prompt)
+        verified_md, case_ver_res = self._verify_citations(result_md, context_topic=issue_topic)
         return {
             "issue_topic": issue_topic,
             "subject": subject,
             "candidate_cases": retrieved_cases,
             "benchmark_case": benchmark_case,
-            "markdown_result": result_md,
+            "markdown_result": verified_md,
+            "case_verification": case_ver_res,
             "search_urls": generate_judicial_search_urls(issue_topic, subject)
         }
 
@@ -2049,8 +2044,8 @@ class LegalIssueQueryEngine:
 - 學界主流（通說）對本案各審級判決之評價
 - 有力學說之批評反思與不同見解
 
-### 六、⚠️ 裁判有效性狀態與引用防禦警示
-- 🟢 現行有效主流見解 / 🟡 各庭見解歧異中 / 🔴 舊判例已遭大法庭廢棄（考生切勿援用）
+### 六、⚠️ 裁判有效性狀態與查核提醒
+- 若本機資料庫已有載明判例停止適用、大法庭裁定變更或憲法法庭廢棄資訊，請據實說明；對於未經查證之裁判效力，**切勿自行臆測標示為現行有效**，應依文末查核清單並向司法院官方資料庫確認
 - 在訴訟實戰與國家考試中，如何避免誤用已廢止之舊見解
 
 ### 七、✍️ 司律二試上位卷 IRAC 作答示範（開標與審級深度論述心法）
@@ -2061,11 +2056,13 @@ class LegalIssueQueryEngine:
 請直接輸出繁體中文 Markdown 報告，文字必須專業、權威，具備最高司法研究等級！
 """
         response_text = self._call_model(prompt)
+        verified_text, case_ver_res = self._verify_citations(response_text, context_topic=case_id)
         return {
             "case_id": case_id,
             "preset_info": preset_info,
             "local_rec": local_rec,
-            "markdown_result": response_text,
+            "markdown_result": verified_text,
+            "case_verification": case_ver_res,
             "external_search_urls": generate_judicial_search_urls(case_id)
         }
 
@@ -2087,7 +2084,7 @@ class LegalIssueQueryEngine:
         """
         全方位法學統一檢索樞紐：
         多維度即時查詢：
-        1. 本地權威判解庫 (1,256 筆裁判/大法庭/憲判字/高院/筆記地院)
+        1. 本機權威判解庫（大法庭裁定／憲法法庭判決與解釋／最高院及各審級代表裁判）
         2. 司律核心法條庫 (六法全書關聯條號)
         3. 外部審級脈絡 / 專業法學庫 / 司法院 30 年判決跨庫直連
         4. 審級脈絡時間軸過濾滑桿 (time_filter)

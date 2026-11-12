@@ -12,10 +12,21 @@ judicial_appeal_chain.py
 import json
 import re
 import sqlite3
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 from config import JUDICIAL_1M_DIR, DATA_DIR
+
+
+class ClosingConnection(sqlite3.Connection):
+    """Ensure SQLite connections close upon exiting a `with` block."""
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
 
 
 
@@ -94,6 +105,7 @@ class JudicialAppealChainEngine:
                     Path(DATA_DIR) / "judicial_1m_db" / "judicial_1m_index.db",
                     Path(DATA_DIR) / "judicial_exam_core.db",
                     Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+                    Path(tempfile.gettempdir()) / "judicial_exam_core.db",
                 ]:
                     if cand.exists():
                         self.index_db_path = cand
@@ -102,13 +114,14 @@ class JudicialAppealChainEngine:
     def _get_connection(self) -> sqlite3.Connection:
         if self._db_engine is not None:
             return self._db_engine._get_ro_conn(self.index_db_path)
-        uri = f"file:///{Path(self.index_db_path).resolve().as_posix()}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, timeout=60.0)
-        conn.row_factory = sqlite3.Row
+        uri = f"{Path(self.index_db_path).resolve().as_uri()}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=60.0, factory=ClosingConnection)
         try:
+            conn.row_factory = sqlite3.Row
             conn.execute("PRAGMA busy_timeout = 60000;")
         except Exception:
-            pass
+            conn.close()
+            raise
         return conn
 
     def get_appeal_chain(
@@ -156,9 +169,18 @@ class JudicialAppealChainEngine:
                     n = m_short.group(4)
 
         if is_remote:
+            rem_chain = db_eng._remote_get_json(
+                "/appeal_chain",
+                {"case_id": clean_case_id, "court": court, "year": y, "word": w, "no": n},
+                timeout=6.0,
+            )
+            if isinstance(rem_chain, dict) and "timeline" in rem_chain and rem_chain.get("success"):
+                return rem_chain
             lookup_q = clean_case_id or f"{court} {y} 年度{w}字第 {n} 號".strip()
             rem = db_eng.find_by_citation(lookup_q)
             if not rem or not rem.get("found"):
+                if isinstance(rem_chain, dict) and "timeline" in rem_chain:
+                    return rem_chain
                 return {"success": False, "target_case_id": clean_case_id, "error": "於遠端裁判母庫中查無此裁判紀錄", "priors": [], "subsequents": [], "timeline": []}
             cur_h = rem.get("holding_snippet") or rem.get("text") or ""
             cur_disp = infer_disposition_intelligence(cur_h)

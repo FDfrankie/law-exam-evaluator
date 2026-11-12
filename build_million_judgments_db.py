@@ -32,11 +32,15 @@ import tempfile
 import subprocess
 import shutil
 import argparse
+import logging
 import time
+import urllib.error
 import urllib.request
 import urllib.parse
 from pathlib import Path
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     from config import (
@@ -48,6 +52,10 @@ try:
     except ImportError:
         JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db"
         OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox"
+    try:
+        from config import safe_requests_get
+    except ImportError:
+        safe_requests_get = None
 except ImportError:
     BASE_DIR = Path(__file__).resolve().parent
     DATA_DIR = BASE_DIR / "data" if (BASE_DIR / "data").exists() else BASE_DIR
@@ -58,6 +66,7 @@ except ImportError:
     JUDICIAL_1M_DIR = DATA_DIR / "judicial_1m_db"
     OPENDATA_INBOX_DIR = DATA_DIR / "opendata_inbox"
     GOOGLE_DRIVE_DATA_DIR = str(DATA_DIR)
+    safe_requests_get = None
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -242,20 +251,43 @@ class MillionJudgmentsSQLiteEngine:
         except Exception:
             pass
 
+    @staticmethod
+    def _get_remote_auth_token() -> str:
+        for env_key in ("DB_BRIDGE_TOKEN", "LOCAL_DB_API_TOKEN"):
+            val = os.getenv(env_key, "").strip()
+            if val:
+                return val
+        try:
+            import streamlit as st
+            if hasattr(st, "secrets"):
+                for sec_key in ("DB_BRIDGE_TOKEN", "LOCAL_DB_API_TOKEN"):
+                    if sec_key in st.secrets:
+                        val = str(st.secrets[sec_key]).strip()
+                        if val:
+                            return val
+        except Exception:
+            pass
+        return ""
+
     def _remote_get_json(self, endpoint: str, params: Optional[Dict[str, Any]] = None, timeout: float = 4.0) -> Optional[Any]:
         if not self.remote_api_url:
             return None
+        qs = f"?{urllib.parse.urlencode(params)}" if params else ""
+        url = f"{self.remote_api_url}{endpoint}{qs}"
+        headers = {"Accept": "application/json", "User-Agent": "LawExamEvaluator/1.0"}
+        token = self._get_remote_auth_token()
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         try:
-            qs = f"?{urllib.parse.urlencode(params)}" if params else ""
-            req = urllib.request.Request(
-                f"{self.remote_api_url}{endpoint}{qs}",
-                headers={"Accept": "application/json", "User-Agent": "LawExamEvaluator/1.0"}
-            )
+            req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status == 200:
                     return json.loads(resp.read().decode("utf-8", errors="ignore"))
-        except Exception:
-            return None
+                logger.warning("Remote DB API %s returned HTTP %s", endpoint, resp.status)
+        except urllib.error.HTTPError as exc:
+            logger.warning("Remote DB API HTTP error on %s: %s %s", endpoint, exc.code, exc.reason)
+        except Exception as exc:
+            logger.debug("Remote DB API request failed on %s: %s", endpoint, exc)
         return None
 
     def _get_conn(self, db_path: Path) -> sqlite3.Connection:
@@ -733,6 +765,15 @@ class MillionJudgmentsSQLiteEngine:
 
             total_inserted += len(meta_rows)
 
+        if total_inserted > 0 and getattr(self, "db_mode", "empty") == "empty" and self.index_db_path and self.index_db_path.exists():
+            self._detect_schema_tables()
+            if self._meta_table == "exam_judgments_meta":
+                self.db_mode = "core"
+                self.db_title = "⚖️ 司律核心精華子庫 (國考精選版)"
+            else:
+                self.db_mode = "master"
+                self.db_title = "🏛️ 百萬裁判全量母庫 (7,975,000+ 筆索引)"
+
         return total_inserted
 
     @staticmethod
@@ -765,15 +806,35 @@ class MillionJudgmentsSQLiteEngine:
         return matched
 
     @staticmethod
+    def _normalize_cited_laws(cited_laws: str) -> str:
+        """Collapse spaces within a single statute citation without fusing adjacent citations."""
+        cleaned = (cited_laws or "").replace("\x00", "").strip()
+        if not cleaned:
+            return ""
+        # Merge "民法 第 184 條" -> "民法第184條", while keeping spaces between "民法第184條 刑法第271條"
+        cleaned = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=第\s*[\d一二三四五六七八九十百千])", "", cleaned)
+        cleaned = re.sub(r"(?<=第)\s+(?=[\d一二三四五六七八九十百千])", "", cleaned)
+        cleaned = re.sub(r"(?<=[\d一二三四五六七八九十百千])\s+(?=(?:之\s*\d+|條|項|款|目))", "", cleaned)
+        cleaned = re.sub(r"(?<=之)\s+(?=\d+)", "", cleaned)
+        return cleaned
+
+    @staticmethod
     def _build_fts_expr(text: str, col_prefix: str = "") -> str:
-        clean_fts = re.sub(r"""["';:\*\(\)]""", " ", text or "")
-        tokens = [t.strip() for t in re.split(r'[\s,，、＆＋\+\-&]+', clean_fts) if t.strip()]
+        clean_fts = (text or "").replace("\x00", "")
+        clean_fts = re.sub(r"""["';:\*\(\)\^\{\}\[\]<>+~|&]""", " ", clean_fts)
+        raw_tokens = [t.strip("- ") for t in re.split(r"[\s,，、＆＋\+]+", clean_fts) if t.strip("- ")]
+        tokens = [t for t in raw_tokens if t.upper() not in ("AND", "OR", "NOT", "NEAR")]
         if not tokens:
             return ""
         parts = []
         for tok in tokens[:5]:
             pref = f"{col_prefix} : " if col_prefix else ""
-            parts.append(f'{pref}"{tok}"*')
+            use_prefix = (
+                len(tok) >= 2
+                and not re.fullmatch(r"[\d\-]+", tok)
+                and not re.search(r"-\d+$", tok)
+            )
+            parts.append(f'{pref}"{tok}"*' if use_prefix else f'{pref}"{tok}"')
         return " AND ".join(parts)
 
     def _row_to_search_dict(self, r: sqlite3.Row) -> Dict[str, Any]:
@@ -825,14 +886,14 @@ class MillionJudgmentsSQLiteEngine:
         if not self.index_db_path or not self.index_db_path.exists():
             return []
 
-        query = str(kwargs.get("query", "")).strip()
+        query = str(kwargs.get("query", "")).replace("\x00", "").strip()
         jud_year = str(kwargs.get("jud_year", "")).strip()
         jud_word = str(kwargs.get("jud_word", "")).replace("全部字別 (不限)", "").strip()
         jud_no = str(kwargs.get("jud_no", "")).strip()
-        case_cause = str(kwargs.get("case_cause", "")).strip()
-        main_holding = str(kwargs.get("main_holding", "")).strip()
-        argument_issue = str(kwargs.get("argument_issue", "")).strip()
-        cited_laws = str(kwargs.get("cited_laws", "")).strip()
+        case_cause = str(kwargs.get("case_cause", "")).replace("\x00", "").strip()
+        main_holding = str(kwargs.get("main_holding", "")).replace("\x00", "").strip()
+        argument_issue = str(kwargs.get("argument_issue", "")).replace("\x00", "").strip()
+        cited_laws = str(kwargs.get("cited_laws", "")).replace("\x00", "").strip()
         case_type = str(kwargs.get("case_type", "全部")).strip()
         court_system = str(kwargs.get("court_system", "全部法院 (全體司法體系)")).strip()
         filter_no_legal_issue = bool(kwargs.get("filter_no_legal_issue", True))
@@ -855,7 +916,7 @@ class MillionJudgmentsSQLiteEngine:
                 fts_parts.append(expr)
 
         if cited_laws:
-            norm_law = re.sub(r"\s+", "", cited_laws)
+            norm_law = self._normalize_cited_laws(cited_laws)
             law_expr = self._build_fts_expr(norm_law, col_prefix="laws_cited")
             if law_expr:
                 fts_parts.append(law_expr)
@@ -935,7 +996,7 @@ class MillionJudgmentsSQLiteEngine:
                     if cjk_chunks:
                         alt_fts = " AND ".join(f'"{ch[:2]}"*' for ch in cjk_chunks[:2])
                         if cited_laws:
-                            law_expr = self._build_fts_expr(re.sub(r"\s+", "", cited_laws), col_prefix="laws_cited")
+                            law_expr = self._build_fts_expr(self._normalize_cited_laws(cited_laws), col_prefix="laws_cited")
                             if law_expr:
                                 alt_fts = f"{alt_fts} AND {law_expr}"
                         alt_params = [alt_fts] + list(params[1:])
@@ -1032,11 +1093,19 @@ class MillionJudgmentsSQLiteEngine:
                                 ).fetchone()
                             if not row:
                                 cand_rows = conn.execute(
-                                    f"SELECT * FROM {meta_tbl} WHERE jud_word IN ({ph}) LIMIT 50",
-                                    w_list
+                                    f"SELECT * FROM {meta_tbl} WHERE jud_word IN ({ph}) AND jud_no = ? LIMIT 10",
+                                    (*w_list, c_no)
                                 ).fetchall()
+                                if not cand_rows:
+                                    cand_rows = conn.execute(
+                                        f"SELECT * FROM {meta_tbl} WHERE jud_word IN ({ph}) AND case_id LIKE ? LIMIT 10",
+                                        (*w_list, f"%第{c_no}號%")
+                                    ).fetchall()
+                                c_no_pat = re.compile(rf"(?<!\d){re.escape(c_no)}(?!\d)")
                                 for cr in cand_rows:
-                                    if (cr["jud_no"] or "") == c_no or f"第{c_no}號" in re.sub(r"\s+", "", cr["case_id"] or ""):
+                                    cr_no = str(cr["jud_no"] or "").strip()
+                                    cr_cid = re.sub(r"\s+", "", cr["case_id"] or "")
+                                    if cr_no == c_no or c_no_pat.search(cr_cid):
                                         row = cr
                                         break
                 if row:
@@ -1127,6 +1196,9 @@ class MillionJudgmentsSQLiteEngine:
             return res if isinstance(res, dict) and res.get("is_redirect") else None
 
         if not self.index_db_path or not self.index_db_path.exists() or not self._has_redirects_table:
+            if self.remote_api_url and getattr(self, "db_mode", "") != "remote":
+                res = self._remote_get_json("/redirect", {"case_id": case_id})
+                return res if isinstance(res, dict) and res.get("is_redirect") else None
             return None
         q_raw = case_id.strip()
         q_clean = re.sub(r"\s+", "", q_raw)
@@ -1138,19 +1210,41 @@ class MillionJudgmentsSQLiteEngine:
                 ).fetchone()
 
                 if not row:
-                    row = conn.execute(
-                        "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? LIMIT 1",
+                    q_pat_str = (r"(?<!\d)" if q_clean[:1].isdigit() else "") + re.escape(q_clean) + (r"(?!\d)" if q_clean[-1:].isdigit() else "")
+                    q_boundary_re = re.compile(q_pat_str)
+                    like_cands = conn.execute(
+                        "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? LIMIT 25",
                         (f"%{q_raw}%",)
-                    ).fetchone()
+                    ).fetchall()
+                    for cand in like_cands:
+                        if q_boundary_re.search(re.sub(r"\s+", "", cand["dismissed_case_id"] or "")):
+                            row = cand
+                            break
 
                 if not row:
-                    m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s]{1,6}?)(?:字)?(?:第)?(\d+)", q_clean)
+                    m = re.search(r"(\d{2,3})(?:年|年度)?([^\d\s號第]{1,6}?)(?:字)?(?:第)?(\d+)", q_clean)
                     if m:
                         y, w, n = m.group(1), m.group(2), m.group(3)
-                        row = conn.execute(
-                            "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? LIMIT 1",
-                            (f"%{y}%", f"%{w}%", f"%{n}%")
-                        ).fetchone()
+                        w_base = re.sub(r"(?:民事|刑事|行政)?(?:字)?$", "", w).strip() or w
+                        y_pat = re.compile(rf"(?<!\d){re.escape(y)}(?!\d)")
+                        n_pat = re.compile(rf"(?<!\d){re.escape(n)}(?!\d)")
+                        cand_rows = conn.execute(
+                            "SELECT * FROM judgment_redirects "
+                            "WHERE dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? "
+                            "AND (dismissed_case_id LIKE ? OR dismissed_case_id LIKE ? OR dismissed_case_id LIKE ?) "
+                            "LIMIT 50",
+                            (f"%{y}%", f"%{w_base}%", f"%{n}號%", f"%{n} 號%", f"%{n}")
+                        ).fetchall()
+                        if not cand_rows:
+                            cand_rows = conn.execute(
+                                "SELECT * FROM judgment_redirects WHERE dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? AND dismissed_case_id LIKE ? LIMIT 100",
+                                (f"%{y}%", f"%{w_base}%", f"%{n}%")
+                            ).fetchall()
+                        for cand in cand_rows:
+                            cid_cand = re.sub(r"\s+", "", cand["dismissed_case_id"] or "")
+                            if y_pat.search(cid_cand) and w_base in cid_cand and n_pat.search(cid_cand):
+                                row = cand
+                                break
 
                 if row:
                     return {
@@ -1162,7 +1256,11 @@ class MillionJudgmentsSQLiteEngine:
                         "created_at": row["created_at"]
                     }
         except Exception as e:
-            print(f"[get_redirect_target error] {e}")
+            logger.warning("get_redirect_target error: %s", e)
+
+        if self.remote_api_url and getattr(self, "db_mode", "") != "remote":
+            res = self._remote_get_json("/redirect", {"case_id": case_id})
+            return res if isinstance(res, dict) and res.get("is_redirect") else None
         return None
 
     def prune_non_substantive_records(self, commit: bool = False, batch_size: int = 5000) -> Dict[str, Any]:
@@ -1179,7 +1277,7 @@ class MillionJudgmentsSQLiteEngine:
             r"大法庭|憲判字|釋字|判例|決議|座談會|肯定說|否定說|折衷說|學說|通說|實務見解|"
             r"爭點|競合|界限|排他|構成要件|阻卻違法|期待可能性|正當防衛|緊急避難|合憲|違憲|目的性限縮|類推適用|爭點效|既判力"
         )
-        junk_rowids = []
+        junk_entries = []
         protected = 0
         with self._get_ro_conn(self.index_db_path) as conn:
             cur = conn.execute(f"SELECT rowid, court, case_id, title, holding_preview FROM {self._meta_table}")
@@ -1193,22 +1291,50 @@ class MillionJudgmentsSQLiteEngine:
                         if protect_re.search(title or "") or protect_re.search(hold or ""):
                             protected += 1
                             continue
-                        junk_rowids.append(rowid)
+                        junk_entries.append((rowid, cid_s))
 
-        if commit and junk_rowids:
+        if commit and junk_entries:
+            all_drifted_cids = []
             with self._get_conn(self.index_db_path) as wconn:
-                for i in range(0, len(junk_rowids), batch_size):
-                    sub = junk_rowids[i:i + batch_size]
-                    ph = ",".join("?" for _ in sub)
-                    wconn.execute(f"DELETE FROM {self._meta_table} WHERE rowid IN ({ph})", sub)
+                for i in range(0, len(junk_entries), batch_size):
+                    sub_entries = junk_entries[i:i + batch_size]
+                    sub_rowids = [r_id for r_id, _ in sub_entries]
+                    ph = ",".join("?" for _ in sub_rowids)
+                    wconn.execute(f"DELETE FROM {self._meta_table} WHERE rowid IN ({ph})", sub_rowids)
+                    expected_by_rowid = {r_id: c_id for r_id, c_id in sub_entries}
+                    try:
+                        fts_rows = wconn.execute(
+                            f"SELECT rowid, case_id FROM {self._fts_table} WHERE rowid IN ({ph})",
+                            sub_rowids,
+                        ).fetchall()
+                        matched_fts_rowids = [
+                            fr[0] for fr in fts_rows if fr[1] == expected_by_rowid.get(fr[0])
+                        ]
+                        matched_cids = {expected_by_rowid[r_id] for r_id in matched_fts_rowids}
+                        if matched_fts_rowids:
+                            mph = ",".join("?" for _ in matched_fts_rowids)
+                            wconn.execute(f"DELETE FROM {self._fts_table} WHERE rowid IN ({mph})", matched_fts_rowids)
+                        if len(matched_fts_rowids) < len(sub_entries):
+                            all_drifted_cids.extend(
+                                c_id for _, c_id in sub_entries if c_id and c_id not in matched_cids
+                            )
+                    except Exception as fts_err:
+                        logger.warning("FTS prune cleanup failed for batch: %s", fts_err)
+                for j in range(0, len(all_drifted_cids), 900):
+                    dsub = all_drifted_cids[j:j + 900]
+                    dph = ",".join("?" for _ in dsub)
+                    try:
+                        wconn.execute(f"DELETE FROM {self._fts_table} WHERE case_id IN ({dph})", dsub)
+                    except Exception as fts_err:
+                        logger.warning("FTS drifted prune cleanup failed: %s", fts_err)
                 wconn.commit()
             self._cached_count = None
 
         return {
             "success": True,
-            "candidates": len(junk_rowids),
+            "candidates": len(junk_entries),
             "protected": protected,
-            "pruned": len(junk_rowids) if commit else 0,
+            "pruned": len(junk_entries) if commit else 0,
             "committed": commit,
         }
 
@@ -1354,20 +1480,40 @@ class MillionJudgmentsSQLiteEngine:
                                      target_count: int = 1000000,
                                      progress_cb=None) -> Dict[str, Any]:
         import requests
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+        allow_insecure = os.getenv("LEGAL_ALLOW_INSECURE_SSL", "0").lower() in ("1", "true", "yes")
+
+        def _safe_get(url: str, **req_kwargs):
+            if safe_requests_get is not None:
+                return safe_requests_get(url, **req_kwargs)
+            try:
+                return requests.get(url, verify=True, **req_kwargs)
+            except requests.exceptions.SSLError:
+                if allow_insecure:
+                    return requests.get(url, verify=False, **req_kwargs)
+                raise
+
+        def _safe_post(url: str, **req_kwargs):
+            try:
+                return requests.post(url, verify=True, **req_kwargs)
+            except requests.exceptions.SSLError as ssl_err:
+                if allow_insecure:
+                    logger.warning("LEGAL_ALLOW_INSECURE_SSL enabled; retrying POST %s with verify=False", url)
+                    return requests.post(url, verify=False, **req_kwargs)
+                raise requests.exceptions.SSLError(
+                    f"TLS/SSL 憑證驗證失敗 ({url}): {ssl_err}。預設禁止停用驗證；如確定安全且缺乏 GRCA 根憑證，請設 LEGAL_ALLOW_INSECURE_SSL=1。"
+                ) from ssl_err
 
         headers = {"Content-Type": "application/json", "User-Agent": "LawExamData/1.0"}
         token = ""
 
         if member_account and pwd:
             try:
-                r_tok = requests.post(
+                r_tok = _safe_post(
                     "https://opendata.judicial.gov.tw/api/MemberTokens",
                     headers=headers,
                     json={"memberAccount": member_account.strip(), "pwd": pwd.strip()},
                     timeout=20,
-                    verify=False
                 )
                 if r_tok.status_code == 200:
                     token = r_tok.json().get("token", "")
@@ -1379,16 +1525,16 @@ class MillionJudgmentsSQLiteEngine:
 
         filesets_to_download = []
         try:
-            r_cat = requests.get(
+            r_cat = _safe_get(
                 "https://opendata.judicial.gov.tw/data/api/rest/categories",
-                headers=headers, timeout=20, verify=False
+                headers=headers, timeout=20
             )
             cats = r_cat.json() if r_cat.status_code == 200 else [{"categoryNo": "001", "categoryName": "裁判書"}]
             for c in cats:
                 c_no = c.get("categoryNo", "001")
-                r_res = requests.get(
+                r_res = _safe_get(
                     f"https://opendata.judicial.gov.tw/data/api/rest/categories/{c_no}/resources",
-                    headers=headers, timeout=25, verify=False
+                    headers=headers, timeout=25
                 )
                 if r_res.status_code == 200 and isinstance(r_res.json(), list):
                     for ds in r_res.json():
@@ -1425,7 +1571,7 @@ class MillionJudgmentsSQLiteEngine:
             print(f"⬇️ 正在下載 [{idx_fs}/{len(filesets_to_download)}]: {fs_info['title']} -> {dest_file.name}...")
 
             try:
-                with requests.get(dl_url, headers=headers, stream=True, timeout=120, verify=False) as r_dl:
+                with _safe_get(dl_url, headers=headers, stream=True, timeout=120) as r_dl:
                     if r_dl.status_code == 200:
                         with open(dest_file, "wb") as f_out:
                             for chunk in r_dl.iter_content(chunk_size=1024 * 1024):

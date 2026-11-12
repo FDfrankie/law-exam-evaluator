@@ -1,6 +1,10 @@
 import sys
 import os
+import hmac
+import hashlib
 from pathlib import Path
+from typing import List, Optional, Tuple
+
 try:
     from dotenv import load_dotenv
     env_path = Path(__file__).resolve().parent / ".env"
@@ -12,42 +16,107 @@ try:
 except ImportError:
     pass
 
-def get_gemini_api_key() -> str:
-    """Get Gemini API Key from Streamlit Secrets or Environment Variables"""
-    key = os.getenv("GEMINI_API_KEY", "").strip()
-    if not key:
-        try:
-            import streamlit as st
-            if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets:
-                key = str(st.secrets["GEMINI_API_KEY"]).strip()
-        except Exception:
-            pass
+
+def _get_streamlit_secret(name: str) -> str:
+    """Safely read a secret string from st.secrets outside or inside Streamlit."""
+    try:
+        import streamlit as st
+        secrets = getattr(st, "secrets", None)
+        if secrets is not None:
+            val = secrets.get(name) if hasattr(secrets, "get") else (
+                secrets[name] if name in secrets else None
+            )
+            if val is not None and str(val).strip():
+                return str(val).strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _resolve_gemini_api_key(explicit_key: Optional[str] = None) -> Tuple[str, str]:
+    """Resolve Gemini API key and its source ('byok'|'secrets'|'env'|'none')."""
+    if explicit_key is not None and str(explicit_key).strip():
+        return str(explicit_key).strip(), "byok"
+
+    try:
+        import streamlit as st
+        ss = getattr(st, "session_state", None)
+        if ss is not None:
+            val = ss.get("user_gemini_api_key") if hasattr(ss, "get") else (
+                ss["user_gemini_api_key"] if "user_gemini_api_key" in ss else None
+            )
+            if val is not None and str(val).strip():
+                return str(val).strip(), "byok"
+    except Exception:
+        pass
+
+    secret_key = _get_streamlit_secret("GEMINI_API_KEY")
+    if secret_key:
+        return secret_key, "secrets"
+
+    env_key = os.getenv("GEMINI_API_KEY", "").strip()
+    if env_key:
+        return env_key, "env"
+
+    return "", "none"
+
+
+def get_gemini_api_key(explicit_key: Optional[str] = None) -> str:
+    """Get Gemini API Key from explicit key, session BYOK, Streamlit Secrets, or env."""
+    key, _ = _resolve_gemini_api_key(explicit_key=explicit_key)
     return key
 
-GEMINI_API_KEY = get_gemini_api_key()
-DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
 
-# 現行有效之 Google Gemini 官方生產環境模型清單（首選最快最穩定的最新端點，依序故障轉移）
+def get_gemini_api_key_source(explicit_key: Optional[str] = None) -> str:
+    """Return the active Gemini API key source: 'byok', 'secrets', 'env', or 'none'."""
+    _, source = _resolve_gemini_api_key(explicit_key=explicit_key)
+    return source
+
+
+GEMINI_API_KEY = get_gemini_api_key()
+DEFAULT_GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-flash-latest"
+
+# 現行有效之 Google Gemini 官方 GA 生產環境模型清單（依序故障轉移）
 GEMINI_FALLBACK_MODELS = [
-    "gemini-flash-latest",
     "gemini-2.5-flash",
+    "gemini-flash-latest",
     "gemini-2.5-flash-lite",
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-3.8-flash"
+    "gemini-2.0-flash",
+    "gemini-2.5-pro",
 ]
 
-def get_gemini_models_to_try(primary_model: str = None) -> list:
+
+def get_gemini_models_to_try(primary_model: Optional[str] = None) -> List[str]:
     """Return prioritized list of Gemini model candidates for resilient fallback."""
-    models = []
-    if primary_model and primary_model not in models:
-        models.append(primary_model)
-    if DEFAULT_GEMINI_MODEL not in models:
-        models.append(DEFAULT_GEMINI_MODEL)
-    for m in GEMINI_FALLBACK_MODELS:
-        if m not in models:
-            models.append(m)
+    models: List[str] = []
+    for candidate in (primary_model, DEFAULT_GEMINI_MODEL, *GEMINI_FALLBACK_MODELS):
+        if candidate:
+            clean = str(candidate).strip()
+            if clean and clean not in models:
+                models.append(clean)
     return models
+
+
+# SHA-256 hex digest of the legacy owner credential (plaintext never stored in source)
+_LEGACY_DEVELOPER_PASSWORD_SHA256 = (
+    "0182d0d4463d3d5781f5e9addacbebe24a7875ad14f118559bcdc183e11f8f49"
+)
+
+
+def verify_developer_password(pwd: str) -> bool:
+    """Verify developer password against secrets/env DEVELOPER_PASSWORD or legacy SHA-256 digest."""
+    if not pwd or not isinstance(pwd, str):
+        return False
+    candidate = pwd.strip()
+    if not candidate:
+        return False
+
+    configured = _get_streamlit_secret("DEVELOPER_PASSWORD") or os.getenv("DEVELOPER_PASSWORD", "").strip()
+    if configured:
+        return hmac.compare_digest(candidate.encode("utf-8"), configured.encode("utf-8"))
+
+    candidate_digest = hashlib.sha256(candidate.lower().encode("utf-8")).hexdigest()
+    return hmac.compare_digest(candidate_digest, _LEGACY_DEVELOPER_PASSWORD_SHA256)
 
 def get_base_data_dir() -> Path:
     custom_dir = os.getenv("GOOGLE_DRIVE_DATA_DIR")
@@ -148,8 +217,14 @@ def get_judgements_dir() -> Path:
 
 JUDGEMENTS_DIR = get_judgements_dir()
 
-def init_directories():
-    """Ensure data directories exist"""
+_DIRS_INITIALIZED: bool = False
+
+
+def init_directories(force: bool = False):
+    """Ensure data directories exist (guarded against redundant Streamlit reruns)."""
+    global _DIRS_INITIALIZED
+    if _DIRS_INITIALIZED and not force:
+        return
     for folder in [
         RAW_DATA_DIR, STANDARDS_DIR, STUDENT_PAPERS_DIR, REPORTS_DIR,
         CONSTITUTIONAL_DIR, NATIONAL_LAWS_DIR, TRAINING_DATA_DIR,
@@ -167,6 +242,7 @@ def init_directories():
                     pass
         except Exception as e:
             print(f"[DIR ERROR] Failed creating {folder}: {e}")
+    _DIRS_INITIALIZED = True
 
 def safe_requests_get(url: str, session=None, **kwargs):
     """
@@ -197,6 +273,7 @@ def safe_requests_get(url: str, session=None, **kwargs):
 
 # 系統核心導航模式常數
 MODE_HOME = "🏠 系統首頁"
+MODE_TEXTBOOK = "📖 體系教科書"
 MODE_EVAL = "📝 試卷批改"
 MODE_GEN = "🎯 模擬命題"
 MODE_BANK = "📚 歷年真題"
@@ -206,6 +283,7 @@ MODE_QA = "💬 法律問答"
 MODE_SUMMARIZER = "📑 裁判精鍊"
 MODE_SIX_CODES = "⚖️ 智慧六法"
 MODE_SFT = "📥 法學筆記"
+MODE_LEGAL_NOTICE = "📮 存證信函"
 MODE_INGEST = "📦 裁判入庫"
 MODE_DEV_MANAGER = "🛠️ 檔案總管"
 

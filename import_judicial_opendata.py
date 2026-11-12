@@ -23,29 +23,16 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 from config import DATA_DIR, RAW_DATA_DIR, STANDARDS_DIR
+try:
+    from config import safe_requests_get
+except ImportError:
+    safe_requests_get = None
 
 OUTPUT_CATALOG_PATH = Path(RAW_DATA_DIR) / "precedents_catalog.json"
 REPO_CATALOG_PATH = Path(__file__).resolve().parent / "data" / "raw_exams" / "precedents_catalog.json"
 SCORING_STANDARDS_DIR = Path(STANDARDS_DIR)
 OPENDATA_DUMP_DIR = Path(DATA_DIR) / "judicial_opendata"
 OPENDATA_DUMP_DIR.mkdir(parents=True, exist_ok=True)
-
-
-import ssl
-from requests.adapters import HTTPAdapter
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
-class _LegacySSLAdapter(HTTPAdapter):
-    """自訂 SSL Adapter：停用 X.509 嚴格驗證以支援缺少 Subject Key Identifier 之司法院伺服器"""
-    def init_poolmanager(self, *args, **kwargs):
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        if hasattr(ssl, "VERIFY_X509_STRICT"):
-            ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT
-        kwargs["ssl_context"] = ctx
-        return super().init_poolmanager(*args, **kwargs)
 
 
 class JudicialOpenDataClient:
@@ -66,11 +53,28 @@ class JudicialOpenDataClient:
         self.token = ""
         import requests
         self._session = requests.Session()
-        self._session.mount("https://", _LegacySSLAdapter())
         self._session.headers.update({
             "Content-Type": "application/json",
             "User-Agent": "LawExamData/1.0"
         })
+
+    def _safe_get(self, url: str, **kwargs):
+        if safe_requests_get is not None:
+            return safe_requests_get(url, session=self._session, **kwargs)
+        return self._session.get(url, verify=True, **kwargs)
+
+    def _safe_post(self, url: str, **kwargs):
+        import requests
+        allow_insecure = os.getenv("LEGAL_ALLOW_INSECURE_SSL", "0").lower() in ("1", "true", "yes")
+        try:
+            return self._session.post(url, verify=True, **kwargs)
+        except requests.exceptions.SSLError as e:
+            if allow_insecure:
+                return self._session.post(url, verify=False, **kwargs)
+            raise requests.exceptions.SSLError(
+                f"TLS/SSL 憑證驗證失敗：無法安全連線至 {url} ({e})。"
+                "預設禁止停用憑證驗證；若確定目標受信任且本機缺乏 GRCA 根憑證，請顯式設定 LEGAL_ALLOW_INSECURE_SSL=1。"
+            ) from e
 
     def authenticate(self, username: str = None, password: str = None) -> Dict[str, Any]:
         """使用帳號密碼登入取得 Token (效期 6 小時)"""
@@ -81,7 +85,7 @@ class JudicialOpenDataClient:
 
         payload = {"user": u, "password": p}
         try:
-            resp = self._session.post(self.AUTH_URL, json=payload, timeout=20, verify=False)
+            resp = self._safe_post(self.AUTH_URL, json=payload, timeout=20)
             if resp.status_code == 200:
                 res_json = resp.json()
                 tk = res_json.get("Token") or res_json.get("token")
@@ -104,7 +108,7 @@ class JudicialOpenDataClient:
             return {"success": False, "error": "請先登入取得 Token"}
 
         try:
-            resp = self._session.post(self.JLIST_URL, json={"token": tk}, timeout=30, verify=False)
+            resp = self._safe_post(self.JLIST_URL, json={"token": tk}, timeout=30)
             if resp.status_code == 200:
                 return {"success": True, "data": resp.json()}
             else:
@@ -119,7 +123,7 @@ class JudicialOpenDataClient:
             return {"success": False, "error": "請先登入取得 Token"}
 
         try:
-            resp = self._session.post(self.JDOC_URL, json={"token": tk, "jid": jid}, timeout=30, verify=False)
+            resp = self._safe_post(self.JDOC_URL, json={"token": tk, "jid": jid}, timeout=30)
             if resp.status_code == 200:
                 return {"success": True, "data": resp.json()}
             else:

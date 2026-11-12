@@ -29,11 +29,11 @@ try:
 except ImportError:
     Image = None
 
+import config
 from config import (
     DATA_DIR,
     get_gemini_api_key,
     DEFAULT_GEMINI_MODEL,
-    get_gemini_models_to_try
 )
 
 # ------------------------------------------------------------------------------
@@ -584,7 +584,8 @@ def suggest_name_by_content(
     api_key = get_gemini_api_key()
     if use_ai and api_key and len(text_sample) >= 40:
         try:
-            # 支援 google-genai 新舊 SDK
+            from llm_client import generate_json, LlmCallError
+
             prompt = f"""
 你是一位台灣國家司法官與律師二試權威閱卷委員與法學圖書館總策劃。
 請閱讀以下法學教材/手寫筆記的前言與內文摘錄：
@@ -606,43 +607,19 @@ def suggest_name_by_content(
   "reasoning": "簡短命名依據（例如：內文集中探討民法第354條物之瑕疵與危險負擔移轉時點）"
 }}
 """
-            raw_resp = ""
-            models_to_try = get_gemini_models_to_try(DEFAULT_GEMINI_MODEL)
-            for m in models_to_try:
-                try:
-                    try:
-                        from google import genai
-                        from google.genai import types
-                        client = genai.Client(api_key=api_key)
-                        resp = client.models.generate_content(
-                            model=m,
-                            contents=prompt,
-                            config=types.GenerateContentConfig(temperature=0.2)
-                        )
-                        raw_resp = resp.text
-                        if raw_resp:
-                            break
-                    except Exception:
-                        import google.generativeai as ggenai
-                        ggenai.configure(api_key=api_key)
-                        model = ggenai.GenerativeModel(m)
-                        resp = model.generate_content(prompt)
-                        raw_resp = resp.text
-                        if raw_resp:
-                            break
-                except Exception:
-                    continue
-
-            if raw_resp:
-                clean_json_str = re.search(r'\{.*\}', raw_resp, re.DOTALL)
-                if clean_json_str:
-                    parsed = json.loads(clean_json_str.group(0))
-                    t_title = parsed.get("topic_title", "").strip()
-                    if t_title:
-                        ai_suggested_name = t_title
-                        ai_reason = parsed.get("reasoning", "")
-                        confidence = "high"
-        except Exception:
+            parsed = generate_json(
+                prompt,
+                primary_model=DEFAULT_GEMINI_MODEL,
+                temperature=0.2,
+                api_key=api_key,
+            )
+            if isinstance(parsed, dict):
+                t_title = str(parsed.get("topic_title", "")).strip()
+                if t_title:
+                    ai_suggested_name = t_title
+                    ai_reason = str(parsed.get("reasoning", "")).strip()
+                    confidence = "high"
+        except (ImportError, LlmCallError, Exception):
             pass
 
     final_topic = ai_suggested_name if ai_suggested_name else rule_topic
@@ -862,8 +839,8 @@ def render_developer_file_manager():
 
     # 嚴格多層防護機制：若當前獨立 Session 未經金鑰授權，立即阻絕存取
     is_auth = st.session_state.get("is_developer_authenticated", False)
-    dev_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip().lower()
-    if not (is_auth and dev_pwd == "brrfdccee"):
+    dev_pwd = str(st.session_state.get("inp_developer_pwd", "")).strip()
+    if not (is_auth and config.verify_developer_password(dev_pwd)):
         st.error("🔒 【權限不足・存取遭拒】此檔案庫總管收錄作者個人未公開之法學手寫筆記與教材檔案，未獲授權嚴禁調閱。請於左側邊欄輸入開發者金鑰解鎖。")
         return
 

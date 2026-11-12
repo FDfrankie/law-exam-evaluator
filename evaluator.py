@@ -5,38 +5,145 @@
 2. 司律閱卷級距評分（爭點識別、法學論述/三段論法、學說實務見解、事實涵攝）
 3. 輸出結構化診斷報告與建議
 """
+import logging
 import os
 import json
+import re
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Union
 from PIL import Image
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-except Exception:
-    try:
-        import google.generativeai as legacy_genai
-    except Exception:
-        legacy_genai = None
-    USE_MODERN_GENAI = False
+from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL
+import llm_client
 
-from config import get_gemini_api_key, REPORTS_DIR, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
+logger = logging.getLogger(__name__)
+
+
+def _normalize_citation_verification(v_res: Dict[str, Any]) -> Dict[str, Any]:
+    """Ensure citation_verification works with both CaseCitationVerifier keys and app.py verified/unverified keys."""
+    all_cits = list(v_res.get("citations") or [])
+    verified: List[Dict[str, Any]] = []
+    unverified: List[str] = []
+    for c in all_cits:
+        if not isinstance(c, dict):
+            unverified.append(str(c))
+            continue
+        cit_label = c.get("raw") or c.get("citation") or c.get("case_id") or c.get("text") or str(c)
+        is_ok = bool(c.get("verified") or c.get("is_verified") or c.get("status") == "verified" or c.get("matched"))
+        if is_ok:
+            db_match = c.get("db_match") or c.get("matched_title") or c.get("title") or c.get("holding", "")[:80] or cit_label
+            entry = dict(c)
+            entry.setdefault("citation", cit_label)
+            entry.setdefault("db_match", db_match)
+            verified.append(entry)
+        else:
+            unverified.append(cit_label)
+    normalized = dict(v_res)
+    normalized["citations"] = all_cits
+    normalized["verified"] = verified
+    normalized["unverified"] = unverified
+    normalized.setdefault("verified_count", len(verified))
+    normalized.setdefault("hallucination_count", len(unverified))
+    return normalized
+
+
+_STATUTE_LAW_ALIASES = {
+    "刑法": "中華民國刑法",
+    "憲法": "中華民國憲法",
+    "民訴": "民事訴訟法",
+    "刑訴": "刑事訴訟法",
+    "行程法": "行政程序法",
+    "國賠法": "國家賠償法",
+}
+
+
+def _verify_statutes_in_text(text: str) -> Dict[str, Any]:
+    """Verify statute law names and article numbers safely against six_codes_engine."""
+    if not text or not isinstance(text, str):
+        return {"checked": False, "statutes": [], "verified_count": 0, "unverified_count": 0}
+    try:
+        from six_codes_engine import load_six_codes_data, get_law_articles, normalize_article_no
+        _, _, law_map = load_six_codes_data()
+    except Exception as exc:
+        logger.warning("載入六法全書法條索引失敗，略過法條查核: %s", exc)
+        return {"checked": False, "statutes": [], "verified_count": 0, "unverified_count": 0, "error": str(exc)}
+
+    if not isinstance(law_map, dict) or not law_map:
+        return {"checked": False, "statutes": [], "verified_count": 0, "unverified_count": 0}
+
+    candidate_names = sorted(set(law_map.keys()) | set(_STATUTE_LAW_ALIASES.keys()), key=len, reverse=True)
+    if not candidate_names:
+        return {"checked": False, "statutes": [], "verified_count": 0, "unverified_count": 0}
+
+    pattern = re.compile(
+        r"(" + "|".join(re.escape(name) for name in candidate_names) + r")\s*第?\s*(\d+(?:\s*(?:之|-)\s*\d+)?)\s*條"
+    )
+
+    seen = set()
+    statutes: List[Dict[str, Any]] = []
+    article_cache: Dict[str, set] = {}
+
+    for match in pattern.finditer(text):
+        raw_law = match.group(1)
+        raw_art = match.group(2)
+        canonical_law = raw_law if raw_law in law_map else _STATUTE_LAW_ALIASES.get(raw_law, raw_law)
+        norm_art = normalize_article_no(raw_art)
+        dedup_key = (canonical_law, norm_art)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        if canonical_law not in article_cache:
+            try:
+                arts = get_law_articles(canonical_law) or []
+                article_cache[canonical_law] = {
+                    normalize_article_no(a.get("article_no", ""))
+                    for a in arts
+                    if isinstance(a, dict) and a.get("article_no")
+                }
+            except Exception as exc:
+                logger.warning("查詢法規 %s 條文失敗: %s", canonical_law, exc)
+                article_cache[canonical_law] = set()
+
+        exists = norm_art in article_cache[canonical_law]
+        statutes.append({
+            "law_name": canonical_law,
+            "raw_mention": match.group(0),
+            "article_no": norm_art,
+            "verified": exists,
+        })
+
+    verified_count = sum(1 for s in statutes if s["verified"])
+    return {
+        "checked": True,
+        "statutes": statutes,
+        "verified_count": verified_count,
+        "unverified_count": len(statutes) - verified_count,
+    }
+
 
 class LawExamEvaluator:
-    def __init__(self, model_name=DEFAULT_GEMINI_MODEL):
-        self.api_key = get_gemini_api_key()
-        if not self.api_key:
-            raise ValueError("未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key。")
-        self.model_name = model_name
+    def __init__(self, model_name: str = DEFAULT_GEMINI_MODEL, api_key: Optional[str] = None):
+        self._explicit_api_key = api_key
+        self.model_name = model_name or DEFAULT_GEMINI_MODEL
         self.reports_dir = Path(REPORTS_DIR)
         self.reports_dir.mkdir(parents=True, exist_ok=True)
-        if USE_MODERN_GENAI:
-            self.client = genai.Client(api_key=self.api_key)
-        else:
-            legacy_genai.configure(api_key=self.api_key)
-            self.model = legacy_genai.GenerativeModel(model_name=self.model_name)
+
+    @property
+    def api_key(self) -> str:
+        return get_gemini_api_key(self._explicit_api_key)
+
+    @property
+    def client(self):
+        key = self.api_key
+        if not key:
+            return None
+        try:
+            from google import genai
+            return genai.Client(api_key=key)
+        except Exception as exc:
+            logger.warning("動態建立 Gemini Client 失敗: %s", exc)
+            return None
 
     def evaluate_submission(
         self,
@@ -92,15 +199,13 @@ class LawExamEvaluator:
 
         # --- 司法裁判動態 Grounding & 講義真跡檢索注入 ---
         grounding_block = ""
-        verifier_func = None
         try:
-            from authority_engine import get_dynamic_legal_grounding, verify_case_citations
-            verifier_func = verify_case_citations
+            from authority_engine import get_dynamic_legal_grounding
             g_input = f"{question_text}\n{submission_text or ''}\n{standard_rubric or ''}\n{lecture_notes or ''}"
             grounding_res = get_dynamic_legal_grounding(g_input, limit=4)
             grounding_block = grounding_res.get("grounding_prompt_block", "")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("動態裁判與講義檢索 Grounding 失敗: %s", exc)
 
         user_content = [
             system_prompt,
@@ -123,94 +228,150 @@ class LawExamEvaluator:
             user_content.append("【以下為考生實際手寫作答圖片】：")
             user_content.extend(images)
 
-        response_text = None
-        models_to_try = get_gemini_models_to_try(self.model_name)
-        last_err = None
-        for m_name in models_to_try:
-            try:
-                if USE_MODERN_GENAI:
-                    config = genai_types.GenerateContentConfig(
-                        temperature=0.2,
-                        response_mime_type="application/json"
-                    )
-                    resp = self.client.models.generate_content(
-                        model=m_name,
-                        contents=user_content,
-                        config=config
-                    )
-                    response_text = resp.text
-                else:
-                    cur_model = legacy_genai.GenerativeModel(model_name=m_name)
-                    gen_config = legacy_genai.types.GenerationConfig(
-                        temperature=0.2,
-                        response_mime_type="application/json"
-                    )
-                    resp = cur_model.generate_content(user_content, generation_config=gen_config)
-                    response_text = resp.text
-                break
-            except Exception as e:
-                err_str = str(e).lower()
-                if any(k in err_str for k in ["api_key", "unauthorized", "permission_denied", "forbidden", "403", "401"]):
-                    raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
-                last_err = e
-                continue
-
-        if response_text is None:
-            raise RuntimeError(f"所有 Gemini 模型呼叫均失敗，最後錯誤: {last_err}")
-
         try:
-            result_json = json.loads(response_text)
-        except Exception:
+            response_text = llm_client.generate_content(
+                user_content,
+                primary_model=self.model_name,
+                temperature=0.2,
+                response_mime_type="application/json",
+                api_key=self._explicit_api_key,
+            )
+        except llm_client.AuthError as e:
+            raise RuntimeError(f"Gemini API 認證或金鑰錯誤，請檢查 GEMINI_API_KEY：{e}") from e
+        except llm_client.MissingApiKeyError as e:
+            raise RuntimeError(f"未檢測到 GEMINI_API_KEY！請在 Streamlit Cloud 的 Secrets 或 .env 中設定您的 API Key：{e}") from e
+        except llm_client.LlmCallError as e:
+            raise RuntimeError(f"所有 Gemini 模型呼叫均失敗，最後錯誤: {e}") from e
+
+        safe_raw = response_text if isinstance(response_text, str) else ("" if response_text is None else str(response_text))
+        if not safe_raw.strip():
+            logger.warning("Gemini 評分回應為空 (empty/None)")
+            result_json = {
+                "error": "模型未回傳有效評分內容（空白回應）",
+                "raw_response": "",
+                "total_score": 0,
+                "grade_level": "無法評定",
+            }
+        else:
+            def _repair_eval_json(broken_text: str) -> Optional[str]:
+                repair_prompt = (
+                    "請將以下法律申論評分結果修復為單一合法、完整閉合的 JSON 物件，"
+                    "僅輸出 JSON 本身，不要加任何說明或 Markdown 標記：\n\n"
+                    + broken_text[:6000]
+                )
+                return llm_client.generate_content(
+                    repair_prompt,
+                    primary_model=self.model_name,
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    api_key=self._explicit_api_key,
+                )
+
             try:
-                clean_text = response_text.strip().replace("```json", "").replace("```", "")
-                result_json = json.loads(clean_text)
-            except Exception:
+                result_json = llm_client.parse_json_response(safe_raw, repair_fn=_repair_eval_json)
+            except Exception as parse_err:
+                logger.warning("評分回應 JSON 解析與修補失敗: %s", parse_err)
                 result_json = {
                     "error": "JSON 解析失敗",
-                    "raw_response": response_text[:2000],
+                    "raw_response": safe_raw[:2000],
                     "total_score": 0,
-                    "grade_level": "無法評定"
+                    "grade_level": "無法評定",
                 }
 
-        report_file = self.reports_dir / f"report_{os.getpid()}_{abs(hash(question_text[:20]))}.json"
-        with open(report_file, "w", encoding="utf-8") as f:
-            json.dump(result_json, f, ensure_ascii=False, indent=2)
+        if isinstance(result_json, list) and len(result_json) == 1 and isinstance(result_json[0], dict):
+            result_json = result_json[0]
 
-        # 全量實體裁判案號防偽與考卷字號真實性查核 (CaseCitationVerifier)
+        report_file = self.reports_dir / f"report_{os.getpid()}_{abs(hash((question_text or '')[:20]))}.json"
+        try:
+            with open(report_file, "w", encoding="utf-8") as f:
+                json.dump(result_json, f, ensure_ascii=False, indent=2)
+        except Exception as e_io:
+            logger.warning("儲存初始評分報告失敗: %s", e_io)
+
+        # 全量實體裁判案號防偽、考卷字號真實性與法條存在性查核 (CaseCitationVerifier + six_codes_engine)
         if isinstance(result_json, dict):
+            q_topic = (question_text or "")[:60]
+            suggested_rev = result_json.get("suggested_revision")
+            feedback_text = result_json.get("feedback")
+            student_text = result_json.get("transcription") or submission_text or ""
+
             try:
                 from case_citation_verifier import get_case_verifier
                 verifier = get_case_verifier()
 
+                combined_cits: List[Any] = []
+                seen_cit_keys = set()
+                audit_parts: List[str] = []
+
+                def _merge_cits(res_obj: Dict[str, Any]):
+                    for c in (res_obj.get("citations") or []):
+                        c_key = (
+                            c.get("raw") or c.get("citation") or c.get("case_id") or c.get("text")
+                            if isinstance(c, dict)
+                            else str(c)
+                        )
+                        if c_key not in seen_cit_keys:
+                            seen_cit_keys.add(c_key)
+                            combined_cits.append(c)
+                    audit_md = res_obj.get("audit_markdown")
+                    if audit_md:
+                        audit_parts.append(audit_md)
+
                 # 1. 查核並裝飾閱卷委員優化建議 (suggested_revision)
-                if "suggested_revision" in result_json and result_json["suggested_revision"]:
+                if isinstance(suggested_rev, str) and suggested_rev.strip():
                     v_res = verifier.verify_and_decorate_response(
-                        result_json["suggested_revision"],
-                        context_topic=question_text[:60],
-                        auto_badge=True
+                        suggested_rev,
+                        context_topic=q_topic,
+                        auto_badge=True,
                     )
                     result_json["suggested_revision_annotated"] = v_res.get("annotated_text", "")
-                    result_json["citation_verification"] = v_res
-                    result_json["audit_markdown"] = v_res.get("audit_markdown", "")
+                    _merge_cits(v_res)
 
-                # 2. 查核考生原卷引用字號 (防範考生作答憑空捏造案號)
-                student_text = result_json.get("transcription") or submission_text or ""
-                if student_text:
+                # 2. 查核並裝飾總評意見 (feedback)
+                if isinstance(feedback_text, str) and feedback_text.strip():
+                    f_res = verifier.verify_and_decorate_response(
+                        feedback_text,
+                        context_topic=f"{q_topic} 評閱總評",
+                        auto_badge=True,
+                    )
+                    result_json["feedback_annotated"] = f_res.get("annotated_text", "")
+                    result_json["feedback_citation_verification"] = _normalize_citation_verification(f_res)
+                    _merge_cits(f_res)
+
+                if combined_cits or audit_parts:
+                    merged_norm = _normalize_citation_verification({
+                        "citations": combined_cits,
+                        "audit_markdown": "\n\n".join(audit_parts),
+                    })
+                    result_json["citation_verification"] = merged_norm
+                    result_json["citations"] = merged_norm["citations"]
+                    result_json["audit_markdown"] = merged_norm.get("audit_markdown", "")
+
+                # 3. 查核考生原卷引用字號 (student_text，防範考生作答憑空捏造案號)
+                if isinstance(student_text, str) and student_text.strip():
                     s_res = verifier.verify_and_decorate_response(
                         student_text,
                         context_topic="考生作答字號真實性檢視",
-                        auto_badge=True
+                        auto_badge=True,
                     )
-                    result_json["student_citation_verification"] = s_res
+                    result_json["student_citation_verification"] = _normalize_citation_verification(s_res)
 
             except Exception as e_ver:
-                pass
+                logger.warning("CaseCitationVerifier 引用字號查核失敗: %s", e_ver)
+
+            # 4. 查核建議改寫、總評與考生作答所引法條條號存在性 (six_codes_engine)
+            statute_probe_text = "\n".join(
+                part for part in (suggested_rev, feedback_text, student_text)
+                if isinstance(part, str) and part.strip()
+            )
+            if statute_probe_text:
+                result_json["statute_verification"] = _verify_statutes_in_text(statute_probe_text)
 
         # 覆寫儲存已注入真實性核驗之報告
         try:
             with open(report_file, "w", encoding="utf-8") as f:
                 json.dump(result_json, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+        except Exception as e_io:
+            logger.warning("覆寫評分報告失敗: %s", e_io)
 
         return result_json

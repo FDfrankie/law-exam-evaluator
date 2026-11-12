@@ -10,12 +10,40 @@ legal_cross_reference_engine.py
 """
 
 import json
+import logging
 import re
 import sqlite3
+import tempfile
+import urllib.parse
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 
 from config import DATA_DIR, JUDICIAL_1M_DIR, NATIONAL_LAWS_DIR
+
+logger = logging.getLogger(__name__)
+
+
+class ClosingConnection(sqlite3.Connection):
+    """Ensure SQLite connections close upon exiting a `with` block."""
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            return super().__exit__(exc_type, exc_val, exc_tb)
+        finally:
+            self.close()
+
+
+def _open_ro_sqlite(db_path: Path, timeout: float = 10.0) -> ClosingConnection:
+    """Open a read-only SQLite connection with busy timeout and guaranteed cleanup."""
+    uri = f"{Path(db_path).resolve().as_uri()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=timeout, factory=ClosingConnection)
+    try:
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 60000;")
+    except Exception:
+        conn.close()
+        raise
+    return conn
 
 def parse_chinese_number(s: str) -> int:
     """繁體中文數字轉阿拉伯數字（支援千、百、十、零與大寫）"""
@@ -443,6 +471,79 @@ class LegalCrossReferenceEngine:
             "total_resolved": len(statutes) + len(orders)
         }
 
+    @staticmethod
+    def _matches_statute_citation(laws_cited: Any, clean_law: str, clean_art: str) -> bool:
+        """Strictly match `(clean_law, clean_art)` without substring false positives (e.g. 1 vs 10/184/1-1/1之1/1條之1/第1項)."""
+        text = "、".join(str(x) for x in laws_cited) if isinstance(laws_cited, (list, tuple)) else str(laws_cited or "")
+        if not text or clean_law not in text:
+            return False
+
+        art_norm = clean_art.replace("之", "-")
+        art_variants = [re.escape(clean_art)]
+        if "-" in art_norm:
+            main_no, sub_no = art_norm.split("-", 1)
+            for v in (
+                f"{re.escape(main_no)}-{re.escape(sub_no)}",
+                f"{re.escape(main_no)}之{re.escape(sub_no)}",
+                rf"{re.escape(main_no)}\s*條\s*之\s*{re.escape(sub_no)}",
+            ):
+                if v not in art_variants:
+                    art_variants.append(v)
+        art_alt = "|".join(art_variants)
+
+        # Reject trailing sub-articles (之1, 條之1, -1), extra digits, or paragraph/subparagraph markers (項/款/目)
+        strict_art_re = re.compile(
+            rf"(?<![\d\-之])(?:{art_alt})(?!\s*條\s*之\s*[\d一二三四五六七八九十]|\s*之\s*[\d一二三四五六七八九十]|[\d\-]|\s*[項款目])"
+        )
+        if not strict_art_re.search(text):
+            return False
+
+        law_name_re = re.compile(
+            r"([\u4e00-\u9fff]+?(?:增修條文|施行法|訴訟法|條例|通則|規則|辦法|標準|準則|規程|憲法|法))"
+        )
+
+        # Track most recent law across comma-separated segments and immediately before each article match
+        last_law = ""
+        for seg in re.split(r"[,，、;；\n]+", text):
+            seg_s = seg.strip()
+            if not seg_s:
+                continue
+            seg_laws = law_name_re.findall(seg_s)
+            seg_has_target_law = clean_law in seg_s
+            if seg_has_target_law or last_law == clean_law:
+                for m_hit in strict_art_re.finditer(seg_s):
+                    prefix = seg_s[:m_hit.start()].rstrip()
+                    if prefix.endswith(("之", "-")):
+                        continue
+                    law_ctx = re.sub(r"(?:\s*第\s*|_)$", "", prefix).strip()
+                    if not law_ctx:
+                        effective_law = last_law
+                    elif law_ctx == clean_law or (
+                        law_ctx.endswith(clean_law)
+                        and (
+                            len(law_ctx) == len(clean_law)
+                            or not ("\u4e00" <= law_ctx[-len(clean_law) - 1] <= "\u9fff")
+                        )
+                    ):
+                        effective_law = clean_law
+                    else:
+                        ctx_laws = law_name_re.findall(law_ctx)
+                        effective_law = ctx_laws[-1] if ctx_laws else law_ctx
+
+                    if effective_law == clean_law or (
+                        clean_law in ("刑法", "中華民國刑法") and effective_law in ("刑法", "中華民國刑法")
+                    ) or (
+                        clean_law in ("憲法", "中華民國憲法") and effective_law in ("憲法", "中華民國憲法")
+                    ):
+                        return True
+            if seg_laws:
+                last_law = seg_laws[-1]
+            else:
+                m_tail = re.match(r"^\s*([^\d_\s第]+)", seg_s)
+                if m_tail and not seg_s.startswith("第"):
+                    last_law = m_tail.group(1)
+        return False
+
     def get_landmark_judgments_for_statute(
         self,
         law_name: str,
@@ -465,7 +566,9 @@ class LegalCrossReferenceEngine:
         search_clean = str(search_kw or "").strip()
         cache_key = f"{clean_law}_{clean_art}_{court_filter}_{order_by}_{search_clean}_{limit}"
         if cache_key in self._statute_cache:
-            return self._statute_cache[cache_key]
+            cached_val = self._statute_cache.pop(cache_key)
+            self._statute_cache[cache_key] = cached_val
+            return list(cached_val)
 
         results = []
         seen_case_ids = set()
@@ -473,7 +576,6 @@ class LegalCrossReferenceEngine:
         # 1. 優先從 4,088 筆權威先例快取匹配 (0 秒毫秒級)
         self._ensure_precedents_loaded()
         if self._precedents_cache:
-            art_pattern = re.compile(rf'(?:{re.escape(clean_law)}[^\d]*?第?\s*{re.escape(clean_art)}\s*(?:之\d+)?\s*條|第?\s*{re.escape(clean_art)}\s*條)')
             for p in self._precedents_cache:
                 p_court = p.get("court", "")
                 if court_filter and court_filter not in p_court and court_filter != "全部法院":
@@ -487,7 +589,7 @@ class LegalCrossReferenceEngine:
                 if search_clean and search_clean not in cid and search_clean not in title_s and search_clean not in holding_s:
                     continue
 
-                if clean_law in laws_cited and (f"{clean_art}" in laws_cited or art_pattern.search(laws_cited)):
+                if self._matches_statute_citation(laws_cited, clean_law, clean_art):
                     if cid and cid not in seen_case_ids:
                         seen_case_ids.add(cid)
                         # 動態萃取判決使用法條（若原欄位過於簡略）
@@ -512,84 +614,158 @@ class LegalCrossReferenceEngine:
                         if len(results) >= limit * 2:
                             break
 
-        # 2. 自權威先例與大法庭/憲法裁判庫 (judicial_authority.db: 11,625+ 則) 快速檢索
-        auth_db_path = Path(DATA_DIR) / "judicial_authority.db"
-        if not auth_db_path.exists():
-            cand_auth = Path(__file__).resolve().parent / "data" / "judicial_authority.db"
-            if cand_auth.exists():
-                auth_db_path = cand_auth
+        # 2. 自權威先例庫 (judicial_authority.db) 與國考精華子庫 (judicial_exam_core.db) 快速檢索
+        raw_db_candidates = [
+            Path(DATA_DIR) / "judicial_authority.db",
+            Path(__file__).resolve().parent / "data" / "judicial_authority.db",
+            Path(DATA_DIR) / "judicial_exam_core.db",
+            Path(__file__).resolve().parent / "data" / "judicial_exam_core.db",
+            Path(tempfile.gettempdir()) / "judicial_exam_core.db",
+        ]
+        stage2_dbs: List[Path] = []
+        seen_db_paths = set()
+        for db_cand in raw_db_candidates:
+            if db_cand.exists():
+                resolved_str = str(db_cand.resolve())
+                if resolved_str not in seen_db_paths:
+                    seen_db_paths.add(resolved_str)
+                    stage2_dbs.append(db_cand)
 
-        if len(results) < limit * 2 and auth_db_path.exists():
-            try:
-                target_pat = f"%{clean_law}%{clean_art}%"
-                with sqlite3.connect(str(auth_db_path), timeout=3.0) as conn:
-                    conn.row_factory = sqlite3.Row
-                    auth_rows = conn.execute(
-                        "SELECT id, case_no, court, title, holding, laws_cited, date "
-                        "FROM authority_records WHERE laws_cited LIKE ? LIMIT ?",
-                        (target_pat, (limit * 2) - len(results))
-                    ).fetchall()
-                    for r in auth_rows:
-                        cid = r["case_no"] or r["id"]
-                        if cid and cid not in seen_case_ids:
-                            c_court = r["court"] or "最高法院大法庭/憲法裁判"
-                            if court_filter and court_filter != "全部法院" and court_filter not in c_court:
-                                continue
-                            t_title = r["title"] or cid
-                            h_holding = r["holding"] or t_title
-                            if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
-                                continue
-                            seen_case_ids.add(cid)
-                            results.append({
-                                "case_id": cid,
-                                "court": c_court,
-                                "year": "",
-                                "word": "",
-                                "no": r["case_no"] or r["id"],
-                                "date": r["date"] or "",
-                                "title": t_title,
-                                "level": "權威大法庭/憲法裁判",
-                                "holding": h_holding,
-                                "laws_cited": r["laws_cited"] or f"{clean_law}第{clean_art}條",
-                                "official_url": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
-                            })
-                            if len(results) >= limit * 2:
-                                break
+        if len(results) < limit * 2 and stage2_dbs:
+            art_zhi = clean_art.replace("-", "之") if "-" in clean_art else clean_art.replace("之", "-")
+            sql_like_pats = [
+                f"%第{clean_art}條%",
+                f"%第 {clean_art} 條%",
+                f"%_{clean_art}%",
+            ]
+            if art_zhi != clean_art:
+                sql_like_pats.extend([f"%第{art_zhi}條%", f"%第 {art_zhi} 條%"])
+            sql_art_clause = " OR ".join("laws_cited LIKE ?" for _ in sql_like_pats)
+            sql_params_prefix = [f"%{clean_law}%", *sql_like_pats]
 
-                    if len(results) < limit * 2:
-                        prec_rows = conn.execute(
-                            "SELECT precedent_id, case_no, year, court, title, holding, laws_cited, date "
-                            "FROM precedents WHERE laws_cited LIKE ? LIMIT ?",
-                            (target_pat, (limit * 2) - len(results))
-                        ).fetchall()
-                        for r in prec_rows:
-                            cid = r["case_no"] or r["precedent_id"]
-                            if cid and cid not in seen_case_ids:
-                                c_court = r["court"] or "最高法院"
-                                if court_filter and court_filter != "全部法院" and court_filter not in c_court:
+            for db_cand in stage2_dbs:
+                if len(results) >= limit * 2:
+                    break
+                try:
+                    with _open_ro_sqlite(db_cand, timeout=10.0) as conn:
+                        existing_tables = {
+                            r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+                        }
+                        fetch_cap = max((limit * 2 - len(results)) * 4, 40)
+
+                        if "authority_records" in existing_tables and len(results) < limit * 2:
+                            auth_rows = conn.execute(
+                                f"SELECT id, case_no, court, title, holding, laws_cited, date "
+                                f"FROM authority_records WHERE laws_cited LIKE ? AND ({sql_art_clause}) LIMIT ?",
+                                (*sql_params_prefix, fetch_cap)
+                            ).fetchall()
+                            for r in auth_rows:
+                                if not self._matches_statute_citation(r["laws_cited"], clean_law, clean_art):
                                     continue
-                                t_title = r["title"] or cid
-                                h_holding = r["holding"] or t_title
-                                if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
+                                cid = r["case_no"] or r["id"]
+                                if cid and cid not in seen_case_ids:
+                                    c_court = r["court"] or "最高法院大法庭/憲法裁判"
+                                    if court_filter and court_filter != "全部法院" and court_filter not in c_court:
+                                        continue
+                                    t_title = r["title"] or cid
+                                    h_holding = r["holding"] or t_title
+                                    if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
+                                        continue
+                                    seen_case_ids.add(cid)
+                                    results.append({
+                                        "case_id": cid,
+                                        "court": c_court,
+                                        "year": "",
+                                        "word": "",
+                                        "no": r["case_no"] or r["id"],
+                                        "date": r["date"] or "",
+                                        "title": t_title,
+                                        "level": "權威大法庭/憲法裁判",
+                                        "holding": h_holding,
+                                        "laws_cited": r["laws_cited"] or f"{clean_law}第{clean_art}條",
+                                        "official_url": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+                                    })
+                                    if len(results) >= limit * 2:
+                                        break
+
+                        if "precedents" in existing_tables and len(results) < limit * 2:
+                            prec_rows = conn.execute(
+                                f"SELECT precedent_id, case_no, year, court, title, holding, laws_cited, date "
+                                f"FROM precedents WHERE laws_cited LIKE ? AND ({sql_art_clause}) LIMIT ?",
+                                (*sql_params_prefix, fetch_cap)
+                            ).fetchall()
+                            for r in prec_rows:
+                                if not self._matches_statute_citation(r["laws_cited"], clean_law, clean_art):
                                     continue
-                                seen_case_ids.add(cid)
-                                results.append({
-                                    "case_id": cid,
-                                    "court": c_court,
-                                    "year": r["year"] or "",
-                                    "word": "",
-                                    "no": r["case_no"] or r["precedent_id"],
-                                    "date": r["date"] or "",
-                                    "title": t_title,
-                                    "level": "最高法院判例/要旨",
-                                    "holding": h_holding,
-                                    "laws_cited": r["laws_cited"] or f"{clean_law}第{clean_art}條",
-                                    "official_url": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
-                                })
-                                if len(results) >= limit * 2:
-                                    break
-            except Exception:
-                pass
+                                cid = r["case_no"] or r["precedent_id"]
+                                if cid and cid not in seen_case_ids:
+                                    c_court = r["court"] or "最高法院"
+                                    if court_filter and court_filter != "全部法院" and court_filter not in c_court:
+                                        continue
+                                    t_title = r["title"] or cid
+                                    h_holding = r["holding"] or t_title
+                                    if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
+                                        continue
+                                    seen_case_ids.add(cid)
+                                    results.append({
+                                        "case_id": cid,
+                                        "court": c_court,
+                                        "year": r["year"] or "",
+                                        "word": "",
+                                        "no": r["case_no"] or r["precedent_id"],
+                                        "date": r["date"] or "",
+                                        "title": t_title,
+                                        "level": "最高法院判例/要旨",
+                                        "holding": h_holding,
+                                        "laws_cited": r["laws_cited"] or f"{clean_law}第{clean_art}條",
+                                        "official_url": "https://judgment.judicial.gov.tw/FJUD/default.aspx"
+                                    })
+                                    if len(results) >= limit * 2:
+                                        break
+
+                        core_meta_tbl = next((t for t in ("judgments_meta", "exam_judgments_meta") if t in existing_tables), "")
+                        if core_meta_tbl and len(results) < limit * 2:
+                            core_rows = conn.execute(
+                                f"SELECT case_id, jid, court, jud_year, jud_word, jud_no, date, title, level, holding_preview, laws_cited "
+                                f"FROM {core_meta_tbl} WHERE laws_cited LIKE ? AND ({sql_art_clause}) LIMIT ?",
+                                (*sql_params_prefix, fetch_cap)
+                            ).fetchall()
+                            for r in core_rows:
+                                if not self._matches_statute_citation(r["laws_cited"], clean_law, clean_art):
+                                    continue
+                                cid = r["case_id"]
+                                if cid and cid not in seen_case_ids:
+                                    c_court = r["court"] or ""
+                                    if court_filter and court_filter != "全部法院" and court_filter not in c_court:
+                                        continue
+                                    t_title = r["title"] or cid
+                                    h_holding = r["holding_preview"] or t_title
+                                    if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
+                                        continue
+                                    seen_case_ids.add(cid)
+                                    jid_val = r["jid"] or ""
+                                    if jid_val and "," in str(jid_val) and len(str(jid_val).split(",")) >= 4:
+                                        u_url = f"https://judgment.judicial.gov.tw/FJUD/data.aspx?ty=JD&id={str(jid_val).strip()}"
+                                    else:
+                                        clean_cid_url = re.sub(r"\(.*?\)|（.*?）", "", cid).strip()
+                                        u_url = f"https://judgment.judicial.gov.tw/FJUD/qryresultlst.aspx?q={urllib.parse.quote(clean_cid_url)}"
+                                    results.append({
+                                        "case_id": cid,
+                                        "court": c_court,
+                                        "year": r["jud_year"] or "",
+                                        "word": r["jud_word"] or "",
+                                        "no": r["jud_no"] or "",
+                                        "date": r["date"] or "",
+                                        "title": t_title,
+                                        "level": r["level"] or "國考核心裁判",
+                                        "holding": h_holding,
+                                        "laws_cited": r["laws_cited"] or f"{clean_law}第{clean_art}條",
+                                        "official_url": u_url,
+                                    })
+                                    if len(results) >= limit * 2:
+                                        break
+                except Exception as exc:
+                    logger.warning("Stage 2 cross-reference DB query failed (%s): %s", db_cand, exc)
 
         # 3. 實體裁判大庫檢索（統一透過 MillionJudgmentsSQLiteEngine FTS5 + 索引，支援 797 萬母庫與精華子庫）
         if len(results) < limit * 2:
@@ -617,16 +793,20 @@ class LegalCrossReferenceEngine:
                         cid = r.get("case_id", "")
                         if not cid or cid in seen_case_ids:
                             continue
-                        seen_case_ids.add(cid)
                         t_title = r.get("title") or cid
                         h_holding = r.get("holding") or t_title
                         if search_clean and search_clean not in cid and search_clean not in t_title and search_clean not in h_holding:
                             continue
                         lc_val = r.get("laws_cited", [])
                         raw_lc = "、".join(lc_val) if isinstance(lc_val, list) else str(lc_val or "")
+                        if raw_lc and not self._matches_statute_citation(raw_lc, clean_law, clean_art):
+                            continue
                         if not raw_lc and h_holding:
                             extracted = extract_statute_citations_from_text(h_holding)
                             raw_lc = "、".join([x["canonical"] for x in extracted])
+                            if raw_lc and not self._matches_statute_citation(raw_lc, clean_law, clean_art):
+                                continue
+                        seen_case_ids.add(cid)
                         results.append({
                             "case_id": cid,
                             "court": r.get("court", ""),
@@ -661,8 +841,12 @@ class LegalCrossReferenceEngine:
             results.sort(key=_level_score)
 
         final_results = results[:limit]
+        if cache_key in self._statute_cache:
+            self._statute_cache.pop(cache_key)
+        elif len(self._statute_cache) >= 256:
+            self._statute_cache.pop(next(iter(self._statute_cache)))
         self._statute_cache[cache_key] = final_results
-        return final_results
+        return list(final_results)
 
 
 _cross_ref_engine = None

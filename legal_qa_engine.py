@@ -12,31 +12,13 @@ import os
 import sys
 import json
 import re
+import logging
 from typing import Dict, Any, List, Optional, Tuple
 
-try:
-    from google import genai
-    from google.genai import types as genai_types
-    USE_MODERN_GENAI = True
-    HAS_GENAI = True
-except ImportError:
-    try:
-        import google.generativeai as legacy_genai
-        USE_MODERN_GENAI = False
-        HAS_GENAI = True
-    except ImportError:
-        HAS_GENAI = False
-        USE_MODERN_GENAI = False
+from config import DEFAULT_GEMINI_MODEL
+from llm_client import generate_content, LlmCallError
 
-try:
-    from config import get_gemini_api_key, DEFAULT_GEMINI_MODEL, get_gemini_models_to_try
-except Exception:
-    def get_gemini_api_key():
-        import os
-        return os.environ.get("GEMINI_API_KEY", "")
-    DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-    def get_gemini_models_to_try():
-        return ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]
+logger = logging.getLogger(__name__)
 
 # 檢索意圖模式
 QUERY_TYPES = [
@@ -615,7 +597,79 @@ class LegalQAEngine:
     全方位通用法律智慧問答與全能檢索引擎
     """
     def __init__(self):
-        self.api_key = get_gemini_api_key()
+        pass
+
+    def _call_model(self, prompt: str, temperature: float = 0.2) -> str:
+        """透過統一 llm_client 呼叫 Gemini（每次動態讀取 API Key，失敗時明確拋出例外）。"""
+        return generate_content(
+            prompt,
+            primary_model=DEFAULT_GEMINI_MODEL,
+            temperature=temperature,
+            max_output_tokens=4096,
+        )
+
+    def _verify_and_append_audits(
+        self,
+        raw_text: str,
+        context_topic: str = "",
+        always_include_audit: bool = False,
+    ) -> Tuple[str, Dict[str, Any], Dict[str, Any]]:
+        """執行案號防偽核驗與現行法規核對，並附加防幻覺審計附錄。"""
+        text = raw_text
+        case_ver_res: Dict[str, Any] = {}
+        try:
+            from case_citation_verifier import get_case_verifier
+            verifier = get_case_verifier()
+            case_ver_res = verifier.verify_and_decorate_response(
+                text, context_topic=context_topic, auto_badge=True
+            )
+            if case_ver_res.get("annotated_text"):
+                text = case_ver_res["annotated_text"]
+        except Exception as exc:
+            logger.warning("CaseCitationVerifier failed in LegalQAEngine: %s", exc)
+
+        audit_res = self.verify_citations_against_dataset(text)
+        statute_audit_md = audit_res.get("audit_markdown", "")
+        case_audit_md = case_ver_res.get("audit_markdown", "")
+
+        has_findings = bool(
+            audit_res.get("total_statutes_checked")
+            or audit_res.get("total_cases_checked")
+            or case_audit_md
+        )
+
+        final_appendices = []
+        if statute_audit_md and (always_include_audit or has_findings):
+            final_appendices.append(statute_audit_md)
+        if case_audit_md and "Ground Truth Case Audit" not in statute_audit_md:
+            final_appendices.append(case_audit_md)
+
+        final_content = text.rstrip()
+        if final_appendices:
+            final_content += "\n\n" + "\n\n".join(final_appendices)
+
+        return final_content, audit_res, case_ver_res
+
+    def _generate_verified_document(
+        self,
+        prompt: str,
+        doc_label: str,
+        temperature: float = 0.2,
+        context_topic: str = "",
+    ) -> str:
+        """生成法律延伸文書並自動完成裁判字號與現行法條核驗。"""
+        try:
+            raw_text = self._call_model(prompt, temperature=temperature)
+        except Exception as exc:
+            logger.warning("LegalQAEngine %s failed: %s", doc_label, exc)
+            return f"⚠️ {doc_label}生成失敗（{exc}）。請確認 Gemini API 金鑰設定有效後再試。"
+
+        verified_text, _, _ = self._verify_and_append_audits(
+            raw_text,
+            context_topic=context_topic,
+            always_include_audit=False,
+        )
+        return verified_text
 
     def detect_query_intent(self, text: str) -> str:
         """
@@ -637,48 +691,6 @@ class LegalQAEngine:
             return "🧮 法律金錢與例題精算 (損害賠償・零件折舊・資遣費・遺產特留分)"
         # 4. 預設生活與實務法扶諮詢
         return "💬 生活與實務法律諮詢 (六大維度・證據清單・救濟行動指南)"
-
-    def _call_model(self, prompt: str, temperature: float = 0.2) -> str:
-        if not HAS_GENAI:
-            return self._generate_offline_legal_fallback(prompt)
-
-        models_to_try = get_gemini_models_to_try()
-        last_error = None
-
-        if USE_MODERN_GENAI:
-            client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
-            for model_name in models_to_try:
-                try:
-                    resp = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=genai_types.GenerateContentConfig(
-                            temperature=temperature,
-                            max_output_tokens=4096
-                        ) if hasattr(genai_types, 'GenerateContentConfig') else None
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-        else:
-            if self.api_key:
-                legacy_genai.configure(api_key=self.api_key)
-            for model_name in models_to_try:
-                try:
-                    m = legacy_genai.GenerativeModel(model_name)
-                    resp = m.generate_content(
-                        prompt,
-                        generation_config={"temperature": temperature, "max_output_tokens": 4096}
-                    )
-                    if resp and resp.text:
-                        return resp.text
-                except Exception as e:
-                    last_error = e
-                    continue
-
-        return self._generate_offline_legal_fallback(prompt)
 
     def answer_legal_question(
         self,
@@ -886,34 +898,31 @@ class LegalQAEngine:
 - 專業法學免責聲明：本分析係依當事人提供之事實簡述進行法理推論，如涉具體重大訴訟案情，仍應攜帶完整事證諮詢合格執業律師。
 """
 
-        analysis_result = self._call_model(prompt)
-
-        # 執行全量實體裁判案號防偽核驗 (Multi-Million Ground-Truth Case Verifier)
-        case_ver_res = {}
         try:
-            from case_citation_verifier import get_case_verifier
-            verifier = get_case_verifier()
-            case_ver_res = verifier.verify_and_decorate_response(analysis_result, context_topic=q_clean, auto_badge=True)
-            if case_ver_res.get("annotated_text"):
-                analysis_result = case_ver_res["annotated_text"]
-        except Exception:
-            pass
+            analysis_result = self._call_model(prompt)
+        except Exception as exc:
+            err_msg = str(exc) or "Gemini AI 服務暫時無法使用"
+            logger.warning("answer_legal_question LLM call failed: %s", err_msg)
+            return {
+                "success": False,
+                "error": err_msg,
+                "domain": detected_domain,
+                "standpoint": standpoint,
+                "output_mode": output_mode,
+                "query_type": actual_intent,
+                "question": q_clean,
+                "content": f"⚠️ AI 法律諮詢分析暫時無法完成（{err_msg}）。請確認 Gemini API 金鑰設定或稍後重試。",
+                "raw_content": "",
+                "verification_audit": {},
+                "case_verification": {},
+            }
 
-        # 執行事後真實性核實審計 (Post-Generation Grounding & Verification)
-        audit_res = self.verify_citations_against_dataset(analysis_result)
-        
-        statute_audit_md = audit_res.get("audit_markdown", "")
-        case_audit_md = case_ver_res.get("audit_markdown", "")
-        
-        final_appendices = []
-        if statute_audit_md:
-            final_appendices.append(statute_audit_md)
-        if case_audit_md and "Ground Truth Case Audit" not in statute_audit_md:
-            final_appendices.append(case_audit_md)
-
-        final_content = analysis_result.rstrip()
-        if final_appendices:
-            final_content += "\n\n" + "\n\n".join(final_appendices)
+        final_content, audit_res, case_ver_res = self._verify_and_append_audits(
+            analysis_result,
+            context_topic=q_clean,
+            always_include_audit=True,
+        )
+        raw_annotated = case_ver_res.get("annotated_text") or analysis_result
 
         return {
             "success": True,
@@ -923,7 +932,7 @@ class LegalQAEngine:
             "query_type": actual_intent,
             "question": q_clean,
             "content": final_content,
-            "raw_content": analysis_result,
+            "raw_content": raw_annotated,
             "verification_audit": audit_res,
             "case_verification": case_ver_res
         }
@@ -961,7 +970,12 @@ class LegalQAEngine:
    - 限期催告結論（明確記載文到後 {deadline_days} 日內履行）
 2. 語氣堅定、依法有據、用字嚴謹，直接可供當事人填妥住址後至郵局或線上存證信函系統寄發。
 """
-        return self._call_model(prompt, temperature=0.1)
+        return self._generate_verified_document(
+            prompt,
+            doc_label="存證信函草稿",
+            temperature=0.1,
+            context_topic=question,
+        )
 
     def generate_mediation_summary(
         self,
@@ -985,7 +999,12 @@ class LegalQAEngine:
 3. 爭議事實與理由要旨（條列說明發生經過、損害項目與法律依據）
 4. 預備性退讓與和解談判底線建議（提供當事人於調解會議上可接受之底線方案、分期清償約定或拋棄其餘請求條款）
 """
-        return self._call_model(prompt, temperature=0.2)
+        return self._generate_verified_document(
+            prompt,
+            doc_label="調解聲請要旨",
+            temperature=0.2,
+            context_topic=question,
+        )
 
     def generate_litigation_advice(
         self,
@@ -1036,34 +1055,31 @@ class LegalQAEngine:
 6. ⚠️ **法律免責與專業委任聲明**：
    - 醒目標註：「本建議書係基於法學理論與現行實務判解之研究分析，僅供當事人理解法律程序與評估訴訟風險之學術參考，絕非向法院呈遞之正式司法訴狀。各具體個案之事實與訴訟攻防極具個殊性，於正式開啟訴訟程序時，強烈建請當事人依法委任中華民國合格執業律師進行代理或閱卷，以確保憲法保障之實質訴訟權益。」
 """
-        raw_advice = self._call_model(prompt, temperature=0.1)
-        try:
-            from case_citation_verifier import get_case_verifier
-            verifier = get_case_verifier()
-            case_ver = verifier.verify_and_decorate_response(raw_advice, context_topic=question, auto_badge=True)
-            if case_ver.get("annotated_text"):
-                raw_advice = case_ver["annotated_text"]
-            if case_ver.get("audit_markdown"):
-                raw_advice += "\n\n" + case_ver["audit_markdown"]
-        except Exception:
-            pass
-        return raw_advice
+        return self._generate_verified_document(
+            prompt,
+            doc_label="訴訟程序策略與實務評估建議書",
+            temperature=0.1,
+            context_topic=question,
+        )
 
     def verify_citations_against_dataset(self, text: str) -> Dict[str, Any]:
         """
         【事後真實性核實審計核心 (Post-Generation Grounding Audit)】：
         掃描回答中出現的所有「法規條號」與「裁判案號」，逐一與本機資料庫進行高精確比對：
         1. 修正抽取正則，嚴格過濾「如|依|按|見|參|準用|適用|照|根據|依照」等前置助詞，杜絕出現《如民法》。
-        2. 精確法典比對（law_name == target_law_name 且 article_no == target_article_no）。
+        2. 精確法典比對（支援法規簡稱/別名正規化如『刑法』≡『中華民國刑法』、『憲法』≡『中華民國憲法』）。
         3. 嚴禁 Fallback 隨意抓其他法規條文（找不到標記為未收錄，絕不張冠李戴）！
         """
-        import re
-        from six_codes_engine import search_articles
-        from legal_summarizer_engine import BUILTIN_LANDMARK_DOCS
+        from six_codes_engine import search_articles, normalize_law_name, are_equivalent_law_names
 
         # 1. 萃取所有法條引用
-        # 排除書名號、括號與各類句讀標點符號，確保法規名稱前綴不沾黏上一句末詞
+        # 排除書名號、括號與各類句讀標點符號，並在「第X條/項/款/目」後補空白，避免「憲法第8條及民法」沾黏
         clean_text_for_laws = re.sub(r'[《》「」『』【】\[\]()（）"\'\'，。；;、：:！？!?\n\r\t]+', ' ', text)
+        clean_text_for_laws = re.sub(
+            r'(第\s*[0-9\-]+\s*條(?:\s*之\s*[0-9]+)?(?:\s*第\s*[0-9一二三四五六七八九十]+\s*[項款目])*)',
+            r'\1 ',
+            clean_text_for_laws,
+        )
         
         # 匹配類似：公司法第19條、民法第184條、行政訴訟法第227條
         # 嚴格過濾助詞並匹配包含 法、條例、通則、細則 等法規全稱
@@ -1077,7 +1093,7 @@ class LegalQAEngine:
         seen_statute_signatures = set()
 
         # 前置助詞過濾正規表達式
-        prefix_clean_pat = re.compile(r'^(如|依|按|見|參|準用|適用|照|依據|依照|根據|依照現行|依現行|依據現行|現行|另依|以及|及|與|另|或)+')
+        prefix_clean_pat = re.compile(r'^(如|依|按|見|參|準用|適用|照|依據|依照|根據|依照現行|依現行|依據現行|現行|另依|以及|及其|及|與|另|或|並)+')
 
         for raw_lname, ano, sub_no in raw_law_matches:
             # 去除前綴贅字助詞
@@ -1086,8 +1102,9 @@ class LegalQAEngine:
             if not clean_lname or clean_lname == "法" or len(clean_lname) < 2:
                 continue
 
+            norm_lname = normalize_law_name(clean_lname)
             full_ano = f"{ano}之{sub_no}" if sub_no else ano
-            sig = f"{clean_lname}_{full_ano}"
+            sig = f"{norm_lname}_{full_ano}"
             if sig in seen_statute_signatures:
                 continue
             seen_statute_signatures.add(sig)
@@ -1095,25 +1112,24 @@ class LegalQAEngine:
             is_verified = False
             statute_preview = ""
             try:
-                # 精確指定 selected_law，杜絕跨法典張冠李戴
-                matched_arts = search_articles(full_ano, selected_law=clean_lname)
+                # 精確指定正規化後法典名稱，杜絕跨法典張冠李戴且支援「刑法」/「中華民國刑法」別名
+                matched_arts = search_articles(full_ano, selected_law=norm_lname)
                 for cand in matched_arts:
-                    # 嚴格校驗法規名稱完全相符
                     cand_lname = cand.get("law_name", "")
                     cand_ano = str(cand.get("article_no", ""))
-                    if cand_lname == clean_lname:
-                        # 檢查條號相符 (相容 19 與 第19條)
+                    if are_equivalent_law_names(cand_lname, clean_lname):
                         clean_cand_ano = re.sub(r'[第條\s]', '', cand_ano).replace('之', '-')
                         clean_target_ano = full_ano.replace('之', '-')
                         if clean_cand_ano == clean_target_ano:
                             is_verified = True
                             statute_preview = cand.get("content", "").strip()[:100]
                             break
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Statute verification failed for %s 第%s條: %s", clean_lname, full_ano, exc)
 
             statute_item = {
                 "law_name": clean_lname,
+                "canonical_law_name": norm_lname,
                 "article_no": f"第 {full_ano} 條",
                 "verified": is_verified,
                 "official_preview": statute_preview
@@ -1148,8 +1164,8 @@ class LegalQAEngine:
                     verified_cases.append(c_item)
                 else:
                     unverified_cases.append(c_item)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("CaseCitationVerifier failed in verify_citations_against_dataset: %s", exc)
 
         # 3. 產出 Markdown 審計卡片
         audit_lines = [

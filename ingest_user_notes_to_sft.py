@@ -812,11 +812,15 @@ def read_note_text(file_path: Any, max_pages: int = 60, auto_ocr: bool = True) -
             db_file = Path(DATA_DIR) / "judicial_authority.db"
             if db_file.exists():
                 import sqlite3
-                conn = sqlite3.connect(str(db_file), timeout=5.0)
-                cur = conn.cursor()
-                cur.execute("SELECT extracted_text FROM user_notes WHERE filename = ? OR note_id = ?", (file_path.name, file_path.name))
-                row = cur.fetchone()
-                conn.close()
+                uri = f"{db_file.resolve().as_uri()}?mode=ro"
+                conn = sqlite3.connect(uri, uri=True, timeout=5.0)
+                try:
+                    conn.execute("PRAGMA busy_timeout = 60000;")
+                    cur = conn.cursor()
+                    cur.execute("SELECT extracted_text FROM user_notes WHERE filename = ? OR note_id = ?", (file_path.name, file_path.name))
+                    row = cur.fetchone()
+                finally:
+                    conn.close()
                 if row and row[0] and len(row[0].strip()) > 50:
                     return row[0]
         except Exception:
